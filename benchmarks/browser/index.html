@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Phasm vs Inferno Browser Benchmark</title>
+  <style>
+    body { font-family: monospace; margin: 20px; }
+    #app { display: none; }
+    #results { white-space: pre; }
+  </style>
+</head>
+<body>
+  <h1>Phasm vs Inferno Browser Benchmark</h1>
+  <div id="app"></div>
+  <pre id="results">Loading...</pre>
+
+  <script type="module">
+    import { h, mount, patch, unmount, render, clearPool } from '../../dist/index.js';
+    import { runInfernoBenchmarks } from './inferno-bench-bundle.js';
+
+    const adjectives = ['pretty','large','big','small','tall','short','long','handsome'];
+    const nouns = ['table','chair','house','bbq','desk','car','pony','cookie'];
+    const colours = ['red','yellow','blue','green','pink','brown','purple','gray'];
+
+    function buildRowData(count) {
+      const data = [];
+      for (let i = 0; i < count; i++) {
+        data.push({
+          id: i,
+          label: `${adjectives[i % adjectives.length]} ${colours[i % colours.length]} ${nouns[i % nouns.length]}`
+        });
+      }
+      return data;
+    }
+
+    function Row(id, label, key) {
+      return h('tr', { key },
+        h('td', { className: 'col-md-1' }, String(id)),
+        h('td', { className: 'col-md-4' }, h('a', null, label)),
+        h('td', { className: 'col-md-1' }, h('a', null, 'x'))
+      );
+    }
+
+    function Table(data) {
+      return h('table', { className: 'table table-hover' },
+        h('tbody', null, ...data.map(row => Row(row.id, row.label, row.id)))
+      );
+    }
+
+    function benchmark(name, setup, run, teardown, iterations = 20) {
+      const times = [];
+      for (let i = 0; i < iterations; i++) {
+        const state = setup();
+        const start = performance.now();
+        run(state);
+        const end = performance.now();
+        times.push(end - start);
+        teardown(state);
+      }
+      times.sort((a, b) => a - b);
+      const median = times[Math.floor(times.length / 2)];
+      const mean = times.reduce((a, b) => a + b, 0) / times.length;
+      const min = times[0];
+      const max = times[times.length - 1];
+      return { name, median, mean, min, max, times };
+    }
+
+    const container = document.getElementById('app');
+
+    // ──── Phasm Benchmarks ────
+    const phasmResults = [];
+
+    phasmResults.push(benchmark(
+      'create 1,000 rows',
+      () => { container.textContent = ''; clearPool(); return {}; },
+      () => {
+        const tree = Table(buildRowData(1000));
+        mount(tree, container);
+        return tree;
+      },
+      () => { container.textContent = ''; },
+      50
+    ));
+
+    phasmResults.push(benchmark(
+      'create 10,000 rows',
+      () => { container.textContent = ''; clearPool(); return {}; },
+      () => {
+        const tree = Table(buildRowData(10000));
+        mount(tree, container);
+        return tree;
+      },
+      () => { container.textContent = ''; },
+      10
+    ));
+
+    phasmResults.push(benchmark(
+      'replace all 1,000 rows',
+      () => {
+        container.textContent = '';
+        const tree = Table(buildRowData(1000));
+        mount(tree, container);
+        return { tree };
+      },
+      (state) => {
+        const newTree = Table(buildRowData(1000));
+        patch(state.tree, newTree, container);
+        state.tree = newTree;
+      },
+      (state) => { container.textContent = ''; },
+      50
+    ));
+
+    phasmResults.push(benchmark(
+      'update every 10th row (of 1,000)',
+      () => {
+        container.textContent = '';
+        const data = buildRowData(1000);
+        const tree = Table(data);
+        mount(tree, container);
+        return { tree, data };
+      },
+      (state) => {
+        const newData = state.data.map((row, i) =>
+          i % 10 === 0 ? { ...row, label: row.label + ' !!!' } : row
+        );
+        const newTree = Table(newData);
+        patch(state.tree, newTree, container);
+        state.tree = newTree;
+        state.data = newData;
+      },
+      (state) => { container.textContent = ''; },
+      50
+    ));
+
+    phasmResults.push(benchmark(
+      'swap rows (2nd and 999th)',
+      () => {
+        container.textContent = '';
+        const data = buildRowData(1000);
+        const tree = Table(data);
+        mount(tree, container);
+        return { tree, data };
+      },
+      (state) => {
+        const newData = [...state.data];
+        const tmp = newData[1];
+        newData[1] = newData[998];
+        newData[998] = tmp;
+        const newTree = Table(newData);
+        patch(state.tree, newTree, container);
+        state.tree = newTree;
+      },
+      (state) => { container.textContent = ''; },
+      50
+    ));
+
+    phasmResults.push(benchmark(
+      'remove row (middle of 1,000)',
+      () => {
+        container.textContent = '';
+        const data = buildRowData(1000);
+        const tree = Table(data);
+        mount(tree, container);
+        return { tree, data };
+      },
+      (state) => {
+        const newData = [...state.data.slice(0, 500), ...state.data.slice(501)];
+        const newTree = Table(newData);
+        patch(state.tree, newTree, container);
+        state.tree = newTree;
+        state.data = newData;
+      },
+      (state) => { container.textContent = ''; },
+      50
+    ));
+
+    phasmResults.push(benchmark(
+      'select row (highlight one)',
+      () => {
+        container.textContent = '';
+        const data = buildRowData(1000);
+        const tree = Table(data);
+        mount(tree, container);
+        return { tree, data };
+      },
+      (state) => {
+        const selected = state.data[5].id;
+        const newTree = h('table', { className: 'table table-hover' },
+          h('tbody', null, ...state.data.map(row =>
+            h('tr', { key: row.id, className: row.id === selected ? 'danger' : '' },
+              h('td', { className: 'col-md-1' }, String(row.id)),
+              h('td', { className: 'col-md-4' }, h('a', null, row.label)),
+              h('td', { className: 'col-md-1' }, h('a', null, 'x'))
+            )
+          ))
+        );
+        patch(state.tree, newTree, container);
+        state.tree = newTree;
+      },
+      (state) => { container.textContent = ''; },
+      50
+    ));
+
+    phasmResults.push(benchmark(
+      'append 1,000 rows to 1,000',
+      () => {
+        container.textContent = '';
+        const data = buildRowData(1000);
+        const tree = Table(data);
+        mount(tree, container);
+        return { tree, data };
+      },
+      (state) => {
+        const appended = [...state.data, ...buildRowData(1000).map(r => ({ ...r, id: r.id + 1000 }))];
+        const newTree = Table(appended);
+        patch(state.tree, newTree, container);
+        state.tree = newTree;
+      },
+      (state) => { container.textContent = ''; },
+      50
+    ));
+
+    // ──── Inferno Benchmarks ────
+    container.textContent = '';
+    const infernoResults = runInfernoBenchmarks(container);
+
+    // ──── Format Comparison Output ────
+    const lines = [
+      'Phasm vs Inferno Browser Benchmark',
+      '='.repeat(90),
+      ''
+    ];
+
+    const header =
+      'Operation'.padEnd(35) +
+      'Phasm Med'.padStart(11) +
+      'Inf Med'.padStart(11) +
+      'Ratio'.padStart(8) +
+      'Phasm Mean'.padStart(12) +
+      'Inf Mean'.padStart(12);
+    lines.push(header);
+    lines.push('-'.repeat(90));
+
+    for (let i = 0; i < phasmResults.length; i++) {
+      const b = phasmResults[i];
+      const inf = infernoResults[i];
+      const ratio = (b.median / inf.median).toFixed(2);
+      lines.push(
+        b.name.padEnd(35) +
+        (b.median.toFixed(2) + 'ms').padStart(11) +
+        (inf.median.toFixed(2) + 'ms').padStart(11) +
+        (ratio + 'x').padStart(8) +
+        (b.mean.toFixed(2) + 'ms').padStart(12) +
+        (inf.mean.toFixed(2) + 'ms').padStart(12)
+      );
+    }
+
+    lines.push('');
+    lines.push('Ratio < 1.0 = Phasm faster, > 1.0 = Inferno faster');
+
+    const output = lines.join('\n');
+    document.getElementById('results').textContent = output;
+
+    // Expose results for Playwright to read
+    window.__benchmarkResults = { phasm: phasmResults, inferno: infernoResults };
+    window.__benchmarkDone = true;
+  </script>
+</body>
+</html>

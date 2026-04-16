@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Phasm DevTools</title>
+  <style>
+    :root {
+      --bg: #1e1e1e;
+      --bg-secondary: #252526;
+      --bg-hover: #2a2d2e;
+      --bg-selected: #37373d;
+      --text: #cccccc;
+      --text-muted: #858585;
+      --text-bright: #e0e0e0;
+      --accent: #61dafb;
+      --accent-dim: rgba(97, 218, 251, 0.15);
+      --component: #61dafb;
+      --element: #e06c75;
+      --text-node: #98c379;
+      --fragment: #c678dd;
+      --key-color: #d19a66;
+      --prop-name: #e5c07b;
+      --prop-value: #98c379;
+      --border: #3c3c3c;
+      --scrollbar: #424242;
+      --font-mono: "SF Mono", "Fira Code", "Cascadia Code", Menlo, monospace;
+    }
+
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg: #ffffff;
+        --bg-secondary: #f3f3f3;
+        --bg-hover: #e8e8e8;
+        --bg-selected: #d6ebff;
+        --text: #333333;
+        --text-muted: #888888;
+        --text-bright: #111111;
+        --border: #d4d4d4;
+        --scrollbar: #c1c1c1;
+        --component: #0070f3;
+        --element: #c41a16;
+        --text-node: #1a7f37;
+        --fragment: #8250df;
+        --key-color: #953800;
+        --prop-name: #953800;
+        --prop-value: #1a7f37;
+        --accent: #0070f3;
+        --accent-dim: rgba(0, 112, 243, 0.1);
+      }
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      line-height: 1.5;
+      background: var(--bg);
+      color: var(--text);
+      overflow: hidden;
+      height: 100vh;
+    }
+
+    /* --- Layout --- */
+    .container {
+      display: flex;
+      height: 100vh;
+    }
+
+    .tree-pane {
+      flex: 1;
+      overflow: auto;
+      border-right: 1px solid var(--border);
+      padding: 4px 0;
+    }
+
+    .detail-pane {
+      width: 320px;
+      min-width: 240px;
+      overflow: auto;
+      padding: 8px 12px;
+      background: var(--bg-secondary);
+    }
+
+    /* --- Toolbar --- */
+    .toolbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 4px 8px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-secondary);
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+
+    .toolbar button {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 2px 8px;
+      border-radius: 3px;
+      cursor: pointer;
+      font-family: var(--font-mono);
+      font-size: 11px;
+    }
+
+    .toolbar button:hover {
+      background: var(--bg-hover);
+      color: var(--text-bright);
+    }
+
+    .search-input {
+      flex: 1;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 3px 8px;
+      border-radius: 3px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      outline: none;
+    }
+
+    .search-input:focus {
+      border-color: var(--accent);
+    }
+
+    /* --- Tree nodes --- */
+    .tree-node {
+      padding: 1px 0;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .tree-node-content {
+      padding: 1px 8px;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      border-radius: 2px;
+    }
+
+    .tree-node-content:hover {
+      background: var(--bg-hover);
+    }
+
+    .tree-node.selected > .tree-node-content {
+      background: var(--bg-selected);
+    }
+
+    .toggle {
+      width: 12px;
+      text-align: center;
+      color: var(--text-muted);
+      user-select: none;
+      font-size: 10px;
+    }
+
+    .tag-component { color: var(--component); font-weight: 600; }
+    .tag-element { color: var(--element); }
+    .tag-text { color: var(--text-node); font-style: italic; }
+    .tag-fragment { color: var(--fragment); }
+    .tag-void { color: var(--text-muted); }
+
+    .node-key {
+      color: var(--key-color);
+      font-size: 10px;
+      opacity: 0.8;
+    }
+
+    .node-extra {
+      color: var(--text-muted);
+      font-size: 10px;
+    }
+
+    .tree-children {
+      padding-left: 16px;
+    }
+
+    .tree-children.collapsed {
+      display: none;
+    }
+
+    /* --- Flash on re-render --- */
+    @keyframes render-flash {
+      0% { background: var(--accent-dim); }
+      100% { background: transparent; }
+    }
+
+    .render-flash {
+      animation: render-flash 0.6s ease-out;
+    }
+
+    /* --- Detail pane --- */
+    .detail-section {
+      margin-bottom: 12px;
+    }
+
+    .detail-section h3 {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+      padding-bottom: 2px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .detail-row {
+      display: flex;
+      gap: 8px;
+      padding: 2px 0;
+      font-size: 11px;
+    }
+
+    .detail-key {
+      color: var(--prop-name);
+      min-width: 80px;
+    }
+
+    .detail-value {
+      color: var(--prop-value);
+      word-break: break-all;
+    }
+
+    .detail-value.fn { color: var(--component); font-style: italic; }
+    .detail-value.null { color: var(--text-muted); font-style: italic; }
+
+    .empty-state {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      color: var(--text-muted);
+      font-size: 13px;
+      text-align: center;
+      padding: 20px;
+    }
+
+    .empty-state .logo {
+      font-size: 24px;
+      font-weight: 700;
+      color: var(--accent);
+      margin-bottom: 8px;
+    }
+
+    /* --- Badge --- */
+    .badge {
+      display: inline-block;
+      padding: 0 4px;
+      border-radius: 3px;
+      font-size: 9px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+
+    .badge-hooks { background: rgba(97, 218, 251, 0.2); color: var(--accent); }
+    .badge-effects { background: rgba(198, 120, 221, 0.2); color: var(--fragment); }
+
+    /* --- Scrollbar --- */
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div class="empty-state" id="empty-state">
+      <div>
+        <div class="logo">Phasm</div>
+        <div>Waiting for Phasm to be detected on the page...</div>
+        <div style="margin-top: 8px; font-size: 11px;">
+          Make sure the page uses a dev build of Phasm.
+        </div>
+      </div>
+    </div>
+    <div class="container" id="main-container" style="display: none;">
+      <div style="display: flex; flex-direction: column; flex: 1; overflow: hidden;">
+        <div class="toolbar">
+          <button id="btn-refresh" title="Refresh tree">Refresh</button>
+          <input class="search-input" id="search" placeholder="Search components..." type="text">
+          <button id="btn-collapse" title="Collapse all">Collapse</button>
+        </div>
+        <div class="tree-pane" id="tree-pane"></div>
+      </div>
+      <div class="detail-pane" id="detail-pane">
+        <div class="empty-state" style="height: auto; padding: 40px 10px;">
+          Select a node to inspect its props, hooks, and effects.
+        </div>
+      </div>
+    </div>
+  </div>
+  <script src="panel.js"></script>
+</body>
+</html>

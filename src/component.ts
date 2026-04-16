@@ -1,0 +1,1366 @@
+/**
+ * Component lifecycle management.
+ *
+ * Functional components with hooks-like state (useState, useEffect).
+ * Uses a module-level "current component context" set during render
+ * for hook registration.
+ */
+
+import type { Context, ProviderFunction } from "./context"
+import { __DEV__, getComponentName, warn } from "./dev"
+import { patch as patchVNode } from "./diff"
+import {
+  type ErrorBoundaryFn,
+  isErrorBoundaryFn,
+  popErrorHandler,
+  propagateRenderError,
+  pushErrorHandler,
+} from "./error-boundary"
+import { ChildFlags, VNodeFlags } from "./flags"
+import { getMemoCompare } from "./memo"
+import { mountInternal } from "./mount"
+import { acquireVNode, releaseVNode } from "./pool"
+import { getPortalContainer } from "./portal"
+import type { RefObject } from "./ref"
+import { scheduleUpdate } from "./scheduler"
+import {
+  isSuspenseFn,
+  isThenable,
+  popSuspendHandler,
+  propagateSuspend,
+  pushSuspendHandler,
+} from "./suspense"
+import { unmount } from "./unmount"
+import type { ComponentFn } from "./vnode"
+import { VNode } from "./vnode"
+
+// --- Component instance ---
+
+/**
+ * Internal component instance — tracks hooks state between renders.
+ */
+export interface ComponentInstance {
+  /** The component function */
+  _type: ComponentFn
+  /** Current props */
+  _props: Record<string, unknown>
+  /** The VNode that represents this component in the tree */
+  _vnode: VNode
+  /** The currently rendered output VNode */
+  _rendered: VNode | null
+  /** The parent DOM element */
+  _parentDom: Element
+  /** Whether this instance is queued for re-render */
+  _queued: boolean
+  /** Hook state slots (useState values) */
+  _hooks: HookState[]
+  /** Effect entries */
+  _effects: EffectEntry[]
+  /** Whether this is the initial mount */
+  _mounted: boolean
+  /** Re-render function */
+  _rerender: () => void
+  /** Contexts used by this component (set by useContext) */
+  _contexts: ContextDep[] | null
+  /** Expected hook count (set on first render, checked on re-renders in dev) */
+  _hookCount: number
+}
+
+interface HookState {
+  value: unknown
+}
+
+interface ContextDep {
+  context: Context<unknown>
+  value: unknown
+}
+
+/** Return type of an effect callback: either nothing or a cleanup function. */
+export type EffectCleanup = (() => void) | undefined
+
+interface EffectEntry {
+  callback: () => EffectCleanup
+  deps: readonly unknown[] | null
+  cleanup: (() => void) | null
+  pendingRun: boolean
+}
+
+// --- Current component context (set during render) ---
+
+let currentInstance: ComponentInstance | null = null
+let hookIndex = 0
+let effectIndex = 0
+let stateIndex = 0
+
+/**
+ * Get or create a ComponentInstance for a component VNode.
+ */
+export function getComponentInstance(vnode: VNode): ComponentInstance | undefined {
+  return instanceMap.get(vnode)
+}
+
+const instanceMap = new WeakMap<VNode, ComponentInstance>()
+
+/**
+ * Mount a functional component — called by mount.ts.
+ * Creates a ComponentInstance and renders for the first time.
+ */
+export function mountComponent(vnode: VNode, parentDom: Element, isSvg: boolean): void {
+  const type = vnode.type as ComponentFn
+  const props = buildComponentProps(vnode)
+
+  const instance: ComponentInstance = {
+    _type: type,
+    _props: props,
+    _vnode: vnode,
+    _rendered: null,
+    _parentDom: parentDom,
+    _queued: false,
+    _hooks: [],
+    _effects: [],
+    _mounted: false,
+    _rerender: () => {
+      rerenderComponent(instance)
+    },
+    _contexts: null,
+    _hookCount: -1,
+  }
+
+  instanceMap.set(vnode, instance)
+
+  // Check if this is a Context Provider
+  const providerCtx = getProviderContext(type)
+  if (providerCtx !== null) providerCtx._stack.push(props["value"])
+
+  // Check if this is a Portal
+  const portalTarget = getPortalContainer(type)
+
+  // Render the component
+  const rendered = renderComponent(instance, props)
+  instance._rendered = rendered
+  vnode.children = rendered
+  vnode.parentDom = parentDom
+
+  // Error boundary: push handler after render (hooks exist) but before mounting children
+  const isEB = isErrorBoundaryFn(type)
+  let caughtError: unknown
+  if (isEB) {
+    pushErrorHandler((err: unknown) => {
+      caughtError = err
+    })
+  }
+
+  // Suspense boundary: push handler before mounting children
+  const isSuspense = isSuspenseFn(type)
+  let suspendedPromise: Promise<unknown> | undefined
+  if (isSuspense) {
+    pushSuspendHandler((promise: Promise<unknown>) => {
+      suspendedPromise = promise
+    })
+  }
+
+  const mountParent = portalTarget ?? parentDom
+  if (portalTarget !== undefined) {
+    // Portal: mount children into the portal container, leave a placeholder
+    mountInternal(rendered, portalTarget, isSvg)
+    const placeholder = document.createTextNode("")
+    parentDom.appendChild(placeholder)
+    vnode.dom = placeholder
+  } else {
+    mountInternal(rendered, parentDom, isSvg)
+    vnode.dom = rendered.dom
+  }
+
+  if (isSuspense) {
+    popSuspendHandler()
+    if (suspendedPromise !== undefined) {
+      // A descendant suspended -- show fallback and re-render when resolved.
+      // Set hook[0] (loading state) to true.
+      instance._hooks[0]!.value = true
+      const fallback = renderComponent(instance, props)
+      detachRenderedDOM(rendered, mountParent)
+      instance._rendered = fallback
+      vnode.children = fallback
+      mountInternal(fallback, mountParent, isSvg)
+      vnode.dom = portalTarget !== undefined ? vnode.dom : fallback.dom
+
+      // When the promise resolves, clear loading state and re-render
+      suspendedPromise.then(
+        () => {
+          instance._hooks[0]!.value = false
+          scheduleUpdate(instance)
+        },
+        () => {
+          // Rejection handled by the component via use() or ErrorBoundary
+        },
+      )
+    }
+  }
+
+  if (isEB) {
+    popErrorHandler()
+    if (caughtError !== undefined) {
+      // Error caught during child mount -- set error state and re-render synchronously.
+      // Use detachRenderedDOM (not unmount) to preserve VNode data for reset.
+      instance._hooks[0]!.value = caughtError
+      const fallback = renderComponent(instance, props)
+      detachRenderedDOM(rendered, mountParent)
+      instance._rendered = fallback
+      vnode.children = fallback
+      mountInternal(fallback, mountParent, isSvg)
+      vnode.dom = portalTarget !== undefined ? vnode.dom : fallback.dom
+    }
+  }
+
+  instance._mounted = true
+
+  // Run effects after mount
+  runEffects(instance)
+
+  if (providerCtx !== null) providerCtx._stack.pop()
+}
+
+/**
+ * Hydration-aware component mount. Creates the component instance and
+ * renders it, but instead of creating new DOM elements, returns the
+ * rendered VNode so the caller (hydrate.ts) can walk existing DOM.
+ *
+ * After the caller hydrates the rendered tree, it must call
+ * `finalizeHydratedComponent` to run effects and mark the instance
+ * as mounted.
+ */
+export function hydrateComponentInstance(
+  vnode: VNode,
+  parentDom: Element,
+): { rendered: VNode; instance: ComponentInstance } {
+  const type = vnode.type as ComponentFn
+  const props = buildComponentProps(vnode)
+
+  const instance: ComponentInstance = {
+    _type: type,
+    _props: props,
+    _vnode: vnode,
+    _rendered: null,
+    _parentDom: parentDom,
+    _queued: false,
+    _hooks: [],
+    _effects: [],
+    _mounted: false,
+    _rerender: () => {
+      rerenderComponent(instance)
+    },
+    _contexts: null,
+    _hookCount: -1,
+  }
+
+  instanceMap.set(vnode, instance)
+
+  // Check if this is a Context Provider
+  const providerCtx = getProviderContext(type)
+  if (providerCtx !== null) providerCtx._stack.push(props["value"])
+
+  const rendered = renderComponent(instance, props)
+  instance._rendered = rendered
+  vnode.children = rendered
+  vnode.parentDom = parentDom
+
+  if (providerCtx !== null) providerCtx._stack.pop()
+
+  return { rendered, instance }
+}
+
+/**
+ * Finalize a hydrated component: set the dom reference, mark as mounted,
+ * and run effects.
+ */
+export function finalizeHydratedComponent(
+  vnode: VNode,
+  instance: ComponentInstance,
+  rendered: VNode,
+): void {
+  vnode.dom = rendered.dom
+  instance._mounted = true
+  runEffects(instance)
+}
+
+/**
+ * Patch a functional component — called by diff.ts.
+ * Re-renders with new props and patches the output.
+ */
+export function patchComponent(oldVNode: VNode, newVNode: VNode, parentDom: Element): void {
+  const oldInstance = instanceMap.get(oldVNode)
+  if (oldInstance === undefined) {
+    // Fallback: mount fresh if no instance found
+    mountComponent(newVNode, parentDom, false)
+    return
+  }
+
+  const newProps = buildComponentProps(newVNode)
+
+  // shouldUpdate — prop equality (custom or shallow) + context check
+  const memoCompare = getMemoCompare(oldInstance._type)
+  const propsEqual =
+    memoCompare !== undefined
+      ? memoCompare(oldInstance._props, newProps)
+      : shallowEqual(oldInstance._props, newProps)
+  if (propsEqual && !oldInstance._queued && !contextValuesChanged(oldInstance)) {
+    // Props unchanged — skip re-render, carry forward references
+    newVNode.children = oldInstance._rendered
+    newVNode.dom = oldVNode.dom
+    newVNode.parentDom = parentDom
+    instanceMap.set(newVNode, oldInstance)
+    oldInstance._vnode = newVNode
+    return
+  }
+
+  oldInstance._props = newProps
+  oldInstance._vnode = newVNode
+  oldInstance._parentDom = parentDom
+  instanceMap.set(newVNode, oldInstance)
+
+  // Check if this is a Context Provider
+  const providerCtx = getProviderContext(newVNode.type as ComponentFn)
+  if (providerCtx !== null) providerCtx._stack.push(newProps["value"])
+
+  const oldRendered = oldInstance._rendered!
+  const newRendered = renderComponent(oldInstance, newProps)
+  oldInstance._rendered = newRendered
+
+  newVNode.children = newRendered
+  newVNode.parentDom = parentDom
+
+  // Check if this is a Portal
+  const portalTarget = getPortalContainer(newVNode.type as ComponentFn)
+  const patchParent = portalTarget ?? parentDom
+
+  // Error boundary: push handler before patching children
+  const isEB = isErrorBoundaryFn(newVNode.type as ComponentFn)
+  let caughtError: unknown
+  if (isEB) {
+    pushErrorHandler((err: unknown) => {
+      caughtError = err
+    })
+  }
+
+  // Suspense boundary: push handler before patching children
+  const isSuspense = isSuspenseFn(newVNode.type as ComponentFn)
+  let suspendedPromise: Promise<unknown> | undefined
+  if (isSuspense) {
+    pushSuspendHandler((promise: Promise<unknown>) => {
+      suspendedPromise = promise
+    })
+  }
+
+  patchVNode(oldRendered, newRendered, patchParent)
+  newVNode.dom = portalTarget !== undefined ? oldVNode.dom : newRendered.dom
+
+  if (isSuspense) {
+    popSuspendHandler()
+    if (suspendedPromise !== undefined) {
+      oldInstance._hooks[0]!.value = true
+      const fallback = renderComponent(oldInstance, newProps)
+      detachRenderedDOM(newRendered, patchParent)
+      oldInstance._rendered = fallback
+      newVNode.children = fallback
+      mountInternal(fallback, patchParent, false)
+      newVNode.dom = portalTarget !== undefined ? oldVNode.dom : fallback.dom
+
+      suspendedPromise.then(
+        () => {
+          oldInstance._hooks[0]!.value = false
+          scheduleUpdate(oldInstance)
+        },
+        () => {
+          // Rejection handled by the component via use() or ErrorBoundary
+        },
+      )
+    }
+  }
+
+  if (isEB) {
+    popErrorHandler()
+    if (caughtError !== undefined) {
+      // Error caught during child patch -- set error state and re-render synchronously.
+      // Use detachRenderedDOM (not unmount) to preserve VNode data for reset.
+      oldInstance._hooks[0]!.value = caughtError
+      const fallback = renderComponent(oldInstance, newProps)
+      detachRenderedDOM(newRendered, patchParent)
+      oldInstance._rendered = fallback
+      newVNode.children = fallback
+      mountInternal(fallback, patchParent, false)
+      newVNode.dom = portalTarget !== undefined ? oldVNode.dom : fallback.dom
+    }
+  }
+
+  // Run effects after patch
+  runEffects(oldInstance)
+
+  if (providerCtx !== null) providerCtx._stack.pop()
+}
+
+/**
+ * Unmount a component — called by unmount.ts.
+ * Runs effect cleanups and removes the instance.
+ */
+export function unmountComponent(vnode: VNode, parentDom: Element): void {
+  const instance = instanceMap.get(vnode)
+  if (instance !== undefined) {
+    // Run all effect cleanups
+    for (let i = 0; i < instance._effects.length; i++) {
+      const effect = instance._effects[i]!
+      if (effect.cleanup !== null) {
+        effect.cleanup()
+      }
+    }
+    instanceMap.delete(vnode)
+  }
+
+  // Check if this is a Portal
+  const portalTarget = getPortalContainer(vnode.type as ComponentFn)
+
+  const rendered = vnode.children as VNode | null
+  if (rendered !== null) {
+    unmount(rendered, portalTarget ?? parentDom)
+  }
+
+  // Portal: remove the placeholder from the original tree
+  if (portalTarget !== undefined && vnode.dom !== null) {
+    parentDom.removeChild(vnode.dom)
+  }
+
+  releaseVNode(vnode)
+}
+
+// --- Hooks ---
+
+/**
+ * Hook: declare a state variable in a functional component.
+ *
+ * @param initial - The initial state value
+ * @returns A tuple of [currentValue, setter]
+ */
+export function useState<T>(initial: T): readonly [T, (newVal: T | ((prev: T) => T)) => void] {
+  const instance = currentInstance
+  if (instance === null) {
+    throw new Error(
+      "useState must be called inside a component render. " +
+        "Make sure you are not calling hooks outside of a component function.",
+    )
+  }
+
+  hookIndex++
+  const idx = stateIndex++
+
+  // Initialize on first render (call lazy initializer if it's a function)
+  if (idx >= instance._hooks.length) {
+    const initialValue = typeof initial === "function" ? (initial as () => T)() : initial
+    instance._hooks.push({ value: initialValue })
+  }
+
+  const hook = instance._hooks[idx]!
+  const value = hook.value as T
+
+  const setter = (newVal: T | ((prev: T) => T)): void => {
+    const current = instance._hooks[idx]!.value as T
+    const nextVal = typeof newVal === "function" ? (newVal as (prev: T) => T)(current) : newVal
+
+    if (nextVal !== current) {
+      instance._hooks[idx]!.value = nextVal
+      scheduleUpdate(instance)
+    }
+  }
+
+  return [value, setter]
+}
+
+/**
+ * Hook: declare a state variable with a reducer function.
+ *
+ * @param reducer - A pure function (state, action) => newState
+ * @param initialState - The initial state value
+ * @returns A tuple of [currentState, dispatch]
+ */
+export function useReducer<S, A>(
+  reducer: (state: S, action: A) => S,
+  initialState: S,
+): readonly [S, (action: A) => void] {
+  const instance = currentInstance
+  if (instance === null) {
+    throw new Error(
+      "useReducer must be called inside a component render. " +
+        "Make sure you are not calling hooks outside of a component function.",
+    )
+  }
+
+  hookIndex++
+  const idx = stateIndex++
+
+  if (idx >= instance._hooks.length) {
+    instance._hooks.push({ value: initialState })
+  }
+
+  const hook = instance._hooks[idx]!
+  const value = hook.value as S
+
+  const dispatch = (action: A): void => {
+    const current = instance._hooks[idx]!.value as S
+    const nextVal = reducer(current, action)
+
+    if (nextVal !== current) {
+      instance._hooks[idx]!.value = nextVal
+      scheduleUpdate(instance)
+    }
+  }
+
+  return [value, dispatch]
+}
+
+/**
+ * Hook: register a side effect.
+ *
+ * @param callback - The effect function (may return a cleanup function)
+ * @param deps - Dependency array (undefined = run every render, [] = run once)
+ */
+export function useEffect(callback: () => EffectCleanup, deps?: readonly unknown[]): void {
+  const instance = currentInstance
+  if (instance === null) {
+    throw new Error(
+      "useEffect must be called inside a component render. " +
+        "Make sure you are not calling hooks outside of a component function.",
+    )
+  }
+
+  hookIndex++
+  const effectIdx = effectIndex++
+
+  const resolvedDeps = deps !== undefined ? deps : null
+
+  if (effectIdx >= instance._effects.length) {
+    // First render -- create effect entry, schedule to run
+    instance._effects.push({
+      callback,
+      deps: resolvedDeps,
+      cleanup: null,
+      pendingRun: true,
+    })
+  } else {
+    const effect = instance._effects[effectIdx]!
+    // Check if deps changed
+    if (resolvedDeps !== null && effect.deps !== null && depsEqual(resolvedDeps, effect.deps)) {
+      // Deps unchanged -- skip
+      effect.pendingRun = false
+    } else {
+      // Deps changed -- schedule re-run
+      effect.callback = callback
+      effect.deps = resolvedDeps
+      effect.pendingRun = true
+    }
+  }
+}
+
+/**
+ * Hook: register a synchronous side effect that runs before browser paint.
+ *
+ * In Phasm, all effects run synchronously after render (unlike React where
+ * useEffect is deferred). This makes useLayoutEffect identical to useEffect
+ * in behavior, but the separate API is provided for React compatibility.
+ *
+ * @param callback - The effect function (may return a cleanup function)
+ * @param deps - Dependency array (undefined = run every render, [] = run once)
+ */
+export const useLayoutEffect: (callback: () => EffectCleanup, deps?: readonly unknown[]) => void =
+  useEffect
+
+/**
+ * Hook: memoize a computed value, recomputing only when deps change.
+ *
+ * @param factory - Function that computes the value
+ * @param deps - Dependency array
+ * @returns The memoized value
+ */
+export function useMemo<T>(factory: () => T, deps: readonly unknown[]): T {
+  const instance = currentInstance
+  if (instance === null) {
+    throw new Error(
+      "useMemo must be called inside a component render. " +
+        "Make sure you are not calling hooks outside of a component function.",
+    )
+  }
+
+  hookIndex++
+  const idx = stateIndex++
+
+  if (idx >= instance._hooks.length) {
+    // First render — compute and store
+    const value = factory()
+    instance._hooks.push({ value: [value, deps] })
+    return value
+  }
+
+  const hook = instance._hooks[idx]!
+  const [prevValue, prevDeps] = hook.value as [T, unknown[]]
+
+  if (depsEqual(deps, prevDeps)) {
+    return prevValue
+  }
+
+  // Deps changed — recompute
+  const value = factory()
+  hook.value = [value, deps]
+  return value
+}
+
+/**
+ * Hook: memoize a callback function, returning the same reference when deps are unchanged.
+ *
+ * @param callback - The callback function to memoize
+ * @param deps - Dependency array
+ * @returns The memoized callback
+ */
+export function useCallback<T extends (...args: never[]) => unknown>(
+  callback: T,
+  deps: readonly unknown[],
+): T {
+  return useMemo(() => callback, deps)
+}
+
+/**
+ * Hook: create a mutable ref object that persists across renders.
+ *
+ * @param initial - The initial value for ref.current
+ * @returns A stable { current } object
+ */
+export function useRef<T>(initial: T): RefObject<T> {
+  const instance = currentInstance
+  if (instance === null) {
+    throw new Error(
+      "useRef must be called inside a component render. " +
+        "Make sure you are not calling hooks outside of a component function.",
+    )
+  }
+
+  hookIndex++
+  const idx = stateIndex++
+
+  if (idx >= instance._hooks.length) {
+    const ref = { current: initial }
+    instance._hooks.push({ value: ref })
+    return ref
+  }
+
+  return instance._hooks[idx]!.value as { current: T }
+}
+
+/**
+ * Hook: subscribe to an external store and return its current snapshot.
+ *
+ * Follows the React useSyncExternalStore API. The subscribe function
+ * receives a callback that should be called whenever the store changes.
+ * It must return an unsubscribe function. getSnapshot returns the
+ * current store value -- it must be referentially stable when the
+ * underlying data has not changed (return the same reference).
+ *
+ * @param subscribe - Function to subscribe to the store: (onStoreChange) => unsubscribe
+ * @param getSnapshot - Function that returns the current store value
+ * @returns The current snapshot value
+ */
+export function useSyncExternalStore<T>(
+  subscribe: (onStoreChange: () => void) => () => void,
+  getSnapshot: () => T,
+): T {
+  const instance = currentInstance
+  if (instance === null) {
+    throw new Error(
+      "useSyncExternalStore must be called inside a component render. " +
+        "Make sure you are not calling hooks outside of a component function.",
+    )
+  }
+
+  hookIndex++
+  const idx = stateIndex++
+
+  // Initialize snapshot on first render
+  if (idx >= instance._hooks.length) {
+    instance._hooks.push({ value: getSnapshot() })
+  }
+
+  const hook = instance._hooks[idx]!
+  const snapshot = hook.value as T
+
+  // Use an effect to subscribe/unsubscribe. The effect cleanup handles
+  // unsubscription. On each subscribe call, we immediately sync the
+  // snapshot in case it changed between render and effect.
+  useEffect(() => {
+    const unsubscribe = subscribe(() => {
+      const next = getSnapshot()
+      if (next !== instance._hooks[idx]!.value) {
+        instance._hooks[idx]!.value = next
+        scheduleUpdate(instance)
+      }
+    })
+    // Sync immediately in case store changed between render and subscribe
+    const current = getSnapshot()
+    if (current !== instance._hooks[idx]!.value) {
+      instance._hooks[idx]!.value = current
+      scheduleUpdate(instance)
+    }
+    return unsubscribe
+  }, [subscribe, getSnapshot])
+
+  return snapshot
+}
+
+// --- useId ---
+
+/**
+ * Global counter for generating unique IDs. Increments monotonically.
+ * Reset via resetIdCounter() at the start of SSR or hydration to keep
+ * server and client IDs in sync.
+ */
+let idCounter = 0
+
+/**
+ * Reset the useId counter. Called at the start of renderToString() and
+ * hydrate() so that server-generated IDs match client-generated IDs.
+ */
+export function resetIdCounter(): void {
+  idCounter = 0
+}
+
+/**
+ * Hook: generate a unique ID that is stable across server and client.
+ *
+ * Returns a string like ":b0:", ":b1:", etc. The prefix "b" (for brevity)
+ * avoids collision with user-defined IDs. The colons ensure no numeric
+ * prefix that could conflict with CSS selectors.
+ *
+ * @returns A unique, stable ID string
+ */
+export function useId(): string {
+  const instance = currentInstance
+  if (instance === null) {
+    throw new Error(
+      "useId must be called inside a component render. " +
+        "Make sure you are not calling hooks outside of a component function.",
+    )
+  }
+
+  hookIndex++
+  const idx = stateIndex++
+
+  if (idx >= instance._hooks.length) {
+    instance._hooks.push({ value: `:b${idCounter++}:` })
+  }
+
+  return instance._hooks[idx]!.value as string
+}
+
+// --- useImperativeHandle ---
+
+/**
+ * Hook: customize the instance value that is exposed to parent components
+ * when using forwardRef. Instead of exposing the DOM node directly,
+ * useImperativeHandle lets you expose a custom object.
+ *
+ * @param ref - The ref object or callback forwarded from the parent
+ * @param createHandle - Factory function returning the value to expose
+ * @param deps - Dependency array (recomputes handle when deps change)
+ */
+export function useImperativeHandle<T>(
+  ref: RefObject<T> | ((instance: T) => void) | null | undefined,
+  createHandle: () => T,
+  deps?: readonly unknown[],
+): void {
+  const instance = currentInstance
+  if (instance === null) {
+    throw new Error(
+      "useImperativeHandle must be called inside a component render. " +
+        "Make sure you are not calling hooks outside of a component function.",
+    )
+  }
+
+  const effectDeps = deps !== undefined ? [ref, ...deps] : [ref]
+
+  useLayoutEffect(() => {
+    if (ref === null || ref === undefined) return
+
+    const handle = createHandle()
+
+    if (typeof ref === "function") {
+      ref(handle)
+      return () => ref(null as unknown as T)
+    }
+    ;(ref as RefObject<T>).current = handle
+    return () => {
+      ;(ref as RefObject<T>).current = null as unknown as T
+    }
+  }, effectDeps)
+}
+
+// --- useDebugValue ---
+
+/**
+ * Hook: display a label for custom hooks in dev tools.
+ *
+ * This is a no-op in Phasm. It exists purely for React API compatibility
+ * so that custom hooks can call useDebugValue without errors.
+ *
+ * @param _value - The debug value to display (ignored)
+ * @param _format - Optional formatter function (ignored)
+ */
+export function useDebugValue<T>(_value: T, _format?: (value: T) => unknown): void {
+  // Intentional no-op. Dev tools integration may use this in the future.
+}
+
+// --- use() ---
+
+/**
+ * Tagged Promise interface. The use() hook attaches status/value/reason
+ * properties directly to Promise objects so that already-resolved Promises
+ * can be read synchronously without waiting for microtask callbacks.
+ */
+interface UsablePromise<T> extends Promise<T> {
+  status?: "pending" | "fulfilled" | "rejected"
+  value?: T
+  reason?: unknown
+}
+
+function trackPromise<T>(promise: UsablePromise<T>): void {
+  if (promise.status !== undefined) return // Already tracked
+
+  promise.status = "pending"
+  promise.then(
+    (value) => {
+      promise.status = "fulfilled"
+      promise.value = value
+    },
+    (error) => {
+      promise.status = "rejected"
+      promise.reason = error
+    },
+  )
+}
+
+/**
+ * Check if a value is a Context object.
+ */
+function isContext(value: unknown): value is Context<unknown> {
+  return (
+    value !== null &&
+    typeof value === "object" &&
+    "_defaultValue" in (value as Record<string, unknown>) &&
+    "_stack" in (value as Record<string, unknown>)
+  )
+}
+
+/**
+ * React 19's use() hook for reading Promises and Context.
+ *
+ * Unlike other hooks, use() can be called inside conditionals and loops.
+ * It does not consume a hook slot.
+ *
+ * When called with a Promise:
+ * - If resolved, returns the resolved value
+ * - If pending, throws the Promise (triggers Suspense boundary)
+ * - If rejected, throws the rejection error
+ *
+ * When called with a Context:
+ * - Returns the current context value (same as useContext)
+ *
+ * @param usable - A Promise or Context to read from
+ * @returns The resolved value or context value
+ */
+export function use<T>(usable: Promise<T> | Context<T>): T {
+  if (isContext(usable)) {
+    const ctx = usable as Context<T>
+    const value = ctx._stack.length > 0 ? ctx._stack[ctx._stack.length - 1]! : ctx._defaultValue
+    registerContextDep(ctx as Context<unknown>, value)
+    return value
+  }
+
+  // Treat as a Promise/thenable
+  const promise = usable as UsablePromise<T>
+  trackPromise(promise)
+
+  if (promise.status === "fulfilled") {
+    return promise.value as T
+  }
+
+  if (promise.status === "rejected") {
+    throw promise.reason
+  }
+
+  // Pending: throw the Promise to trigger Suspense
+  throw promise
+}
+
+// --- startTransition / useTransition ---
+
+/**
+ * Mark state updates inside the callback as a "transition" -- a non-urgent
+ * update that can be interrupted by higher-priority work.
+ *
+ * In Phasm, all updates are synchronous, so startTransition simply
+ * executes the callback immediately. The API exists for React compatibility
+ * and future concurrent rendering support.
+ *
+ * @param callback - Function containing state updates to mark as transitions
+ */
+export function startTransition(callback: () => void): void {
+  callback()
+}
+
+/**
+ * Hook: returns a [isPending, startTransition] tuple for managing transitions.
+ *
+ * `isPending` indicates whether a transition is currently in-flight.
+ * In Phasm's synchronous rendering model, transitions complete immediately,
+ * so `isPending` is always `false`. The API exists for React compatibility.
+ *
+ * @returns A tuple of [isPending, startTransition]
+ */
+export function useTransition(): readonly [boolean, (callback: () => void) => void] {
+  const instance = currentInstance
+  if (instance === null) {
+    throw new Error(
+      "useTransition must be called inside a component render. " +
+        "Make sure you are not calling hooks outside of a component function.",
+    )
+  }
+
+  return [false, startTransition]
+}
+
+// --- useDeferredValue ---
+
+/**
+ * Hook: defer a value to allow more urgent updates to render first.
+ *
+ * In Phasm's synchronous rendering model, deferred values update
+ * immediately (equivalent to returning the value as-is). The API exists
+ * for React compatibility and future concurrent rendering support.
+ *
+ * @param value - The value to defer
+ * @returns The same value (in a concurrent renderer, this would lag behind)
+ */
+export function useDeferredValue<T>(value: T): T {
+  const instance = currentInstance
+  if (instance === null) {
+    throw new Error(
+      "useDeferredValue must be called inside a component render. " +
+        "Make sure you are not calling hooks outside of a component function.",
+    )
+  }
+
+  return value
+}
+
+/**
+ * Register a context dependency on the currently rendering component.
+ * Called by useContext to enable context-aware shouldUpdate checks.
+ */
+export function registerContextDep(context: Context<unknown>, value: unknown): void {
+  if (currentInstance === null) return
+
+  if (currentInstance._contexts === null) {
+    currentInstance._contexts = []
+  }
+
+  // Check if already registered (avoid duplicates across re-renders)
+  for (let i = 0; i < currentInstance._contexts.length; i++) {
+    if (currentInstance._contexts[i]!.context === context) {
+      currentInstance._contexts[i]!.value = value
+      return
+    }
+  }
+
+  currentInstance._contexts.push({ context, value })
+}
+
+// --- Server-side rendering support ---
+
+/**
+ * Render a component function for SSR. Sets up the hook context so that
+ * hooks (useState, useMemo, useRef, etc.) work during server rendering.
+ * Effects are created but never executed. The returned VNode is not
+ * mounted into any DOM.
+ *
+ * @param type - The component function
+ * @param props - Props to pass to the component
+ * @returns The rendered VNode tree
+ */
+export function renderComponentSSR(type: ComponentFn, props: Record<string, unknown>): VNode {
+  const instance: ComponentInstance = {
+    _type: type,
+    _props: props,
+    _vnode: null!,
+    _rendered: null,
+    _parentDom: null!,
+    _queued: false,
+    _hooks: [],
+    _effects: [],
+    _mounted: false,
+    _rerender: () => {},
+    _contexts: null,
+    _hookCount: -1,
+  }
+
+  currentInstance = instance
+  hookIndex = 0
+  effectIndex = 0
+  stateIndex = 0
+
+  try {
+    const rendered = type(props)
+    currentInstance = null
+    return rendered
+  } catch (err) {
+    currentInstance = null
+    throw err
+  }
+}
+
+/**
+ * Build props from a VNode for component rendering (exposed for SSR).
+ */
+export function buildProps(vnode: VNode): Record<string, unknown> {
+  return buildComponentProps(vnode)
+}
+
+// --- Internal helpers ---
+
+function contextValuesChanged(instance: ComponentInstance): boolean {
+  if (instance._contexts === null) return false
+  for (let i = 0; i < instance._contexts.length; i++) {
+    const dep = instance._contexts[i]!
+    const ctx = dep.context
+    const currentValue =
+      ctx._stack.length > 0 ? ctx._stack[ctx._stack.length - 1] : ctx._defaultValue
+    if (currentValue !== dep.value) return true
+  }
+  return false
+}
+
+function getProviderContext(type: ComponentFn): Context<unknown> | null {
+  return "_context" in type ? (type as ProviderFunction<unknown>)._context : null
+}
+
+function renderComponent(instance: ComponentInstance, props: Record<string, unknown>): VNode {
+  currentInstance = instance
+  hookIndex = 0
+  effectIndex = 0
+  stateIndex = 0
+
+  try {
+    const rendered = instance._type(props)
+
+    if (__DEV__) {
+      if (instance._hookCount === -1) {
+        // First render: record hook count
+        instance._hookCount = hookIndex
+      } else if (hookIndex !== instance._hookCount) {
+        warn(
+          `Component "${getComponentName(instance._type)}" rendered with a different number of hooks than the previous render (${hookIndex} vs ${instance._hookCount}). Hooks must be called in the same order on every render. Do not call hooks inside conditions, loops, or nested functions.`,
+        )
+      }
+    }
+
+    currentInstance = null
+    return rendered
+  } catch (err) {
+    // Always clear the current instance to avoid corrupting state
+    currentInstance = null
+
+    // Thrown thenables (Promises) are suspend signals from lazy() components.
+    // Propagate to the nearest Suspense boundary.
+    if (isThenable(err)) {
+      if (propagateSuspend(err)) {
+        return new VNode(VNodeFlags.Text, null, null, null, "", ChildFlags.NoChildren, null)
+      }
+      // No Suspense boundary -- throw so the developer sees the error
+      throw err
+    }
+
+    // Propagate to the nearest error boundary (if any)
+    if (propagateRenderError(err)) {
+      return new VNode(VNodeFlags.Text, null, null, null, "", ChildFlags.NoChildren, null)
+    }
+
+    // Call onError prop if provided
+    if (props["onError"] !== undefined) {
+      ;(props["onError"] as (err: unknown) => void)(err)
+    }
+
+    // Return an empty placeholder so the tree remains consistent
+    return new VNode(VNodeFlags.Text, null, null, null, "", ChildFlags.NoChildren, null)
+  }
+}
+
+function rerenderComponent(instance: ComponentInstance): void {
+  if (!instance._mounted) return
+
+  const oldRendered = instance._rendered
+  if (oldRendered === null) return
+
+  const providerCtx = getProviderContext(instance._type)
+  if (providerCtx !== null) providerCtx._stack.push(instance._props["value"])
+
+  const portalTarget = getPortalContainer(instance._type)
+
+  const newRendered = renderComponent(instance, instance._props)
+  instance._rendered = newRendered
+  instance._vnode.children = newRendered
+
+  const patchParent = portalTarget ?? instance._parentDom
+
+  // Error boundary: push handler before patching children
+  const isEB = isErrorBoundaryFn(instance._type)
+  let caughtError: unknown
+  if (isEB) {
+    pushErrorHandler((err: unknown) => {
+      caughtError = err
+    })
+  }
+
+  // Suspense boundary: push handler before patching children
+  const isSuspense = isSuspenseFn(instance._type)
+  let suspendedPromise: Promise<unknown> | undefined
+  if (isSuspense) {
+    pushSuspendHandler((promise: Promise<unknown>) => {
+      suspendedPromise = promise
+    })
+  }
+
+  patchVNode(oldRendered, newRendered, patchParent)
+  if (portalTarget === undefined) {
+    instance._vnode.dom = newRendered.dom
+  }
+
+  if (isSuspense) {
+    popSuspendHandler()
+    if (suspendedPromise !== undefined) {
+      instance._hooks[0]!.value = true
+      const fallback = renderComponent(instance, instance._props)
+      detachRenderedDOM(newRendered, patchParent)
+      instance._rendered = fallback
+      instance._vnode.children = fallback
+      mountInternal(fallback, patchParent, false)
+      if (portalTarget === undefined) {
+        instance._vnode.dom = fallback.dom
+      }
+
+      suspendedPromise.then(
+        () => {
+          instance._hooks[0]!.value = false
+          scheduleUpdate(instance)
+        },
+        () => {
+          // Rejection handled by the component via use() or ErrorBoundary
+        },
+      )
+    }
+  }
+
+  if (isEB) {
+    popErrorHandler()
+    if (caughtError !== undefined) {
+      instance._hooks[0]!.value = caughtError
+      const fallback = renderComponent(instance, instance._props)
+      detachRenderedDOM(newRendered, patchParent)
+      instance._rendered = fallback
+      instance._vnode.children = fallback
+      mountInternal(fallback, patchParent, false)
+      if (portalTarget === undefined) {
+        instance._vnode.dom = fallback.dom
+      }
+    }
+  }
+
+  runEffects(instance)
+
+  if (providerCtx !== null) providerCtx._stack.pop()
+}
+
+/**
+ * Remove the DOM nodes of a rendered VNode from the parent without releasing
+ * VNode data to the pool. Used during error recovery so that the original
+ * children VNode can be re-mounted on error reset.
+ */
+function detachRenderedDOM(vnode: VNode, parentDom: Element): void {
+  if ((vnode.flags & VNodeFlags.Fragment) !== 0) {
+    const cf = vnode.childFlags
+    if (cf === ChildFlags.HasSingleChild) {
+      detachRenderedDOM(vnode.children as VNode, parentDom)
+    } else if (cf === ChildFlags.HasKeyedChildren || cf === ChildFlags.HasNonKeyedChildren) {
+      const children = vnode.children as VNode[]
+      for (let i = 0; i < children.length; i++) {
+        detachRenderedDOM(children[i]!, parentDom)
+      }
+    } else if (vnode.dom !== null && vnode.dom.parentNode === parentDom) {
+      parentDom.removeChild(vnode.dom)
+    }
+  } else if (vnode.dom !== null && vnode.dom.parentNode === parentDom) {
+    parentDom.removeChild(vnode.dom)
+  }
+}
+
+function runEffects(instance: ComponentInstance): void {
+  for (let i = 0; i < instance._effects.length; i++) {
+    const effect = instance._effects[i]!
+    if (effect.pendingRun) {
+      effect.pendingRun = false
+      // Run cleanup from previous effect
+      if (effect.cleanup !== null) {
+        effect.cleanup()
+      }
+      const result = effect.callback()
+      effect.cleanup = typeof result === "function" ? result : null
+    }
+  }
+}
+
+function buildComponentProps(vnode: VNode): Record<string, unknown> {
+  const props = vnode.props !== null ? { ...vnode.props } : {}
+  const children = vnode.children
+  if (children !== null) {
+    if (Array.isArray(children)) {
+      // Wrap array children in a Fragment so components that return
+      // props.children always return a single VNode
+      props["children"] = acquireVNode(
+        VNodeFlags.Fragment,
+        null,
+        null,
+        null,
+        children,
+        vnode.childFlags,
+        null,
+      )
+    } else {
+      props["children"] = children
+    }
+  }
+  return props
+}
+
+function shallowEqual(a: Record<string, unknown>, b: Record<string, unknown>): boolean {
+  const keysA = Object.keys(a)
+  const keysB = Object.keys(b)
+
+  if (keysA.length !== keysB.length) return false
+
+  for (let i = 0; i < keysA.length; i++) {
+    const key = keysA[i]!
+    if (a[key] !== b[key]) return false
+  }
+
+  return true
+}
+
+function depsEqual(a: readonly unknown[], b: readonly unknown[]): boolean {
+  if (a.length !== b.length) return false
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false
+  }
+  return true
+}
+
+// --- ErrorBoundary component ---
+
+/**
+ * Error boundary component.
+ *
+ * Catches errors thrown during rendering of its descendants and displays
+ * fallback UI. The `fallback` prop receives the caught error and a `reset`
+ * function that clears the error state and re-renders the children.
+ *
+ * Usage:
+ *   h(ErrorBoundary, {
+ *     fallback: (error, reset) => h("div", null, "Something went wrong")
+ *   }, h(RiskyComponent, null))
+ *
+ * Convention: the first hook slot (useState) holds the error value.
+ * mountComponent/patchComponent/rerenderComponent detect the _errorBoundary
+ * tag and push/pop error handlers around child mounting.
+ */
+export function ErrorBoundary(props: Record<string, unknown>): VNode {
+  const [error, setError] = useState<unknown>(null)
+
+  if (error !== null) {
+    const fallback = props["fallback"] as ((error: unknown, reset: () => void) => VNode) | undefined
+    if (typeof fallback === "function") {
+      return fallback(error, () => setError(null))
+    }
+    return new VNode(VNodeFlags.Text, null, null, null, "", ChildFlags.NoChildren, null)
+  }
+
+  const children = props["children"]
+  if (children == null) {
+    return new VNode(VNodeFlags.Text, null, null, null, "", ChildFlags.NoChildren, null)
+  }
+  // Multiple children: wrap in a fragment
+  if (Array.isArray(children)) {
+    return new VNode(
+      VNodeFlags.Fragment,
+      null,
+      null,
+      null,
+      children as VNode[],
+      ChildFlags.HasNonKeyedChildren,
+      null,
+    )
+  }
+  return children as VNode
+}
+;(ErrorBoundary as unknown as ErrorBoundaryFn)._errorBoundary = true
+
+// --- Suspense component ---
+
+/**
+ * Suspense boundary component.
+ *
+ * Shows a fallback while any descendant lazy component is loading.
+ * The `fallback` prop is a VNode to display during loading.
+ *
+ * Usage:
+ *   h(Suspense, { fallback: h("div", null, "Loading...") },
+ *     h(LazyComponent, null))
+ *
+ * Convention: the first hook slot (useState) holds the loading state (boolean).
+ * mountComponent/patchComponent/rerenderComponent detect the _suspense tag
+ * and push/pop suspend handlers around child mounting. When a lazy component
+ * throws a Promise, the handler captures it, sets loading=true, renders
+ * fallback, and schedules a re-render when the Promise resolves.
+ */
+interface SuspenseFn extends ComponentFn {
+  _suspense: true
+}
+
+export function Suspense(props: Record<string, unknown>): VNode {
+  const [loading] = useState(false)
+
+  if (loading) {
+    const fallback = props["fallback"] as VNode | undefined
+    if (fallback != null) {
+      return fallback
+    }
+    return new VNode(VNodeFlags.Text, null, null, null, "", ChildFlags.NoChildren, null)
+  }
+
+  const children = props["children"]
+  if (children == null) {
+    return new VNode(VNodeFlags.Text, null, null, null, "", ChildFlags.NoChildren, null)
+  }
+  if (Array.isArray(children)) {
+    return new VNode(
+      VNodeFlags.Fragment,
+      null,
+      null,
+      null,
+      children as VNode[],
+      ChildFlags.HasNonKeyedChildren,
+      null,
+    )
+  }
+  return children as VNode
+}
+;(Suspense as unknown as SuspenseFn)._suspense = true

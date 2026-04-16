@@ -1,0 +1,10 @@
+import { defineConfig } from "@playwright/test"
+
+export default defineConfig({
+  testDir: "./benchmarks/browser",
+  timeout: 600_000,
+  use: {
+    browserName: "chromium",
+    headless: true,
+  },
+})
