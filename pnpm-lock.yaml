@@ -57,6 +57,39 @@ importers:
         specifier: ^3.2.4
         version: 3.2.4(jsdom@26.1.0)(terser@5.46.1)
 
+  packages/phasm-aeon:
+    devDependencies:
+      '@rollup/plugin-node-resolve':
+        specifier: ^16.0.0
+        version: 16.0.3(rollup@4.60.1)
+      aeon-core:
+        specifier: latest
+        version: 0.3.1(aeon-types@0.2.0)
+      aeon-scheduler:
+        specifier: latest
+        version: 0.3.0
+      aeon-types:
+        specifier: latest
+        version: 0.2.0
+      jsdom:
+        specifier: ^26.0.0
+        version: 26.1.0
+      phasm:
+        specifier: workspace:*
+        version: link:../..
+      rollup:
+        specifier: ^4.28.0
+        version: 4.60.1
+      rollup-plugin-swc3:
+        specifier: ^0.12.1
+        version: 0.12.1(@swc/core@1.15.26)(rollup@4.60.1)
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.4(jsdom@26.1.0)(terser@5.46.1)
+
 packages:
 
   '@algolia/abtesting@1.16.2':
@@ -1051,6 +1084,17 @@ packages:
     resolution: {integrity: sha512-UVJyE9MttOsBQIDKw1skb9nAwQuR5wuGD3+82K6JgJlm/Y+KI92oNsMNGZCYdDsVtRHSak0pcV5Dno5+4jh9sw==}
     engines: {node: '>=0.4.0'}
     hasBin: true
+
+  aeon-core@0.3.1:
+    resolution: {integrity: sha512-w4KL+9bgjpo88s6V1M5MtEOXbnUwEe0icZu2PuZ1CwqiXkaF0XM90ZQE/UyZMpQQvdg8y6/Q5Np5FArCg+hZWw==}
+    peerDependencies:
+      aeon-types: workspace:^
+
+  aeon-scheduler@0.3.0:
+    resolution: {integrity: sha512-UjXhCwl4eDLjRlxeaHPwKPJwyyqOmCOwwwmZfxWDEb5I6Rz2aut3UHu6PdbgU8HZgntpq0aHPyzwKo5ByZoc8A==}
+
+  aeon-types@0.2.0:
+    resolution: {integrity: sha512-0fFyBd8uErYR56/GJoyKneEErO4KWVYs5boUl9sUizZ7Y4h+TLviCAr7MlmuFRwJJnGAIWMaFjXER2VSRWooPA==}
 
   agent-base@7.1.4:
     resolution: {integrity: sha512-MnA+YT8fwfJPgBx3m60MNqakm30XOkyIoH1y6huTQvC0PwZG7ki8NacLBcrPbNoo8vEZy7Jpuk7+jMO+CUovTQ==}
@@ -2736,6 +2780,16 @@ snapshots:
       - typescript
 
   acorn@8.16.0: {}
+
+  aeon-core@0.3.1(aeon-types@0.2.0):
+    dependencies:
+      aeon-types: 0.2.0
+
+  aeon-scheduler@0.3.0:
+    dependencies:
+      aeon-types: 0.2.0
+
+  aeon-types@0.2.0: {}
 
   agent-base@7.1.4: {}
 

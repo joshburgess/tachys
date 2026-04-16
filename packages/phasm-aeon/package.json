@@ -1,0 +1,51 @@
+{
+  "name": "phasm-aeon",
+  "version": "0.0.1",
+  "description": "Aeon FRP integration for Phasm - reactive Behaviors and Events as first-class UI primitives",
+  "license": "MIT",
+  "author": "Josh Burgess",
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "rm -rf dist && rollup -c rollup.config.mjs && tsc -p tsconfig.build.json && cp dist/index.d.ts dist/index.d.cts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "peerDependencies": {
+    "phasm": ">=0.0.1",
+    "aeon-core": ">=0.0.1",
+    "aeon-types": ">=0.0.1",
+    "aeon-scheduler": ">=0.0.1"
+  },
+  "devDependencies": {
+    "phasm": "workspace:*",
+    "aeon-core": "latest",
+    "aeon-types": "latest",
+    "aeon-scheduler": "latest",
+    "jsdom": "^26.0.0",
+    "rollup": "^4.28.0",
+    "rollup-plugin-swc3": "^0.12.1",
+    "@rollup/plugin-node-resolve": "^16.0.0",
+    "typescript": "^5.7.2",
+    "vitest": "^3.2.4"
+  }
+}

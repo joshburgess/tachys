@@ -1,14 +1,22 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import { flushUpdates, scheduleUpdate } from "../../src/scheduler"
+import {
+  flushUpdates,
+  flushSyncWork,
+  scheduleUpdate,
+  Lane,
+  setCurrentLane,
+  getCurrentLane,
+  shouldYield,
+} from "../../src/scheduler"
 import type { ComponentInstance } from "../../src/component"
 
 // ---------------------------------------------------------------------------
 // Helper: build a minimal ComponentInstance mock.
 //
 // Only the fields the scheduler touches are required:
-//   _queued   – deduplication flag
-//   _rerender – called during flush
-//   _mounted  – checked by rerenderComponent (not the scheduler itself)
+//   _queuedLanes – per-lane deduplication bitmask
+//   _rerender    – called during flush
+//   _mounted     – checked by rerenderComponent (not the scheduler itself)
 // ---------------------------------------------------------------------------
 
 function makeInstance(rerenderFn?: () => void): ComponentInstance {
@@ -18,7 +26,7 @@ function makeInstance(rerenderFn?: () => void): ComponentInstance {
     _vnode: null as never,
     _rendered: null,
     _parentDom: null as never,
-    _queued: false,
+    _queuedLanes: 0,
     _hooks: [],
     _effects: [],
     _mounted: true,
@@ -62,16 +70,16 @@ describe("flushUpdates()", () => {
     expect(rerenderB).toHaveBeenCalledTimes(1)
   })
 
-  it("resets _queued to false after processing each instance", () => {
+  it("resets _queuedLanes to 0 after processing each instance", () => {
     const instance = makeInstance()
     scheduleUpdate(instance)
 
-    // _queued must be true while in the queue
-    expect(instance._queued).toBe(true)
+    // _queuedLanes must be non-zero while in the queue
+    expect(instance._queuedLanes).not.toBe(0)
 
     flushUpdates()
 
-    expect(instance._queued).toBe(false)
+    expect(instance._queuedLanes).toBe(0)
   })
 
   it("processes an empty queue without errors", () => {
@@ -125,29 +133,27 @@ describe("scheduleUpdate() deduplication", () => {
     expect(rerender).toHaveBeenCalledTimes(1)
   })
 
-  it("sets _queued to true after first call", () => {
+  it("sets _queuedLanes bit after first call", () => {
     const instance = makeInstance()
 
     scheduleUpdate(instance)
-    expect(instance._queued).toBe(true)
+    expect(instance._queuedLanes).not.toBe(0)
   })
 
-  it("does not set _queued again on subsequent calls while already queued", () => {
+  it("does not double-queue in the same lane", () => {
     const instance = makeInstance()
     scheduleUpdate(instance)
 
-    // Manually set to false to detect if scheduleUpdate re-sets it
-    // (it should not, because the early-return guard fires first)
-    const originalQueued = instance._queued
-    expect(originalQueued).toBe(true)
+    const original = instance._queuedLanes
+    expect(original).not.toBe(0)
 
-    scheduleUpdate(instance) // second call — should no-op due to guard
-    expect(instance._queued).toBe(true) // still true, but from the first call
+    scheduleUpdate(instance) // second call — should no-op for same lane
+    expect(instance._queuedLanes).toBe(original)
 
     flushUpdates()
   })
 
-  it("allows re-queuing after a flush has cleared _queued", () => {
+  it("allows re-queuing after a flush has cleared _queuedLanes", () => {
     const rerender = vi.fn()
     const instance = makeInstance(rerender)
 
@@ -155,7 +161,7 @@ describe("scheduleUpdate() deduplication", () => {
     flushUpdates()
     expect(rerender).toHaveBeenCalledTimes(1)
 
-    // After flush _queued is false again — can be re-queued
+    // After flush _queuedLanes is 0 — can be re-queued
     scheduleUpdate(instance)
     flushUpdates()
     expect(rerender).toHaveBeenCalledTimes(2)
@@ -204,7 +210,7 @@ describe("manual synchronous flush", () => {
     flushUpdates()
 
     expect(rerender).toHaveBeenCalledTimes(1)
-    expect(instance._queued).toBe(false)
+    expect(instance._queuedLanes).toBe(0)
   })
 
   it("the microtask that fires after a synchronous flush finds an empty queue", async () => {
@@ -221,5 +227,239 @@ describe("manual synchronous flush", () => {
     // _rerender must still have been called exactly once — the microtask
     // invokes flushUpdates() which finds an empty queue and exits immediately.
     expect(rerender).toHaveBeenCalledTimes(1)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Lane-based scheduling
+// ---------------------------------------------------------------------------
+
+describe("Lane constants", () => {
+  it("exports Sync, Default, Transition lanes in priority order", () => {
+    expect(Lane.Sync).toBe(0)
+    expect(Lane.Default).toBe(1)
+    expect(Lane.Transition).toBe(2)
+    expect(Lane.Sync).toBeLessThan(Lane.Default)
+    expect(Lane.Default).toBeLessThan(Lane.Transition)
+  })
+})
+
+describe("scheduleUpdate() with explicit lanes", () => {
+  it("schedules work to the Sync lane", () => {
+    const rerender = vi.fn()
+    const instance = makeInstance(rerender)
+
+    scheduleUpdate(instance, Lane.Sync)
+    flushUpdates()
+
+    expect(rerender).toHaveBeenCalledTimes(1)
+  })
+
+  it("schedules work to the Transition lane", () => {
+    const rerender = vi.fn()
+    const instance = makeInstance(rerender)
+
+    scheduleUpdate(instance, Lane.Transition)
+    flushUpdates()
+
+    expect(rerender).toHaveBeenCalledTimes(1)
+  })
+
+  it("defaults to currentLane when no lane is specified", () => {
+    const rerender = vi.fn()
+    const instance = makeInstance(rerender)
+
+    // Default currentLane is Lane.Default
+    expect(getCurrentLane()).toBe(Lane.Default)
+
+    scheduleUpdate(instance)
+    flushUpdates()
+
+    expect(rerender).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe("setCurrentLane / getCurrentLane", () => {
+  beforeEach(() => {
+    // Reset to default lane
+    setCurrentLane(Lane.Default)
+  })
+
+  it("returns the default lane initially", () => {
+    expect(getCurrentLane()).toBe(Lane.Default)
+  })
+
+  it("changes the current lane context", () => {
+    setCurrentLane(Lane.Transition)
+    expect(getCurrentLane()).toBe(Lane.Transition)
+
+    setCurrentLane(Lane.Sync)
+    expect(getCurrentLane()).toBe(Lane.Sync)
+  })
+
+  it("scheduleUpdate uses the current lane when none is specified", () => {
+    setCurrentLane(Lane.Transition)
+
+    const rerender = vi.fn()
+    const instance = makeInstance(rerender)
+
+    scheduleUpdate(instance)
+    flushUpdates()
+
+    expect(rerender).toHaveBeenCalledTimes(1)
+
+    // Restore
+    setCurrentLane(Lane.Default)
+  })
+})
+
+describe("Lane priority ordering", () => {
+  it("processes Sync lane before Default lane", () => {
+    const order: string[] = []
+    const syncInstance = makeInstance(() => order.push("sync"))
+    const defaultInstance = makeInstance(() => order.push("default"))
+
+    // Schedule Default first, then Sync
+    scheduleUpdate(defaultInstance, Lane.Default)
+    scheduleUpdate(syncInstance, Lane.Sync)
+
+    flushUpdates()
+
+    expect(order).toEqual(["sync", "default"])
+  })
+
+  it("processes Default lane before Transition lane", () => {
+    const order: string[] = []
+    const transitionInstance = makeInstance(() => order.push("transition"))
+    const defaultInstance = makeInstance(() => order.push("default"))
+
+    // Schedule Transition first, then Default
+    scheduleUpdate(transitionInstance, Lane.Transition)
+    scheduleUpdate(defaultInstance, Lane.Default)
+
+    flushUpdates()
+
+    expect(order).toEqual(["default", "transition"])
+  })
+
+  it("processes all three lanes in priority order", () => {
+    const order: string[] = []
+    const syncInstance = makeInstance(() => order.push("sync"))
+    const defaultInstance = makeInstance(() => order.push("default"))
+    const transitionInstance = makeInstance(() => order.push("transition"))
+
+    // Schedule in reverse priority order
+    scheduleUpdate(transitionInstance, Lane.Transition)
+    scheduleUpdate(defaultInstance, Lane.Default)
+    scheduleUpdate(syncInstance, Lane.Sync)
+
+    flushUpdates()
+
+    expect(order).toEqual(["sync", "default", "transition"])
+  })
+
+  it("processes multiple items within the same lane in order", () => {
+    const order: number[] = []
+    const a = makeInstance(() => order.push(1))
+    const b = makeInstance(() => order.push(2))
+    const c = makeInstance(() => order.push(3))
+
+    scheduleUpdate(a, Lane.Default)
+    scheduleUpdate(b, Lane.Default)
+    scheduleUpdate(c, Lane.Default)
+
+    flushUpdates()
+
+    expect(order).toEqual([1, 2, 3])
+  })
+})
+
+describe("flushSyncWork()", () => {
+  it("flushes only Sync lane work", () => {
+    const syncRerender = vi.fn()
+    const defaultRerender = vi.fn()
+    const syncInstance = makeInstance(syncRerender)
+    const defaultInstance = makeInstance(defaultRerender)
+
+    scheduleUpdate(syncInstance, Lane.Sync)
+    scheduleUpdate(defaultInstance, Lane.Default)
+
+    flushSyncWork()
+
+    expect(syncRerender).toHaveBeenCalledTimes(1)
+    expect(defaultRerender).not.toHaveBeenCalled()
+
+    // Now flush the rest
+    flushUpdates()
+    expect(defaultRerender).toHaveBeenCalledTimes(1)
+  })
+
+  it("does nothing when Sync lane is empty", () => {
+    const defaultRerender = vi.fn()
+    const instance = makeInstance(defaultRerender)
+
+    scheduleUpdate(instance, Lane.Default)
+    flushSyncWork()
+
+    // Default lane should NOT have been flushed
+    expect(defaultRerender).not.toHaveBeenCalled()
+
+    flushUpdates()
+    expect(defaultRerender).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe("shouldYield()", () => {
+  it("never yields for Sync lane work (tested indirectly)", () => {
+    // shouldYield returns false when activeLane is Sync
+    // We test indirectly: schedule many Sync items and verify they all flush
+    const count = 100
+    let processed = 0
+    const instances: ComponentInstance[] = []
+
+    for (let i = 0; i < count; i++) {
+      instances.push(makeInstance(() => { processed++ }))
+    }
+
+    for (const inst of instances) {
+      scheduleUpdate(inst, Lane.Sync)
+    }
+
+    flushUpdates()
+
+    expect(processed).toBe(count)
+  })
+})
+
+describe("per-lane queuing", () => {
+  it("allows the same instance to be queued in multiple lanes", () => {
+    let renderCount = 0
+    const instance = makeInstance(() => { renderCount++ })
+
+    scheduleUpdate(instance, Lane.Default)
+    scheduleUpdate(instance, Lane.Transition)
+
+    // Should be queued in both lanes (bits 1 and 2)
+    expect(instance._queuedLanes).toBe((1 << Lane.Default) | (1 << Lane.Transition))
+
+    flushUpdates()
+
+    // Should have been rendered once per lane
+    expect(renderCount).toBe(2)
+    expect(instance._queuedLanes).toBe(0)
+  })
+
+  it("deduplicates within the same lane but not across lanes", () => {
+    let renderCount = 0
+    const instance = makeInstance(() => { renderCount++ })
+
+    scheduleUpdate(instance, Lane.Default)
+    scheduleUpdate(instance, Lane.Default) // duplicate - should be ignored
+    scheduleUpdate(instance, Lane.Transition)
+    scheduleUpdate(instance, Lane.Transition) // duplicate - should be ignored
+
+    flushUpdates()
+
+    expect(renderCount).toBe(2) // one per lane, not four
   })
 })

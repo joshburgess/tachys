@@ -22,7 +22,7 @@ import { mountInternal } from "./mount"
 import { acquireVNode, releaseVNode } from "./pool"
 import { getPortalContainer } from "./portal"
 import type { RefObject } from "./ref"
-import { scheduleUpdate } from "./scheduler"
+import { scheduleUpdate, Lane, setCurrentLane, getCurrentLane, getActiveLane } from "./scheduler"
 import {
   isSuspenseFn,
   isThenable,
@@ -50,8 +50,8 @@ export interface ComponentInstance {
   _rendered: VNode | null
   /** The parent DOM element */
   _parentDom: Element
-  /** Whether this instance is queued for re-render */
-  _queued: boolean
+  /** Bitmask of lanes this instance is queued in (1 << lane) */
+  _queuedLanes: number
   /** Hook state slots (useState values) */
   _hooks: HookState[]
   /** Effect entries */
@@ -68,6 +68,27 @@ export interface ComponentInstance {
 
 interface HookState {
   value: unknown
+  /** Pending state updates tagged with the lane they were scheduled at. */
+  pendingUpdates: StateUpdate[] | null
+}
+
+/**
+ * A pending state update. Discriminated on `kind`:
+ *   - "value": a direct replacement value
+ *   - "fn": a function (prev) => next (functional useState or useReducer)
+ */
+type StateUpdate = StateUpdateValue | StateUpdateFn
+
+interface StateUpdateValue {
+  kind: "value"
+  value: unknown
+  lane: Lane
+}
+
+interface StateUpdateFn {
+  kind: "fn"
+  fn: (prev: unknown) => unknown
+  lane: Lane
 }
 
 interface ContextDep {
@@ -92,6 +113,61 @@ let hookIndex = 0
 let effectIndex = 0
 let stateIndex = 0
 
+/** Apply a single state update to a value. */
+function applyUpdate(value: unknown, update: StateUpdate): unknown {
+  return update.kind === "fn" ? update.fn(value) : update.value
+}
+
+/**
+ * Peek at a hook's fully-resolved value without mutating it.
+ * Applies all pending updates (regardless of lane) to compute the final value.
+ * Used for bail-out checks in setters.
+ */
+function peekHookState<T>(hook: HookState): T {
+  const pending = hook.pendingUpdates
+  if (pending === null || pending.length === 0) return hook.value as T
+
+  let value: unknown = hook.value
+  for (let i = 0; i < pending.length; i++) {
+    value = applyUpdate(value, pending[i]!)
+  }
+  return value as T
+}
+
+/**
+ * Resolve a hook's current value by applying pending updates up to the active
+ * render lane. Updates at higher lane numbers (lower priority) than the active
+ * lane are left pending for a future render pass.
+ *
+ * When no active lane (idle / first mount), all updates are applied.
+ */
+function resolveHookState<T>(hook: HookState): T {
+  const pending = hook.pendingUpdates
+  if (pending === null || pending.length === 0) return hook.value as T
+
+  const lane = getActiveLane()
+  let value: unknown = hook.value
+  let kept: StateUpdate[] | null = null
+
+  for (let i = 0; i < pending.length; i++) {
+    const update = pending[i]!
+    // Apply updates at or above the current render priority.
+    // Lane numbers: lower = higher priority. Idle (-1) means apply all.
+    if (lane === -1 || update.lane <= lane) {
+      value = applyUpdate(value, update)
+    } else {
+      // Keep this update for a lower-priority render pass
+      if (kept === null) kept = []
+      kept.push(update)
+    }
+  }
+
+  // Commit the resolved value and retain deferred updates
+  hook.value = value
+  hook.pendingUpdates = kept
+  return value as T
+}
+
 /**
  * Get or create a ComponentInstance for a component VNode.
  */
@@ -115,7 +191,7 @@ export function mountComponent(vnode: VNode, parentDom: Element, isSvg: boolean)
     _vnode: vnode,
     _rendered: null,
     _parentDom: parentDom,
-    _queued: false,
+    _queuedLanes: 0,
     _hooks: [],
     _effects: [],
     _mounted: false,
@@ -242,7 +318,7 @@ export function hydrateComponentInstance(
     _vnode: vnode,
     _rendered: null,
     _parentDom: parentDom,
-    _queued: false,
+    _queuedLanes: 0,
     _hooks: [],
     _effects: [],
     _mounted: false,
@@ -303,7 +379,7 @@ export function patchComponent(oldVNode: VNode, newVNode: VNode, parentDom: Elem
     memoCompare !== undefined
       ? memoCompare(oldInstance._props, newProps)
       : shallowEqual(oldInstance._props, newProps)
-  if (propsEqual && !oldInstance._queued && !contextValuesChanged(oldInstance)) {
+  if (propsEqual && oldInstance._queuedLanes === 0 && !contextValuesChanged(oldInstance)) {
     // Props unchanged — skip re-render, carry forward references
     newVNode.children = oldInstance._rendered
     newVNode.dom = oldVNode.dom
@@ -454,20 +530,38 @@ export function useState<T>(initial: T): readonly [T, (newVal: T | ((prev: T) =>
   // Initialize on first render (call lazy initializer if it's a function)
   if (idx >= instance._hooks.length) {
     const initialValue = typeof initial === "function" ? (initial as () => T)() : initial
-    instance._hooks.push({ value: initialValue })
+    instance._hooks.push({ value: initialValue, pendingUpdates: null })
   }
 
   const hook = instance._hooks[idx]!
-  const value = hook.value as T
+
+  // Apply pending updates up to the current render lane
+  const value = resolveHookState<T>(hook)
 
   const setter = (newVal: T | ((prev: T) => T)): void => {
-    const current = instance._hooks[idx]!.value as T
-    const nextVal = typeof newVal === "function" ? (newVal as (prev: T) => T)(current) : newVal
+    const targetLane = getCurrentLane()
+    const h = instance._hooks[idx]!
 
-    if (nextVal !== current) {
-      instance._hooks[idx]!.value = nextVal
-      scheduleUpdate(instance)
+    if (h.pendingUpdates === null) h.pendingUpdates = []
+
+    if (typeof newVal === "function") {
+      h.pendingUpdates.push({
+        kind: "fn",
+        fn: newVal as (prev: unknown) => unknown,
+        lane: targetLane,
+      })
+    } else {
+      // Bail out for direct value assignments where value hasn't changed.
+      const current = peekHookState<T>(h)
+      if (newVal === current) {
+        // Clean up the empty array we may have just created
+        if (h.pendingUpdates.length === 0) h.pendingUpdates = null
+        return
+      }
+      h.pendingUpdates.push({ kind: "value", value: newVal, lane: targetLane })
     }
+
+    scheduleUpdate(instance, targetLane)
   }
 
   return [value, setter]
@@ -496,20 +590,32 @@ export function useReducer<S, A>(
   const idx = stateIndex++
 
   if (idx >= instance._hooks.length) {
-    instance._hooks.push({ value: initialState })
+    instance._hooks.push({ value: initialState, pendingUpdates: null })
   }
 
   const hook = instance._hooks[idx]!
-  const value = hook.value as S
+
+  // Apply pending updates up to the current render lane
+  const value = resolveHookState<S>(hook)
 
   const dispatch = (action: A): void => {
-    const current = instance._hooks[idx]!.value as S
-    const nextVal = reducer(current, action)
+    const targetLane = getCurrentLane()
+    const h = instance._hooks[idx]!
 
-    if (nextVal !== current) {
-      instance._hooks[idx]!.value = nextVal
-      scheduleUpdate(instance)
-    }
+    // Eagerly compute to bail out if the value doesn't change
+    const current = peekHookState<S>(h)
+    const nextVal = reducer(current, action)
+    if (nextVal === current) return
+
+    // Queue a reducer-style update (fn form)
+    if (h.pendingUpdates === null) h.pendingUpdates = []
+    h.pendingUpdates.push({
+      kind: "fn",
+      fn: (prev) => reducer(prev as S, action),
+      lane: targetLane,
+    })
+
+    scheduleUpdate(instance, targetLane)
   }
 
   return [value, dispatch]
@@ -593,7 +699,7 @@ export function useMemo<T>(factory: () => T, deps: readonly unknown[]): T {
   if (idx >= instance._hooks.length) {
     // First render — compute and store
     const value = factory()
-    instance._hooks.push({ value: [value, deps] })
+    instance._hooks.push({ value: [value, deps], pendingUpdates: null })
     return value
   }
 
@@ -644,7 +750,7 @@ export function useRef<T>(initial: T): RefObject<T> {
 
   if (idx >= instance._hooks.length) {
     const ref = { current: initial }
-    instance._hooks.push({ value: ref })
+    instance._hooks.push({ value: ref, pendingUpdates: null })
     return ref
   }
 
@@ -681,7 +787,7 @@ export function useSyncExternalStore<T>(
 
   // Initialize snapshot on first render
   if (idx >= instance._hooks.length) {
-    instance._hooks.push({ value: getSnapshot() })
+    instance._hooks.push({ value: getSnapshot(), pendingUpdates: null })
   }
 
   const hook = instance._hooks[idx]!
@@ -749,7 +855,7 @@ export function useId(): string {
   const idx = stateIndex++
 
   if (idx >= instance._hooks.length) {
-    instance._hooks.push({ value: `:b${idCounter++}:` })
+    instance._hooks.push({ value: `:b${idCounter++}:`, pendingUpdates: null })
   }
 
   return instance._hooks[idx]!.value as string
@@ -900,22 +1006,33 @@ export function use<T>(usable: Promise<T> | Context<T>): T {
  * Mark state updates inside the callback as a "transition" -- a non-urgent
  * update that can be interrupted by higher-priority work.
  *
- * In Phasm, all updates are synchronous, so startTransition simply
- * executes the callback immediately. The API exists for React compatibility
- * and future concurrent rendering support.
+ * Sets the scheduler's current lane to Transition for the duration of the
+ * callback. Any state updates triggered inside will be scheduled at
+ * Transition priority, allowing Sync and Default work to interrupt them.
  *
  * @param callback - Function containing state updates to mark as transitions
  */
 export function startTransition(callback: () => void): void {
-  callback()
+  const prevLane = getCurrentLane()
+  setCurrentLane(Lane.Transition)
+  try {
+    callback()
+  } finally {
+    setCurrentLane(prevLane)
+  }
 }
 
 /**
  * Hook: returns a [isPending, startTransition] tuple for managing transitions.
  *
- * `isPending` indicates whether a transition is currently in-flight.
- * In Phasm's synchronous rendering model, transitions complete immediately,
- * so `isPending` is always `false`. The API exists for React compatibility.
+ * When the returned startTransition is called:
+ *   1. isPending becomes true (rendered at Default priority)
+ *   2. The callback's state updates are scheduled at Transition priority
+ *   3. isPending becomes false when the Transition render completes
+ *
+ * Because the scheduler defers Transition work to a separate frame after
+ * urgent work, the isPending=true render paints before the transition
+ * begins, giving the user immediate visual feedback.
  *
  * @returns A tuple of [isPending, startTransition]
  */
@@ -928,7 +1045,25 @@ export function useTransition(): readonly [boolean, (callback: () => void) => vo
     )
   }
 
-  return [false, startTransition]
+  // isPending lives in state so it triggers re-renders.
+  // setIsPending(true) is called at Default lane (urgent).
+  // setIsPending(false) is called at Transition lane (deferred).
+  // Because state updates are lane-tagged, the Default-lane render sees
+  // isPending=true and the Transition-lane render sees isPending=false.
+  const [isPending, setIsPending] = useState(false)
+
+  const wrappedStartTransition = useCallback((callback: () => void) => {
+    // Queue isPending=true at Default (urgent) priority
+    setIsPending(true)
+
+    // Queue the callback's updates + isPending=false at Transition priority
+    startTransition(() => {
+      setIsPending(false)
+      callback()
+    })
+  }, [])
+
+  return [isPending, wrappedStartTransition]
 }
 
 // --- useDeferredValue ---
@@ -936,12 +1071,12 @@ export function useTransition(): readonly [boolean, (callback: () => void) => vo
 /**
  * Hook: defer a value to allow more urgent updates to render first.
  *
- * In Phasm's synchronous rendering model, deferred values update
- * immediately (equivalent to returning the value as-is). The API exists
- * for React compatibility and future concurrent rendering support.
+ * On the urgent (Default-lane) render, returns the previous value so
+ * the component can paint immediately with stale data. Then schedules
+ * a Transition-lane re-render that returns the new value.
  *
  * @param value - The value to defer
- * @returns The same value (in a concurrent renderer, this would lag behind)
+ * @returns The deferred value (lags behind during transitions)
  */
 export function useDeferredValue<T>(value: T): T {
   const instance = currentInstance
@@ -952,7 +1087,17 @@ export function useDeferredValue<T>(value: T): T {
     )
   }
 
-  return value
+  const [deferredValue, setDeferredValue] = useState(value)
+
+  // Schedule the catch-up update in an effect (runs after paint, not during render)
+  useEffect(() => {
+    startTransition(() => {
+      setDeferredValue(value)
+    })
+    return undefined
+  }, [value])
+
+  return deferredValue
 }
 
 /**
@@ -996,7 +1141,7 @@ export function renderComponentSSR(type: ComponentFn, props: Record<string, unkn
     _vnode: null!,
     _rendered: null,
     _parentDom: null!,
-    _queued: false,
+    _queuedLanes: 0,
     _hooks: [],
     _effects: [],
     _mounted: false,
