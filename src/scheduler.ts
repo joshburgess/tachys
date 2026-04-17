@@ -47,17 +47,12 @@ import {
   commitEffects,
   discardEffects,
   flushDeferredEffects,
-  isCollecting,
   pauseCollecting,
   restoreTransitionState,
   resumeCollecting,
 } from "./effects"
 import { R, LANE_IDLE } from "./render-state"
-import {
-  discardPendingWork,
-  hasPendingWork,
-  resumePendingWork,
-} from "./work-loop"
+import { discardPendingWork, resumePendingWork } from "./work-loop"
 
 // --- Lanes ---
 
@@ -277,7 +272,7 @@ function autoFlush(): void {
 
   // If resuming from a yielded Transition render, pause effect collection
   // so Sync/Default work executes DOM operations directly.
-  const resumingTransition = isCollecting()
+  const resumingTransition = R.collecting
   if (resumingTransition) pauseCollecting()
 
   // Process Sync and Default lanes (always direct DOM mutation)
@@ -344,7 +339,7 @@ function autoFlush(): void {
 
     // Begin effect collection for Transition render phase (if not already
     // collecting from a resumed yield).
-    if (!isCollecting()) {
+    if (!R.collecting) {
       beginCollecting()
       _transitionRenderGen = _transitionGen
       _processedInstances.length = 0
@@ -353,7 +348,7 @@ function autoFlush(): void {
     R.activeLane = Lane.Transition
     sliceStart = performance.now()
 
-    while (transitionQueue.length > 0 || hasPendingWork()) {
+    while (transitionQueue.length > 0 || R.pending) {
       // Check for higher-priority work that arrived
       if (hasHigherPriorityWork(Lane.Transition)) {
         // Pause collection so urgent work executes DOM ops directly
@@ -366,7 +361,7 @@ function autoFlush(): void {
       }
 
       // Resume pending continuation from a previous mid-render yield
-      if (hasPendingWork()) {
+      if (R.pending) {
         // resumePendingWork returns true if a new yield occurred
         const yieldedAgain = resumePendingWork()
         if (yieldedAgain && shouldYield()) {
@@ -386,7 +381,7 @@ function autoFlush(): void {
 
       // After rerender, a mid-render yield may have saved a continuation.
       // Process it before moving to the next component.
-      while (hasPendingWork()) {
+      while (R.pending) {
         const yieldedAgain = resumePendingWork()
         if (yieldedAgain && shouldYield()) {
           // Yield with continuation still pending -- it will be resumed
@@ -439,7 +434,7 @@ function autoFlush(): void {
       clearTransitionRestorers()
       _processedInstances.length = 0
     }
-  } else if (isCollecting()) {
+  } else if (R.collecting) {
     // Transition queue was drained externally -- commit residual effects.
     commitEffects()
     flushDeferredEffects()
@@ -466,7 +461,7 @@ export function flushUpdates(): void {
   // If effects were being collected (e.g., called from a test mid-transition),
   // commit them first to avoid stale queued effects, then run any deferred
   // component effects that were queued during the Transition render.
-  if (isCollecting()) {
+  if (R.collecting) {
     commitEffects()
     flushDeferredEffects()
   }
@@ -483,12 +478,12 @@ function processAllLanes(): void {
   for (let lane = Lane.Sync; lane <= Lane.Transition; lane++) {
     const queue = laneQueues[lane]!
 
-    if (queue.length === 0 && !((lane as number) === Lane.Transition && hasPendingWork())) continue
+    if (queue.length === 0 && !((lane as number) === Lane.Transition && R.pending)) continue
 
     R.activeLane = lane
     sliceStart = performance.now()
 
-    while (queue.length > 0 || ((lane as number) === Lane.Transition && hasPendingWork())) {
+    while (queue.length > 0 || ((lane as number) === Lane.Transition && R.pending)) {
       // Check for higher-priority work that arrived during this lane
       if (lane > Lane.Sync && hasHigherPriorityWork(lane)) {
         for (let hp = Lane.Sync; hp < lane; hp++) {
@@ -498,7 +493,7 @@ function processAllLanes(): void {
       }
 
       // Resume pending continuation (Transition lane mid-render yield)
-      if (hasPendingWork()) {
+      if (R.pending) {
         resumePendingWork()
         // In processAllLanes (synchronous flush), don't yield mid-continuation --
         // just keep draining. shouldYield checks are for the outer loop below.
@@ -510,7 +505,7 @@ function processAllLanes(): void {
       instance._rerender()
 
       // Drain any continuations from mid-render yields
-      while (hasPendingWork()) {
+      while (R.pending) {
         resumePendingWork()
       }
 
@@ -589,7 +584,7 @@ export function flushSyncWork(): void {
   if (queue.length === 0) return
 
   const prevFlushing = isFlushing
-  const wasCollecting = isCollecting()
+  const wasCollecting = R.collecting
   if (wasCollecting) pauseCollecting()
 
   isFlushing = true

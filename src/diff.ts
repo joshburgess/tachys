@@ -9,7 +9,7 @@
  */
 
 import { patchComponent as patchComp } from "./component"
-import { domInsertBefore, pushThunk } from "./effects"
+import { pushInsert, pushThunk } from "./effects"
 import type { ChildFlag } from "./flags"
 import { ChildFlags, VNodeFlags } from "./flags"
 import { mountInternal } from "./mount"
@@ -71,10 +71,18 @@ function moveVNodeDOM(vnode: VNode, parentDom: Element, refNode: Element | Text 
         moveVNodeDOM(children[i]!, parentDom, refNode)
       }
     } else if (vnode.dom !== null) {
-      domInsertBefore(parentDom, vnode.dom, refNode)
+      if (R.collecting) {
+        pushInsert(parentDom, vnode.dom, refNode)
+      } else {
+        parentDom.insertBefore(vnode.dom, refNode)
+      }
     }
   } else if (vnode.dom !== null) {
-    domInsertBefore(parentDom, vnode.dom, refNode)
+    if (R.collecting) {
+      pushInsert(parentDom, vnode.dom, refNode)
+    } else {
+      parentDom.insertBefore(vnode.dom, refNode)
+    }
   }
 }
 
@@ -1006,7 +1014,11 @@ function replaceVNode(oldVNode: VNode, newVNode: VNode, parentDom: Element): voi
 
   // Insert new before old, then remove old
   if (oldVNode.dom !== null && newVNode.dom !== null) {
-    domInsertBefore(parentDom, newVNode.dom, oldVNode.dom)
+    if (R.collecting) {
+      pushInsert(parentDom, newVNode.dom, oldVNode.dom)
+    } else {
+      parentDom.insertBefore(newVNode.dom, oldVNode.dom)
+    }
   }
   unmount(oldVNode, parentDom)
 }
