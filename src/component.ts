@@ -18,7 +18,6 @@ import {
 import {
   domAppendChild,
   domRemoveChild,
-  isCollecting,
   pushDeferredEffect,
   pushTransitionRestorer,
 } from "./effects"
@@ -32,7 +31,7 @@ import {
 import { acquireVNode, releaseVNode } from "./pool"
 import { getPortalContainer } from "./portal"
 import type { RefObject } from "./ref"
-import { scheduleUpdate, Lane, setCurrentLane, getCurrentLane, getActiveLane, signalTransitionSuspended } from "./scheduler"
+import { scheduleUpdate, Lane, setCurrentLane, getCurrentLane, signalTransitionSuspended } from "./scheduler"
 import {
   isSuspenseFn,
   isThenable,
@@ -42,7 +41,8 @@ import {
 } from "./suspense"
 import type { ComponentFn } from "./vnode"
 import { VNode } from "./vnode"
-import { appendAfterWork, hasPendingWork } from "./work-loop"
+import { R } from "./render-state"
+import { appendAfterWork } from "./work-loop"
 
 // --- Component instance ---
 
@@ -155,7 +155,7 @@ function resolveHookState<T>(hook: HookState): T {
   const pending = hook.pendingUpdates
   if (pending === null || pending.length === 0) return hook.value as T
 
-  const lane = getActiveLane()
+  const lane = R.activeLane
   let value: unknown = hook.value
   let kept: StateUpdate[] | null = null
 
@@ -478,7 +478,7 @@ export function patchComponent(oldVNode: VNode, newVNode: VNode, parentDom: Elem
   }
 
   // Save state for Transition abandonment (restore if render is discarded)
-  if (isCollecting()) {
+  if (R.collecting) {
     const savedProps = oldInstance._props
     const savedVNode = oldInstance._vnode
     const savedParentDom = oldInstance._parentDom
@@ -549,15 +549,15 @@ export function patchComponent(oldVNode: VNode, newVNode: VNode, parentDom: Elem
 
   patchVNode(oldRendered, newRendered, patchParent)
 
-  // If a descendant yielded mid-children-diff, defer all post-patch
-  // work (dom ref, suspense/EB handling, effects, provider cleanup).
-  if (hasPendingWork()) {
+  // If a descendant yielded mid-children-diff (Transition only), defer all
+  // post-patch work (dom ref, suspense/EB handling, effects, provider cleanup).
+  if (R.pending) {
     appendAfterWork(() => {
       newVNode.dom = portalTarget !== undefined ? oldVNode.dom : newRendered.dom
       if (isSuspense) {
         popSuspendHandler()
         if (suspendedPromise !== undefined) {
-          if (isCollecting()) {
+          if (R.collecting) {
             signalTransitionSuspended(suspendedPromise)
           } else {
             oldInstance._hooks[0]!.value = true
@@ -592,7 +592,7 @@ export function patchComponent(oldVNode: VNode, newVNode: VNode, parentDom: Elem
   if (isSuspense) {
     popSuspendHandler()
     if (suspendedPromise !== undefined) {
-      if (isCollecting()) {
+      if (R.collecting) {
         // Transition-lane suspension (two-phase commit active): keep old
         // UI visible. The scheduler will abandon this Transition (discard
         // effects, restore VNode state). Re-schedule at Transition
@@ -1460,7 +1460,7 @@ function rerenderComponent(instance: ComponentInstance): void {
   if (oldRendered === null) return
 
   // Save state for Transition abandonment
-  if (isCollecting()) {
+  if (R.collecting) {
     const savedRendered = oldRendered
     const savedVnodeChildren = instance._vnode.children
     const savedVnodeDom = instance._vnode.dom
@@ -1516,9 +1516,9 @@ function rerenderComponent(instance: ComponentInstance): void {
 
   patchVNode(oldRendered, newRendered, patchParent)
 
-  // If a descendant yielded mid-children-diff, defer all post-patch
-  // work (dom ref, suspense/EB handling, effects, provider cleanup).
-  if (hasPendingWork()) {
+  // If a descendant yielded mid-children-diff (Transition only), defer all
+  // post-patch work (dom ref, suspense/EB handling, effects, provider cleanup).
+  if (R.pending) {
     appendAfterWork(() => {
       if (portalTarget === undefined) {
         instance._vnode.dom = newRendered.dom
@@ -1526,7 +1526,7 @@ function rerenderComponent(instance: ComponentInstance): void {
       if (isSuspense) {
         popSuspendHandler()
         if (suspendedPromise !== undefined) {
-          if (isCollecting()) {
+          if (R.collecting) {
             signalTransitionSuspended(suspendedPromise)
           } else {
             instance._hooks[0]!.value = true
@@ -1565,7 +1565,7 @@ function rerenderComponent(instance: ComponentInstance): void {
   if (isSuspense) {
     popSuspendHandler()
     if (suspendedPromise !== undefined) {
-      if (isCollecting()) {
+      if (R.collecting) {
         // Transition-lane suspension (two-phase commit active): keep old
         // UI visible. The scheduler will abandon this Transition (discard
         // effects, restore VNode state). Re-schedule at Transition
@@ -1643,7 +1643,7 @@ function detachRenderedDOM(vnode: VNode, parentDom: Element): void {
 function runEffects(instance: ComponentInstance): void {
   // During Transition-lane rendering (effect collection active), defer
   // effects to post-commit so callbacks see the final committed DOM.
-  if (isCollecting()) {
+  if (R.collecting) {
     // Only defer if there are pending effects to run
     for (let i = 0; i < instance._effects.length; i++) {
       if (instance._effects[i]!.pendingRun) {

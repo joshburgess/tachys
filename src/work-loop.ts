@@ -25,6 +25,8 @@
  *     resume completes (innermost work first).
  */
 
+import { R } from "./render-state"
+
 // --- State ---
 
 /** The pending continuation, or null if no yield is active. */
@@ -55,6 +57,7 @@ export function hasPendingWork(): boolean {
  */
 export function savePendingWork(resume: () => void): void {
   _pending = { resume, afterWork: [] }
+  R.pending = true
 }
 
 /**
@@ -96,6 +99,7 @@ export function resumePendingWork(): boolean {
 
   const cont = _pending
   _pending = null
+  R.pending = false
 
   // Resume the children loop. This may:
   // 1. Complete normally (no new _pending)
@@ -130,4 +134,5 @@ export function resumePendingWork(): boolean {
  */
 export function discardPendingWork(): void {
   _pending = null
+  R.pending = false
 }

@@ -9,24 +9,18 @@
  */
 
 import { patchComponent as patchComp } from "./component"
-import {
-  domInsertBefore,
-  domSetInnerHTML,
-  domSetNodeValue,
-  domSetTextContent,
-  isCollecting,
-  pushThunk,
-} from "./effects"
+import { domInsertBefore, pushThunk } from "./effects"
 import type { ChildFlag } from "./flags"
 import { ChildFlags, VNodeFlags } from "./flags"
 import { mountInternal } from "./mount"
 import { patchProp, setRootContainer } from "./patch"
+import { R, LANE_TRANSITION } from "./render-state"
 import { registerPatch } from "./reconcile-bridge"
 import { clearRef, setRef } from "./ref"
-import { Lane, getActiveLane, shouldYield } from "./scheduler"
+import { shouldYield } from "./scheduler"
 import { unmount, unmountChildren } from "./unmount"
 import type { DangerousInnerHTML, VNode } from "./vnode"
-import { appendAfterWork, hasPendingWork, savePendingWork } from "./work-loop"
+import { appendAfterWork, savePendingWork } from "./work-loop"
 
 // --- className helper ---
 
@@ -43,6 +37,16 @@ function applyClassName(dom: Element, cn: string | null, isSvg: boolean): void {
     }
   } else {
     ;(dom as HTMLElement).className = cn ?? ""
+  }
+}
+
+// --- textContent helper (inlined R.collecting check on hot path) ---
+
+function setTextContent(dom: Element, text: string): void {
+  if (R.collecting) {
+    pushThunk(() => { dom.textContent = text })
+  } else {
+    dom.textContent = text
   }
 }
 
@@ -176,7 +180,12 @@ function patchInner(oldVNode: VNode, newVNode: VNode, parentDom: Element): void 
     newVNode.dom = dom
     newVNode.parentDom = oldVNode.parentDom
     if (oldVNode.children !== newVNode.children) {
-      domSetNodeValue(dom, newVNode.children as string)
+      const str = newVNode.children as string
+      if (R.collecting) {
+        pushThunk(() => { dom.nodeValue = str })
+      } else {
+        dom.nodeValue = str
+      }
     }
   } else if ((newFlags & VNodeFlags.Component) !== 0) {
     patchComp(oldVNode, newVNode, parentDom)
@@ -200,10 +209,16 @@ function patchElement(oldVNode: VNode, newVNode: VNode, parentDom: Element): voi
   const oldCn = oldVNode.className
   const newCn = newVNode.className
   if (oldCn !== newCn) {
-    if (isCollecting()) {
+    if (R.collecting) {
       pushThunk(() => applyClassName(dom, newCn, isSvg))
+    } else if (isSvg) {
+      if (newCn !== null) {
+        dom.setAttribute("class", newCn)
+      } else {
+        dom.removeAttribute("class")
+      }
     } else {
-      applyClassName(dom, newCn, isSvg)
+      ;(dom as HTMLElement).className = newCn ?? ""
     }
   }
 
@@ -225,11 +240,19 @@ function patchElement(oldVNode: VNode, newVNode: VNode, parentDom: Element): voi
       const newHtml = (newDIH as DangerousInnerHTML).__html
       const oldHtml = oldDIH !== undefined ? (oldDIH as DangerousInnerHTML).__html : ""
       if (newHtml !== oldHtml) {
-        domSetInnerHTML(dom, newHtml)
+        if (R.collecting) {
+          pushThunk(() => { dom.innerHTML = newHtml })
+        } else {
+          dom.innerHTML = newHtml
+        }
       }
       // Skip normal children diff when using innerHTML
     } else if (oldDIH !== undefined) {
-      domSetInnerHTML(dom, "")
+      if (R.collecting) {
+        pushThunk(() => { dom.innerHTML = "" })
+      } else {
+        dom.innerHTML = ""
+      }
       mountNewChildren(newVNode, dom, childSvg)
     } else {
       patchChildren(oldVNode, newVNode, dom, childSvg)
@@ -239,9 +262,10 @@ function patchElement(oldVNode: VNode, newVNode: VNode, parentDom: Element): voi
     patchChildren(oldVNode, newVNode, dom, childSvg)
   }
 
-  // If a descendant yielded during children diff, defer the ref update
-  // to afterWork so it runs after the continuation completes.
-  if (hasPendingWork()) {
+  // If a descendant yielded during children diff (Transition only),
+  // defer the ref update to afterWork so it runs after the continuation.
+  // R.pending is only true during Transition, so this is a no-op on Sync/Default.
+  if (R.pending) {
     if (oldProps !== null || newProps !== null) {
       const oldRef = oldProps !== null ? oldProps["ref"] : undefined
       const newRef = newProps !== null ? newProps["ref"] : undefined
@@ -270,8 +294,8 @@ function patchFragment(oldVNode: VNode, newVNode: VNode, parentDom: Element): vo
   newVNode.parentDom = parentDom
   patchChildren(oldVNode, newVNode, parentDom, false)
 
-  // If a descendant yielded, defer the dom reference update.
-  if (hasPendingWork()) {
+  // If a descendant yielded (Transition only), defer the dom reference update.
+  if (R.pending) {
     appendAfterWork(() => updateFragmentDom(oldVNode, newVNode))
     return
   }
@@ -349,7 +373,7 @@ function patchChildren(oldVNode: VNode, newVNode: VNode, dom: Element, isSvg: bo
     }
     if (oldChildFlags === ChildFlags.HasTextChildren) {
       if (oldChildren !== newChildren) {
-        domSetTextContent(dom, newChildren as string)
+        setTextContent(dom, newChildren as string)
       }
       return
     }
@@ -369,14 +393,14 @@ function patchChildren(oldVNode: VNode, newVNode: VNode, dom: Element, isSvg: bo
   }
 
   if (oldChildFlags === ChildFlags.HasTextChildren) {
-    domSetTextContent(dom, "")
+    setTextContent(dom, "")
     mountNewChildren(newVNode, dom, isSvg)
     return
   }
 
   if (newChildFlags === ChildFlags.HasTextChildren) {
     removeOldChildVNodes(oldVNode, oldChildFlags, dom)
-    domSetTextContent(dom, newChildren as string)
+    setTextContent(dom, newChildren as string)
     return
   }
 
@@ -404,7 +428,7 @@ function mountNewChildren(vnode: VNode, dom: Element, isSvg: boolean): void {
   const childFlags = vnode.childFlags
 
   if (childFlags === ChildFlags.HasTextChildren) {
-    domSetTextContent(dom, vnode.children as string)
+    setTextContent(dom, vnode.children as string)
   } else if (childFlags === ChildFlags.HasSingleChild) {
     mountInternal(vnode.children as VNode, dom, isSvg)
   } else {
@@ -419,7 +443,7 @@ function removeOldChildren(vnode: VNode, dom: Element): void {
   const childFlags = vnode.childFlags
 
   if (childFlags === ChildFlags.HasTextChildren) {
-    domSetTextContent(dom, "")
+    setTextContent(dom, "")
   } else if (childFlags === ChildFlags.HasSingleChild) {
     unmount(vnode.children as VNode, dom)
   } else {
@@ -449,6 +473,26 @@ function patchNonKeyedChildren(
   dom: Element,
   isSvg: boolean,
 ): void {
+  // Sync fast path: no yield infrastructure, matches pre-fiber diff exactly.
+  // Only Transition-lane rendering needs the resumable phase machinery.
+  if (R.activeLane !== LANE_TRANSITION) {
+    const oldLen = oldChildren.length | 0
+    const newLen = newChildren.length | 0
+    const minLen = oldLen < newLen ? oldLen : newLen
+    for (let i = 0; i < minLen; i++) {
+      patchInner(oldChildren[i]!, newChildren[i]!, dom)
+    }
+    if (newLen > oldLen) {
+      for (let i = oldLen; i < newLen; i++) {
+        mountInternal(newChildren[i]!, dom, isSvg)
+      }
+    } else if (oldLen > newLen) {
+      for (let i = newLen; i < oldLen; i++) {
+        unmount(oldChildren[i]!, dom)
+      }
+    }
+    return
+  }
   patchNonKeyedFrom(oldChildren, newChildren, dom, isSvg, 0, 0)
 }
 
@@ -473,17 +517,18 @@ function patchNonKeyedFrom(
   startIdx: number,
   phase: number,
 ): void {
+  // Only reached during Transition-lane rendering (patchNonKeyedChildren
+  // dispatches to a sync fast path otherwise).
   const oldLen = oldChildren.length | 0
   const newLen = newChildren.length | 0
   const minLen = oldLen < newLen ? oldLen : newLen
-  const canYield = getActiveLane() === Lane.Transition
 
   // Phase 0: Patch common prefix
   if (phase === 0) {
     for (let i = startIdx; i < minLen; i++) {
       patchInner(oldChildren[i]!, newChildren[i]!, dom)
 
-      if (canYield && (hasPendingWork() || shouldYield())) {
+      if (R.pending || shouldYield()) {
         savePendingWork(() => patchNonKeyedFrom(oldChildren, newChildren, dom, isSvg, i + 1, 0))
         return
       }
@@ -499,7 +544,7 @@ function patchNonKeyedFrom(
     for (let i = mountStart; i < newLen; i++) {
       mountInternal(newChildren[i]!, dom, isSvg)
 
-      if (canYield && shouldYield() && i + 1 < newLen) {
+      if (shouldYield() && i + 1 < newLen) {
         savePendingWork(() => patchNonKeyedFrom(oldChildren, newChildren, dom, isSvg, i + 1, 1))
         return
       }
@@ -512,7 +557,7 @@ function patchNonKeyedFrom(
     for (let i = unmountStart; i < oldLen; i++) {
       unmount(oldChildren[i]!, dom)
 
-      if (canYield && shouldYield() && i + 1 < oldLen) {
+      if (shouldYield() && i + 1 < oldLen) {
         savePendingWork(() => patchNonKeyedFrom(oldChildren, newChildren, dom, isSvg, i + 1, 2))
         return
       }
@@ -528,13 +573,19 @@ function patchKeyedChildren(
   dom: Element,
   isSvg: boolean,
 ): void {
+  // Sync fast path: single-function keyed diff, no yield checks.
+  // Matches pre-fiber code shape for JIT inlining on Sync/Default lanes.
+  if (R.activeLane !== LANE_TRANSITION) {
+    patchKeyedChildrenSync(oldChildren, newChildren, dom, isSvg)
+    return
+  }
+
   let oldStart = 0
   let newStart = 0
   let oldEnd = (oldChildren.length | 0) - 1
   let newEnd = (newChildren.length | 0) - 1
-  const canYield = getActiveLane() === Lane.Transition
 
-  // 1. Scan from start -- while keys match, patch in place
+  // Transition-lane: yield-aware path via patchKeyedFrom split.
   while (oldStart <= oldEnd && newStart <= newEnd) {
     const oldVNode = oldChildren[oldStart]!
     const newVNode = newChildren[newStart]!
@@ -543,9 +594,7 @@ function patchKeyedChildren(
     oldStart++
     newStart++
 
-    if (canYield && (hasPendingWork() || shouldYield())) {
-      // Yield mid-prefix. Save a continuation that re-enters the full
-      // keyed diff with the updated bounds (prefix already patched).
+    if (R.pending || shouldYield()) {
       savePendingWork(() =>
         patchKeyedFrom(oldChildren, newChildren, dom, isSvg, oldStart, newStart, oldEnd, newEnd),
       )
@@ -554,6 +603,94 @@ function patchKeyedChildren(
   }
 
   patchKeyedFrom(oldChildren, newChildren, dom, isSvg, oldStart, newStart, oldEnd, newEnd)
+}
+
+function patchKeyedChildrenSync(
+  oldChildren: VNode[],
+  newChildren: VNode[],
+  dom: Element,
+  isSvg: boolean,
+): void {
+  let oldStart = 0
+  let newStart = 0
+  let oldEnd = (oldChildren.length | 0) - 1
+  let newEnd = (newChildren.length | 0) - 1
+
+  while (oldStart <= oldEnd && newStart <= newEnd) {
+    const oldVNode = oldChildren[oldStart]!
+    const newVNode = newChildren[newStart]!
+    if (oldVNode.key !== newVNode.key) break
+    patchInner(oldVNode, newVNode, dom)
+    oldStart++
+    newStart++
+  }
+
+  while (oldStart <= oldEnd && newStart <= newEnd) {
+    const oldVNode = oldChildren[oldEnd]!
+    const newVNode = newChildren[newEnd]!
+    if (oldVNode.key !== newVNode.key) break
+    patchInner(oldVNode, newVNode, dom)
+    oldEnd--
+    newEnd--
+  }
+
+  if (oldStart > oldEnd) {
+    if (newStart <= newEnd) {
+      const nextPos = newEnd + 1
+      const refNode = nextPos < newChildren.length ? newChildren[nextPos]!.dom : null
+      for (let i = newStart; i <= newEnd; i++) {
+        mountBefore(newChildren[i]!, dom, refNode, isSvg)
+      }
+    }
+    return
+  }
+
+  if (newStart > newEnd) {
+    for (let i = oldStart; i <= oldEnd; i++) {
+      unmount(oldChildren[i]!, dom)
+    }
+    return
+  }
+
+  const oldMiddleLen = oldEnd - oldStart + 1
+  const newMiddleLen = newEnd - newStart + 1
+
+  if (newMiddleLen < 4 || (oldMiddleLen | newMiddleLen) < 32) {
+    patchKeyedSmall(oldChildren, newChildren, oldStart, oldEnd, newStart, newEnd, dom, isSvg)
+    return
+  }
+
+  keyIndexMap.clear()
+  for (let i = newStart; i <= newEnd; i++) {
+    keyIndexMap.set(newChildren[i]!.key!, i)
+  }
+
+  ensureSourcesCapacity(newMiddleLen)
+  for (let i = 0; i < newMiddleLen; i++) {
+    sourcesArr[i] = -1
+  }
+
+  let moved = false
+  let lastOldIndex = 0
+
+  for (let i = oldStart; i <= oldEnd; i++) {
+    const oldVNode = oldChildren[i]!
+    const newIndex = keyIndexMap.get(oldVNode.key!)
+
+    if (newIndex === undefined) {
+      unmount(oldVNode, dom)
+    } else {
+      sourcesArr[newIndex - newStart] = i
+      if (newIndex < lastOldIndex) {
+        moved = true
+      } else {
+        lastOldIndex = newIndex
+      }
+      patchInner(oldVNode, newChildren[newIndex]!, dom)
+    }
+  }
+
+  patchKeyedApplyMoves(newChildren, dom, isSvg, newStart, newMiddleLen, moved)
 }
 
 /**
@@ -574,7 +711,8 @@ function patchKeyedFrom(
   oldEnd: number,
   newEnd: number,
 ): void {
-  const canYield = getActiveLane() === Lane.Transition
+  // This function is only reached during Transition-lane rendering
+  // (patchKeyedChildren dispatches to patchKeyedChildrenSync otherwise).
 
   // 2. Scan from end -- while keys match, patch in place
   // Suffix scan is typically short (stops at first mismatch), so no
@@ -658,7 +796,7 @@ function patchKeyedFrom(
       // Patch the matched pair
       patchInner(oldVNode, newChildren[newIndex]!, dom)
 
-      if (canYield && (hasPendingWork() || shouldYield()) && i < oldEnd) {
+      if ((R.pending || shouldYield()) && i < oldEnd) {
         // Yield mid-matching. Save state and a continuation that finishes
         // the matching loop, then runs the move/mount phase.
         const resumeI = i + 1
@@ -703,8 +841,7 @@ function patchKeyedMiddleResume(
   moved: boolean,
   lastOldIndex: number,
 ): void {
-  const canYield = getActiveLane() === Lane.Transition
-
+  // Only reached during Transition-lane rendering.
   for (let i = resumeI; i <= oldEnd; i++) {
     const oldVNode = oldChildren[i]!
     const newIndex = keyIndexMap.get(oldVNode.key!)
@@ -720,7 +857,7 @@ function patchKeyedMiddleResume(
       }
       patchInner(oldVNode, newChildren[newIndex]!, dom)
 
-      if (canYield && (hasPendingWork() || shouldYield()) && i < oldEnd) {
+      if ((R.pending || shouldYield()) && i < oldEnd) {
         const nextI = i + 1
         const movedSoFar = moved
         const lastOldSoFar = lastOldIndex

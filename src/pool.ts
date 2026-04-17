@@ -8,7 +8,7 @@
  * All properties are reset to their initial types to maintain hidden class consistency.
  */
 
-import { isCollecting } from "./effects"
+import { R } from "./render-state"
 import type { ChildFlag, VNodeFlag } from "./flags"
 import type { VNodeType } from "./vnode"
 import { VNode } from "./vnode"
@@ -60,7 +60,7 @@ export function acquireVNode(
  * @param vnode - The VNode to release
  */
 export function releaseVNode(vnode: VNode): void {
-  if (isCollecting()) return
+  if (R.collecting) return
   if (pool.length >= MAX_POOL_SIZE) return
 
   // Null out reference-holding properties to prevent memory leaks.

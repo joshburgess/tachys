@@ -52,6 +52,7 @@ import {
   restoreTransitionState,
   resumeCollecting,
 } from "./effects"
+import { R, LANE_IDLE } from "./render-state"
 import {
   discardPendingWork,
   hasPendingWork,
@@ -76,11 +77,8 @@ const laneQueues: ComponentInstance[][] = [[], [], []]
 let isFlushing = false
 let isScheduled = false
 
-/** Sentinel value: no lane is active (scheduler idle). */
-const IDLE_LANE = -1 as const
-
-/** The lane currently being processed (or IDLE_LANE if idle). */
-let activeLane: Lane | typeof IDLE_LANE = IDLE_LANE
+/** The IDLE_LANE constant from render-state (re-exported for internal use). */
+const IDLE_LANE = LANE_IDLE
 
 /** Timestamp when the current time slice started. */
 let sliceStart = 0
@@ -230,7 +228,7 @@ export function getCurrentLane(): Lane {
  * Get the lane currently being processed (-1 if idle).
  */
 export function getActiveLane(): Lane | -1 {
-  return activeLane
+  return R.activeLane as Lane | -1
 }
 
 /**
@@ -238,7 +236,7 @@ export function getActiveLane(): Lane | -1 {
  * Returns true if we should yield to the browser.
  */
 export function shouldYield(): boolean {
-  if (activeLane === Lane.Sync) return false
+  if (R.activeLane === Lane.Sync) return false
   return performance.now() - sliceStart > SLICE_BUDGET
 }
 
@@ -288,7 +286,7 @@ function autoFlush(): void {
     if (queue.length === 0) continue
 
     processedUrgent = true
-    activeLane = lane
+    R.activeLane = lane
     sliceStart = performance.now()
 
     while (queue.length > 0) {
@@ -306,7 +304,7 @@ function autoFlush(): void {
 
       // Time slice yielding
       if (lane !== Lane.Sync && shouldYield() && queue.length > 0) {
-        activeLane = IDLE_LANE
+        R.activeLane = IDLE_LANE
         isFlushing = false
         isScheduled = true
         // Restore collection state if we paused it
@@ -327,7 +325,7 @@ function autoFlush(): void {
       // Defer transition work until after the browser paints so the
       // urgent render is visible first. scheduleAfterPaint uses
       // rAF + MessageChannel to guarantee a true paint boundary.
-      activeLane = IDLE_LANE
+      R.activeLane = IDLE_LANE
       isFlushing = false
       if (!isScheduled) {
         isScheduled = true
@@ -352,7 +350,7 @@ function autoFlush(): void {
       _processedInstances.length = 0
     }
 
-    activeLane = Lane.Transition
+    R.activeLane = Lane.Transition
     sliceStart = performance.now()
 
     while (transitionQueue.length > 0 || hasPendingWork()) {
@@ -372,7 +370,7 @@ function autoFlush(): void {
         // resumePendingWork returns true if a new yield occurred
         const yieldedAgain = resumePendingWork()
         if (yieldedAgain && shouldYield()) {
-          activeLane = IDLE_LANE
+          R.activeLane = IDLE_LANE
           isFlushing = false
           isScheduled = true
           scheduleAfterPaint(autoFlush)
@@ -393,7 +391,7 @@ function autoFlush(): void {
         if (yieldedAgain && shouldYield()) {
           // Yield with continuation still pending -- it will be resumed
           // on the next time slice.
-          activeLane = IDLE_LANE
+          R.activeLane = IDLE_LANE
           isFlushing = false
           isScheduled = true
           scheduleAfterPaint(autoFlush)
@@ -405,7 +403,7 @@ function autoFlush(): void {
         // Yield transition work -- keep effects queued (don't commit yet).
         // The effect queue persists across yields so all Transition DOM
         // mutations commit atomically when the full render completes.
-        activeLane = IDLE_LANE
+        R.activeLane = IDLE_LANE
         isFlushing = false
         isScheduled = true
         scheduleAfterPaint(autoFlush)
@@ -449,7 +447,7 @@ function autoFlush(): void {
     _processedInstances.length = 0
   }
 
-  activeLane = IDLE_LANE
+  R.activeLane = IDLE_LANE
   isFlushing = false
 }
 
@@ -487,7 +485,7 @@ function processAllLanes(): void {
 
     if (queue.length === 0 && !((lane as number) === Lane.Transition && hasPendingWork())) continue
 
-    activeLane = lane
+    R.activeLane = lane
     sliceStart = performance.now()
 
     while (queue.length > 0 || ((lane as number) === Lane.Transition && hasPendingWork())) {
@@ -519,7 +517,7 @@ function processAllLanes(): void {
       // Check if we should yield (not for Sync lane)
       if (lane !== Lane.Sync && shouldYield() && queue.length > 0) {
         // Yield and reschedule
-        activeLane = IDLE_LANE
+        R.activeLane = IDLE_LANE
         isFlushing = false
         isScheduled = true
         scheduleCallback(flushUpdates)
@@ -528,12 +526,12 @@ function processAllLanes(): void {
     }
   }
 
-  activeLane = IDLE_LANE
+  R.activeLane = IDLE_LANE
 }
 
 function processQueue(queue: ComponentInstance[], lane: Lane): void {
-  const prevActiveLane = activeLane
-  activeLane = lane
+  const prevActiveLane = R.activeLane
+  R.activeLane = lane
   sliceStart = performance.now()
 
   while (queue.length > 0) {
@@ -542,7 +540,7 @@ function processQueue(queue: ComponentInstance[], lane: Lane): void {
     instance._rerender()
   }
 
-  activeLane = prevActiveLane
+  R.activeLane = prevActiveLane
 }
 
 function hasHigherPriorityWork(currentLane: Lane): boolean {

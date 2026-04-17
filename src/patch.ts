@@ -13,8 +13,9 @@
  * performance on clean props objects.
  */
 
-import { isCollecting, pushThunk } from "./effects"
+import { pushThunk } from "./effects"
 import { cleanupEvents, updateEvent } from "./events"
+import { R } from "./render-state"
 
 /**
  * Map React-style prop names to their corresponding HTML attribute names.
@@ -111,7 +112,7 @@ export function patchProp(
   newValue: unknown,
   isSvg: boolean,
 ): void {
-  if (isCollecting()) {
+  if (R.collecting) {
     pushThunk(() => patchPropDirect(dom, key, oldValue, newValue, isSvg))
     return
   }

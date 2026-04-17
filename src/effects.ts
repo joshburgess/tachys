@@ -29,6 +29,8 @@
  * execute immediately while Transition mutations remain queued.
  */
 
+import { R } from "./render-state"
+
 // --- Effect tags (numeric for fast switch dispatch) ---
 
 const APPEND = 0
@@ -113,6 +115,7 @@ let _transitionRestorers: (() => void)[] = []
  */
 export function beginCollecting(): void {
   _collecting = true
+  R.collecting = true
   _effects.length = 0
   _deferredEffects.length = 0
   _transitionRestorers.length = 0
@@ -125,6 +128,7 @@ export function beginCollecting(): void {
  */
 export function commitEffects(): void {
   _collecting = false
+  R.collecting = false
   const effects = _effects
   for (let i = 0; i < effects.length; i++) {
     const e = effects[i]!
@@ -153,6 +157,7 @@ export function commitEffects(): void {
  */
 export function discardEffects(): void {
   _collecting = false
+  R.collecting = false
   _effects.length = 0
   _deferredEffects.length = 0
 }
@@ -163,6 +168,7 @@ export function discardEffects(): void {
  */
 export function pauseCollecting(): void {
   _collecting = false
+  R.collecting = false
 }
 
 /**
@@ -171,6 +177,7 @@ export function pauseCollecting(): void {
  */
 export function resumeCollecting(): void {
   _collecting = true
+  R.collecting = true
 }
 
 /** Whether the effect queue is currently collecting. */
@@ -224,6 +231,23 @@ export function domRemoveChild(parent: Node, child: Node): void {
     return
   }
   parent.removeChild(child)
+}
+
+// --- Typed-effect enqueue helpers (assume collecting == true) ---
+//
+// Exposed so callers can branch on R.collecting inline and skip the
+// function call + redundant check on the hot Sync/Default path.
+
+export function pushAppend(parent: Node, child: Node): void {
+  _effects.push({ t: APPEND, p: parent, c: child })
+}
+
+export function pushInsert(parent: Node, child: Node, ref: Node | null): void {
+  _effects.push({ t: INSERT, p: parent, c: child, r: ref })
+}
+
+export function pushRemove(parent: Node, child: Node): void {
+  _effects.push({ t: REMOVE, p: parent, c: child })
 }
 
 // --- Thunk effects (for property / content mutations) ---
