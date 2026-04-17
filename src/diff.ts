@@ -295,21 +295,19 @@ function patchElement(oldVNode: VNode, newVNode: VNode, parentDom: Element): voi
     patchChildren(oldVNode, newVNode, dom, childSvg)
   }
 
-  // If a descendant yielded during children diff (Transition only),
-  // defer the ref update to afterWork so it runs after the continuation.
-  // R.pending is only true during Transition, so this is a no-op on Sync/Default.
-  if (R.pending) {
-    deferElementRefUpdate(dom, oldProps, newProps)
-    return
-  }
-
-  // Update ref (only when props exist)
+  // Update ref (only when props exist). Refs are rare, so checking R.pending
+  // inside this branch -- instead of before it -- avoids one load+branch on
+  // every ref-less element patch, which is the overwhelmingly common case.
   if (oldProps !== null || newProps !== null) {
     const oldRef = oldProps !== null ? oldProps["ref"] : undefined
     const newRef = newProps !== null ? newProps["ref"] : undefined
     if (oldRef !== newRef) {
-      if (oldRef !== undefined) clearRef(oldRef)
-      if (newRef !== undefined) setRef(newRef, dom)
+      if (R.pending) {
+        deferRefUpdate(dom, oldRef, newRef)
+      } else {
+        if (oldRef !== undefined) clearRef(oldRef)
+        if (newRef !== undefined) setRef(newRef, dom)
+      }
     }
   }
 }
@@ -318,15 +316,7 @@ function patchElement(oldVNode: VNode, newVNode: VNode, parentDom: Element): voi
  * Queue the ref update to run after the resumed children diff completes.
  * Only called when R.pending is true (Transition mid-render yield).
  */
-function deferElementRefUpdate(
-  dom: Element,
-  oldProps: Record<string, unknown> | null,
-  newProps: Record<string, unknown> | null,
-): void {
-  if (oldProps === null && newProps === null) return
-  const oldRef = oldProps !== null ? oldProps["ref"] : undefined
-  const newRef = newProps !== null ? newProps["ref"] : undefined
-  if (oldRef === newRef) return
+function deferRefUpdate(dom: Element, oldRef: unknown, newRef: unknown): void {
   appendAfterWork(() => {
     if (oldRef !== undefined) clearRef(oldRef)
     if (newRef !== undefined) setRef(newRef, dom)
