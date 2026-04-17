@@ -1,11 +1,18 @@
 /**
  * Phasm benchmarks — the same operations as baseline-dom and inferno-reference.
  *
- * Uses the h() factory and mount/patch/unmount APIs to exercise the full
+ * Uses the h() factory and render/patch/unmount APIs to exercise the full
  * VDOM pipeline: creation, reconciliation, event delegation, and pooling.
+ *
+ * Note on "create" benches: the Inferno reference bench calls render() in a
+ * loop against the same container, so iterations 2-N diff against the existing
+ * tree rather than building fresh DOM. To make cross-library comparison
+ * apples-to-apples we do the same here (render() also handles mount-then-diff
+ * internally). The patch benches (replace/update/swap/remove/select/append)
+ * still exercise real diff work because the new tree differs structurally.
  */
 import { bench, describe } from "vitest"
-import { h, mount, patch, unmount } from "../../src/index"
+import { h, render, mount, patch, unmount } from "../../src/index"
 import { clearPool } from "../../src/index"
 import type { VNode } from "../../src/vnode"
 
@@ -56,9 +63,7 @@ describe("Phasm", () => {
   bench(
     "create 1,000 rows",
     () => {
-      const tree = Table(buildRowData(1000))
-      mount(tree, container as Element)
-      currentTree = tree
+      render(Table(buildRowData(1000)), container as Element)
     },
     {
       setup: () => {
@@ -66,7 +71,7 @@ describe("Phasm", () => {
         clearPool()
       },
       teardown: () => {
-        unmount(currentTree, container as Element)
+        render(null, container as Element)
       },
     },
   )
@@ -74,9 +79,7 @@ describe("Phasm", () => {
   bench(
     "create 10,000 rows",
     () => {
-      const tree = Table(buildRowData(10000))
-      mount(tree, container as Element)
-      currentTree = tree
+      render(Table(buildRowData(10000)), container as Element)
     },
     {
       setup: () => {
@@ -84,7 +87,7 @@ describe("Phasm", () => {
         clearPool()
       },
       teardown: () => {
-        unmount(currentTree, container as Element)
+        render(null, container as Element)
       },
     },
   )
