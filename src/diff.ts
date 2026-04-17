@@ -22,12 +22,13 @@ import { unmount, unmountChildren } from "./unmount"
 import type { DangerousInnerHTML, VNode } from "./vnode"
 import { appendAfterWork, savePendingWork } from "./work-loop"
 
-// --- className helper ---
+// --- className / text / innerHTML helpers ---
+//
+// Extracted so patchElement's body stays compact (improves V8 inlining
+// budget for the outer patchInner dispatch). The Transition thunk
+// closures are allocated only when R.collecting is true; the Sync path
+// pays one branch and a direct DOM write.
 
-/**
- * Apply a className value to an element. Extracted so it can be captured
- * in a thunk closure without duplicating the SVG/HTML branching logic.
- */
 function applyClassName(dom: Element, cn: string | null, isSvg: boolean): void {
   if (isSvg) {
     if (cn !== null) {
@@ -40,38 +41,41 @@ function applyClassName(dom: Element, cn: string | null, isSvg: boolean): void {
   }
 }
 
-// --- Transition-lane thunk helpers ---
-//
-// These encapsulate closure allocation so the patchInner/patchElement
-// Sync fast path stays free of inline arrow function literals. V8 is
-// more willing to inline a function whose body only contains simple
-// branches + function calls, compared to one that contains closure
-// literals (even if the allocation site is unreachable on the hot
-// path).
-
-function pushClassNameThunk(dom: Element, cn: string | null, isSvg: boolean): void {
-  pushThunk(() => applyClassName(dom, cn, isSvg))
+function patchClassName(dom: Element, cn: string | null, isSvg: boolean): void {
+  if (R.collecting) {
+    pushThunk(() => applyClassName(dom, cn, isSvg))
+  } else if (isSvg) {
+    if (cn !== null) {
+      dom.setAttribute("class", cn)
+    } else {
+      dom.removeAttribute("class")
+    }
+  } else {
+    ;(dom as HTMLElement).className = cn ?? ""
+  }
 }
-
-function pushNodeValueThunk(node: Text, str: string): void {
-  pushThunk(() => { node.nodeValue = str })
-}
-
-function pushTextContentThunk(node: Element, text: string): void {
-  pushThunk(() => { node.textContent = text })
-}
-
-function pushInnerHTMLThunk(node: Element, html: string): void {
-  pushThunk(() => { node.innerHTML = html })
-}
-
-// --- textContent helper (inlined R.collecting check on hot path) ---
 
 function setTextContent(dom: Element, text: string): void {
   if (R.collecting) {
-    pushTextContentThunk(dom, text)
+    pushThunk(() => { dom.textContent = text })
   } else {
     dom.textContent = text
+  }
+}
+
+function setNodeValue(node: Text, str: string): void {
+  if (R.collecting) {
+    pushThunk(() => { node.nodeValue = str })
+  } else {
+    node.nodeValue = str
+  }
+}
+
+function setInnerHTML(dom: Element, html: string): void {
+  if (R.collecting) {
+    pushThunk(() => { dom.innerHTML = html })
+  } else {
+    dom.innerHTML = html
   }
 }
 
@@ -213,12 +217,7 @@ function patchInner(oldVNode: VNode, newVNode: VNode, parentDom: Element): void 
     newVNode.dom = dom
     newVNode.parentDom = oldVNode.parentDom
     if (oldVNode.children !== newVNode.children) {
-      const str = newVNode.children as string
-      if (R.collecting) {
-        pushNodeValueThunk(dom, str)
-      } else {
-        dom.nodeValue = str
-      }
+      setNodeValue(dom, newVNode.children as string)
     }
   } else if ((newFlags & VNodeFlags.Component) !== 0) {
     patchComp(oldVNode, newVNode, parentDom)
@@ -242,17 +241,7 @@ function patchElement(oldVNode: VNode, newVNode: VNode, parentDom: Element): voi
   const oldCn = oldVNode.className
   const newCn = newVNode.className
   if (oldCn !== newCn) {
-    if (R.collecting) {
-      pushClassNameThunk(dom, newCn, isSvg)
-    } else if (isSvg) {
-      if (newCn !== null) {
-        dom.setAttribute("class", newCn)
-      } else {
-        dom.removeAttribute("class")
-      }
-    } else {
-      ;(dom as HTMLElement).className = newCn ?? ""
-    }
+    patchClassName(dom, newCn, isSvg)
   }
 
   // Hoist props reads -- avoids repeated vnode.props access
@@ -273,19 +262,11 @@ function patchElement(oldVNode: VNode, newVNode: VNode, parentDom: Element): voi
       const newHtml = (newDIH as DangerousInnerHTML).__html
       const oldHtml = oldDIH !== undefined ? (oldDIH as DangerousInnerHTML).__html : ""
       if (newHtml !== oldHtml) {
-        if (R.collecting) {
-          pushInnerHTMLThunk(dom, newHtml)
-        } else {
-          dom.innerHTML = newHtml
-        }
+        setInnerHTML(dom, newHtml)
       }
       // Skip normal children diff when using innerHTML
     } else if (oldDIH !== undefined) {
-      if (R.collecting) {
-        pushInnerHTMLThunk(dom, "")
-      } else {
-        dom.innerHTML = ""
-      }
+      setInnerHTML(dom, "")
       mountNewChildren(newVNode, dom, childSvg)
     } else {
       patchChildren(oldVNode, newVNode, dom, childSvg)
