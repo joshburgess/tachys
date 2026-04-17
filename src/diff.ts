@@ -40,11 +40,36 @@ function applyClassName(dom: Element, cn: string | null, isSvg: boolean): void {
   }
 }
 
+// --- Transition-lane thunk helpers ---
+//
+// These encapsulate closure allocation so the patchInner/patchElement
+// Sync fast path stays free of inline arrow function literals. V8 is
+// more willing to inline a function whose body only contains simple
+// branches + function calls, compared to one that contains closure
+// literals (even if the allocation site is unreachable on the hot
+// path).
+
+function pushClassNameThunk(dom: Element, cn: string | null, isSvg: boolean): void {
+  pushThunk(() => applyClassName(dom, cn, isSvg))
+}
+
+function pushNodeValueThunk(node: Text, str: string): void {
+  pushThunk(() => { node.nodeValue = str })
+}
+
+function pushTextContentThunk(node: Element, text: string): void {
+  pushThunk(() => { node.textContent = text })
+}
+
+function pushInnerHTMLThunk(node: Element, html: string): void {
+  pushThunk(() => { node.innerHTML = html })
+}
+
 // --- textContent helper (inlined R.collecting check on hot path) ---
 
 function setTextContent(dom: Element, text: string): void {
   if (R.collecting) {
-    pushThunk(() => { dom.textContent = text })
+    pushTextContentThunk(dom, text)
   } else {
     dom.textContent = text
   }
@@ -190,7 +215,7 @@ function patchInner(oldVNode: VNode, newVNode: VNode, parentDom: Element): void 
     if (oldVNode.children !== newVNode.children) {
       const str = newVNode.children as string
       if (R.collecting) {
-        pushThunk(() => { dom.nodeValue = str })
+        pushNodeValueThunk(dom, str)
       } else {
         dom.nodeValue = str
       }
@@ -218,7 +243,7 @@ function patchElement(oldVNode: VNode, newVNode: VNode, parentDom: Element): voi
   const newCn = newVNode.className
   if (oldCn !== newCn) {
     if (R.collecting) {
-      pushThunk(() => applyClassName(dom, newCn, isSvg))
+      pushClassNameThunk(dom, newCn, isSvg)
     } else if (isSvg) {
       if (newCn !== null) {
         dom.setAttribute("class", newCn)
@@ -249,7 +274,7 @@ function patchElement(oldVNode: VNode, newVNode: VNode, parentDom: Element): voi
       const oldHtml = oldDIH !== undefined ? (oldDIH as DangerousInnerHTML).__html : ""
       if (newHtml !== oldHtml) {
         if (R.collecting) {
-          pushThunk(() => { dom.innerHTML = newHtml })
+          pushInnerHTMLThunk(dom, newHtml)
         } else {
           dom.innerHTML = newHtml
         }
@@ -257,7 +282,7 @@ function patchElement(oldVNode: VNode, newVNode: VNode, parentDom: Element): voi
       // Skip normal children diff when using innerHTML
     } else if (oldDIH !== undefined) {
       if (R.collecting) {
-        pushThunk(() => { dom.innerHTML = "" })
+        pushInnerHTMLThunk(dom, "")
       } else {
         dom.innerHTML = ""
       }

@@ -478,35 +478,7 @@ export function patchComponent(oldVNode: VNode, newVNode: VNode, parentDom: Elem
   }
 
   // Save state for Transition abandonment (restore if render is discarded)
-  if (R.collecting) {
-    const savedProps = oldInstance._props
-    const savedVNode = oldInstance._vnode
-    const savedParentDom = oldInstance._parentDom
-    const savedRendered = oldInstance._rendered
-    const savedDom = oldVNode.dom
-    // Snapshot hook values so resolveHookState mutations are reversible
-    const hooks = oldInstance._hooks
-    const savedHooks: Array<{ value: unknown; pending: StateUpdate[] | null }> = []
-    for (let i = 0; i < hooks.length; i++) {
-      const hk = hooks[i]!
-      savedHooks.push({
-        value: hk.value,
-        pending: hk.pendingUpdates === null ? null : hk.pendingUpdates.slice(),
-      })
-    }
-    pushTransitionRestorer(() => {
-      oldInstance._props = savedProps
-      oldInstance._vnode = savedVNode
-      oldInstance._parentDom = savedParentDom
-      oldInstance._rendered = savedRendered
-      savedVNode.dom = savedDom
-      instanceMap.set(savedVNode, oldInstance)
-      for (let i = 0; i < savedHooks.length; i++) {
-        hooks[i]!.value = savedHooks[i]!.value
-        hooks[i]!.pendingUpdates = savedHooks[i]!.pending
-      }
-    })
-  }
+  if (R.collecting) savePatchRestorer(oldInstance, oldVNode)
 
   oldInstance._props = newProps
   oldInstance._vnode = newVNode
@@ -1453,6 +1425,68 @@ function renderComponent(instance: ComponentInstance, props: Record<string, unkn
   }
 }
 
+/**
+ * Snapshot patchComponent state for Transition abandonment. Extracted
+ * from the main patch path so it stays out of the Sync/Default hot
+ * loop -- only called when R.collecting is true.
+ */
+function savePatchRestorer(oldInstance: ComponentInstance, oldVNode: VNode): void {
+  const savedProps = oldInstance._props
+  const savedVNode = oldInstance._vnode
+  const savedParentDom = oldInstance._parentDom
+  const savedRendered = oldInstance._rendered
+  const savedDom = oldVNode.dom
+  const hooks = oldInstance._hooks
+  const savedHooks: Array<{ value: unknown; pending: StateUpdate[] | null }> = []
+  for (let i = 0; i < hooks.length; i++) {
+    const hk = hooks[i]!
+    savedHooks.push({
+      value: hk.value,
+      pending: hk.pendingUpdates === null ? null : hk.pendingUpdates.slice(),
+    })
+  }
+  pushTransitionRestorer(() => {
+    oldInstance._props = savedProps
+    oldInstance._vnode = savedVNode
+    oldInstance._parentDom = savedParentDom
+    oldInstance._rendered = savedRendered
+    savedVNode.dom = savedDom
+    instanceMap.set(savedVNode, oldInstance)
+    for (let i = 0; i < savedHooks.length; i++) {
+      hooks[i]!.value = savedHooks[i]!.value
+      hooks[i]!.pendingUpdates = savedHooks[i]!.pending
+    }
+  })
+}
+
+/**
+ * Snapshot rerenderComponent state for Transition abandonment. Extracted
+ * from the main rerender path -- only called when R.collecting is true.
+ */
+function saveRerenderRestorer(instance: ComponentInstance, oldRendered: VNode): void {
+  const savedRendered = oldRendered
+  const savedVnodeChildren = instance._vnode.children
+  const savedVnodeDom = instance._vnode.dom
+  const hooks = instance._hooks
+  const savedHooks: Array<{ value: unknown; pending: StateUpdate[] | null }> = []
+  for (let i = 0; i < hooks.length; i++) {
+    const h = hooks[i]!
+    savedHooks.push({
+      value: h.value,
+      pending: h.pendingUpdates === null ? null : h.pendingUpdates.slice(),
+    })
+  }
+  pushTransitionRestorer(() => {
+    instance._rendered = savedRendered
+    instance._vnode.children = savedVnodeChildren
+    instance._vnode.dom = savedVnodeDom
+    for (let i = 0; i < savedHooks.length; i++) {
+      hooks[i]!.value = savedHooks[i]!.value
+      hooks[i]!.pendingUpdates = savedHooks[i]!.pending
+    }
+  })
+}
+
 function rerenderComponent(instance: ComponentInstance): void {
   if (!instance._mounted) return
 
@@ -1460,30 +1494,7 @@ function rerenderComponent(instance: ComponentInstance): void {
   if (oldRendered === null) return
 
   // Save state for Transition abandonment
-  if (R.collecting) {
-    const savedRendered = oldRendered
-    const savedVnodeChildren = instance._vnode.children
-    const savedVnodeDom = instance._vnode.dom
-    // Snapshot hook values so resolveHookState mutations are reversible
-    const hooks = instance._hooks
-    const savedHooks: Array<{ value: unknown; pending: StateUpdate[] | null }> = []
-    for (let i = 0; i < hooks.length; i++) {
-      const h = hooks[i]!
-      savedHooks.push({
-        value: h.value,
-        pending: h.pendingUpdates === null ? null : h.pendingUpdates.slice(),
-      })
-    }
-    pushTransitionRestorer(() => {
-      instance._rendered = savedRendered
-      instance._vnode.children = savedVnodeChildren
-      instance._vnode.dom = savedVnodeDom
-      for (let i = 0; i < savedHooks.length; i++) {
-        hooks[i]!.value = savedHooks[i]!.value
-        hooks[i]!.pendingUpdates = savedHooks[i]!.pending
-      }
-    })
-  }
+  if (R.collecting) saveRerenderRestorer(instance, oldRendered)
 
   const providerCtx = getProviderContext(instance._type)
   if (providerCtx !== null) providerCtx._stack.push(instance._props["value"])
