@@ -299,16 +299,7 @@ function patchElement(oldVNode: VNode, newVNode: VNode, parentDom: Element): voi
   // defer the ref update to afterWork so it runs after the continuation.
   // R.pending is only true during Transition, so this is a no-op on Sync/Default.
   if (R.pending) {
-    if (oldProps !== null || newProps !== null) {
-      const oldRef = oldProps !== null ? oldProps["ref"] : undefined
-      const newRef = newProps !== null ? newProps["ref"] : undefined
-      if (oldRef !== newRef) {
-        appendAfterWork(() => {
-          if (oldRef !== undefined) clearRef(oldRef)
-          if (newRef !== undefined) setRef(newRef, dom)
-        })
-      }
-    }
+    deferElementRefUpdate(dom, oldProps, newProps)
     return
   }
 
@@ -321,6 +312,25 @@ function patchElement(oldVNode: VNode, newVNode: VNode, parentDom: Element): voi
       if (newRef !== undefined) setRef(newRef, dom)
     }
   }
+}
+
+/**
+ * Queue the ref update to run after the resumed children diff completes.
+ * Only called when R.pending is true (Transition mid-render yield).
+ */
+function deferElementRefUpdate(
+  dom: Element,
+  oldProps: Record<string, unknown> | null,
+  newProps: Record<string, unknown> | null,
+): void {
+  if (oldProps === null && newProps === null) return
+  const oldRef = oldProps !== null ? oldProps["ref"] : undefined
+  const newRef = newProps !== null ? newProps["ref"] : undefined
+  if (oldRef === newRef) return
+  appendAfterWork(() => {
+    if (oldRef !== undefined) clearRef(oldRef)
+    if (newRef !== undefined) setRef(newRef, dom)
+  })
 }
 
 function patchFragment(oldVNode: VNode, newVNode: VNode, parentDom: Element): void {

@@ -524,38 +524,11 @@ export function patchComponent(oldVNode: VNode, newVNode: VNode, parentDom: Elem
   // If a descendant yielded mid-children-diff (Transition only), defer all
   // post-patch work (dom ref, suspense/EB handling, effects, provider cleanup).
   if (R.pending) {
-    appendAfterWork(() => {
-      newVNode.dom = portalTarget !== undefined ? oldVNode.dom : newRendered.dom
-      if (isSuspense) {
-        popSuspendHandler()
-        if (suspendedPromise !== undefined) {
-          if (R.collecting) {
-            signalTransitionSuspended(suspendedPromise)
-          } else {
-            oldInstance._hooks[0]!.value = true
-            const fallback = renderComponent(oldInstance, newProps)
-            detachRenderedDOM(newRendered, patchParent)
-            oldInstance._rendered = fallback
-            newVNode.children = fallback
-            mountInternal(fallback, patchParent, false)
-            newVNode.dom = portalTarget !== undefined ? oldVNode.dom : fallback.dom
-            suspendedPromise.then(
-              () => {
-                oldInstance._hooks[0]!.value = false
-                scheduleUpdate(oldInstance)
-              },
-              () => {
-                oldInstance._hooks[0]!.value = false
-                scheduleUpdate(oldInstance)
-              },
-            )
-          }
-        }
-      }
-      if (isEB) popErrorHandler()
-      runEffects(oldInstance)
-      if (providerCtx !== null) providerCtx._stack.pop()
-    })
+    deferPatchComponentPostWork(
+      oldInstance, oldVNode, newVNode, newRendered, newProps,
+      patchParent, portalTarget, providerCtx, isSuspense, isEB,
+      suspendedPromise,
+    )
     return
   }
 
@@ -1487,6 +1460,110 @@ function saveRerenderRestorer(instance: ComponentInstance, oldRendered: VNode): 
   })
 }
 
+/**
+ * rerenderComponent variant. Kept separate so each caller's closure
+ * captures only the locals it actually needs.
+ */
+function deferRerenderComponentPostWork(
+  instance: ComponentInstance,
+  newRendered: VNode,
+  patchParent: Element,
+  portalTarget: Element | undefined,
+  providerCtx: { _stack: unknown[] } | null,
+  isSuspense: boolean,
+  isEB: boolean,
+  suspendedPromise: Promise<unknown> | undefined,
+): void {
+  appendAfterWork(() => {
+    if (portalTarget === undefined) {
+      instance._vnode.dom = newRendered.dom
+    }
+    if (isSuspense) {
+      popSuspendHandler()
+      if (suspendedPromise !== undefined) {
+        if (R.collecting) {
+          signalTransitionSuspended(suspendedPromise)
+        } else {
+          instance._hooks[0]!.value = true
+          const fallback = renderComponent(instance, instance._props)
+          detachRenderedDOM(newRendered, patchParent)
+          instance._rendered = fallback
+          instance._vnode.children = fallback
+          mountInternal(fallback, patchParent, false)
+          if (portalTarget === undefined) {
+            instance._vnode.dom = fallback.dom
+          }
+          suspendedPromise.then(
+            () => {
+              instance._hooks[0]!.value = false
+              scheduleUpdate(instance)
+            },
+            () => {
+              instance._hooks[0]!.value = false
+              scheduleUpdate(instance)
+            },
+          )
+        }
+      }
+    }
+    if (isEB) popErrorHandler()
+    runEffects(instance)
+    if (providerCtx !== null) providerCtx._stack.pop()
+  })
+}
+
+/**
+ * Defer post-patch work (dom ref, suspense/EB handling, effects, provider
+ * cleanup) to run after the mid-render continuation completes. Extracted
+ * out of patchComponent so the Sync/Default path stays small.
+ */
+function deferPatchComponentPostWork(
+  oldInstance: ComponentInstance,
+  oldVNode: VNode,
+  newVNode: VNode,
+  newRendered: VNode,
+  newProps: Record<string, unknown>,
+  patchParent: Element,
+  portalTarget: Element | undefined,
+  providerCtx: { _stack: unknown[] } | null,
+  isSuspense: boolean,
+  isEB: boolean,
+  suspendedPromise: Promise<unknown> | undefined,
+): void {
+  appendAfterWork(() => {
+    newVNode.dom = portalTarget !== undefined ? oldVNode.dom : newRendered.dom
+    if (isSuspense) {
+      popSuspendHandler()
+      if (suspendedPromise !== undefined) {
+        if (R.collecting) {
+          signalTransitionSuspended(suspendedPromise)
+        } else {
+          oldInstance._hooks[0]!.value = true
+          const fallback = renderComponent(oldInstance, newProps)
+          detachRenderedDOM(newRendered, patchParent)
+          oldInstance._rendered = fallback
+          newVNode.children = fallback
+          mountInternal(fallback, patchParent, false)
+          newVNode.dom = portalTarget !== undefined ? oldVNode.dom : fallback.dom
+          suspendedPromise.then(
+            () => {
+              oldInstance._hooks[0]!.value = false
+              scheduleUpdate(oldInstance)
+            },
+            () => {
+              oldInstance._hooks[0]!.value = false
+              scheduleUpdate(oldInstance)
+            },
+          )
+        }
+      }
+    }
+    if (isEB) popErrorHandler()
+    runEffects(oldInstance)
+    if (providerCtx !== null) providerCtx._stack.pop()
+  })
+}
+
 function rerenderComponent(instance: ComponentInstance): void {
   if (!instance._mounted) return
 
@@ -1530,42 +1607,10 @@ function rerenderComponent(instance: ComponentInstance): void {
   // If a descendant yielded mid-children-diff (Transition only), defer all
   // post-patch work (dom ref, suspense/EB handling, effects, provider cleanup).
   if (R.pending) {
-    appendAfterWork(() => {
-      if (portalTarget === undefined) {
-        instance._vnode.dom = newRendered.dom
-      }
-      if (isSuspense) {
-        popSuspendHandler()
-        if (suspendedPromise !== undefined) {
-          if (R.collecting) {
-            signalTransitionSuspended(suspendedPromise)
-          } else {
-            instance._hooks[0]!.value = true
-            const fallback = renderComponent(instance, instance._props)
-            detachRenderedDOM(newRendered, patchParent)
-            instance._rendered = fallback
-            instance._vnode.children = fallback
-            mountInternal(fallback, patchParent, false)
-            if (portalTarget === undefined) {
-              instance._vnode.dom = fallback.dom
-            }
-            suspendedPromise.then(
-              () => {
-                instance._hooks[0]!.value = false
-                scheduleUpdate(instance)
-              },
-              () => {
-                instance._hooks[0]!.value = false
-                scheduleUpdate(instance)
-              },
-            )
-          }
-        }
-      }
-      if (isEB) popErrorHandler()
-      runEffects(instance)
-      if (providerCtx !== null) providerCtx._stack.pop()
-    })
+    deferRerenderComponentPostWork(
+      instance, newRendered, patchParent, portalTarget,
+      providerCtx, isSuspense, isEB, suspendedPromise,
+    )
     return
   }
 
