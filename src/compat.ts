@@ -10,8 +10,8 @@
  * are used.
  */
 
-import { useState, useReducer } from "./component"
-import { flushUpdates } from "./scheduler"
+import { useState, useReducer, useCallback, startTransition } from "./component"
+import { getActiveLane, Lane, flushUpdates } from "./scheduler"
 
 // --- react ---
 
@@ -157,13 +157,17 @@ export function useOptimistic<T, A = T>(
     active: false,
   })
 
-  // When passthrough changes and there's no active optimistic update, sync
-  const current = optimistic.active ? optimistic.value : passthrough
+  // During a Transition-lane render, revert to the passthrough (confirmed) value.
+  // Optimistic state is only visible on urgent (Sync/Default) renders.
+  const activeLane = getActiveLane()
+  const inTransition = activeLane === Lane.Transition
+  const current = optimistic.active && !inTransition ? optimistic.value : passthrough
 
-  const addOptimistic = (action: A) => {
-    const newValue = updateFn !== undefined ? updateFn(current, action) : (action as unknown as T)
+  const addOptimistic = useCallback((action: A) => {
+    const base = optimistic.active ? optimistic.value : passthrough
+    const newValue = updateFn !== undefined ? updateFn(base, action) : (action as unknown as T)
     setOptimistic({ value: newValue, active: true })
-  }
+  }, [optimistic, passthrough, updateFn])
 
   return [current, addOptimistic]
 }
@@ -185,24 +189,33 @@ export function useActionState<S, P>(
   const [state, setState] = useState(initialState)
   const [isPending, setIsPending] = useState(false)
 
-  const dispatch = (payload: P) => {
+  const dispatch = useCallback((payload: P) => {
+    // Set isPending=true at urgent priority so it's visible immediately,
+    // then resolve the action result inside a Transition so the state
+    // update renders at lower priority (matching useTransition semantics).
     setIsPending(true)
     const result = action(state, payload)
     if (result !== null && typeof result === "object" && typeof (result as Promise<S>).then === "function") {
       ;(result as Promise<S>).then(
         (newState) => {
-          setState(newState as S)
-          setIsPending(false)
+          startTransition(() => {
+            setState(newState as S)
+            setIsPending(false)
+          })
         },
         () => {
-          setIsPending(false)
+          startTransition(() => {
+            setIsPending(false)
+          })
         },
       )
     } else {
-      setState(result as S)
-      setIsPending(false)
+      startTransition(() => {
+        setState(result as S)
+        setIsPending(false)
+      })
     }
-  }
+  }, [action, state])
 
   return [state, dispatch, isPending]
 }

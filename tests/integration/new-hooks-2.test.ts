@@ -407,4 +407,69 @@ describe("useDeferredValue", () => {
     mount(h(Comp, null), container)
     expect(deferred).toBe(obj)
   })
+
+  it("returns initialValue on first render when provided", () => {
+    const snapshots: string[] = []
+
+    function Comp() {
+      const deferred = useDeferredValue("current", "placeholder")
+      snapshots.push(deferred)
+      return h("span", null, deferred)
+    }
+
+    const container = document.createElement("div")
+    mount(h(Comp, null), container)
+
+    // First render should use initialValue
+    expect(snapshots[0]).toBe("placeholder")
+    expect(container.innerHTML).toBe("<span>placeholder</span>")
+
+    // After flushing the Transition update, should catch up to current value
+    flushUpdates()
+    expect(snapshots[snapshots.length - 1]).toBe("current")
+    expect(container.innerHTML).toBe("<span>current</span>")
+  })
+
+  it("returns value directly on first render without initialValue", () => {
+    let deferred: string | null = null
+
+    function Comp() {
+      deferred = useDeferredValue("current")
+      return h("span", null, deferred)
+    }
+
+    const container = document.createElement("div")
+    mount(h(Comp, null), container)
+
+    expect(deferred).toBe("current")
+  })
+
+  it("initialValue does not affect subsequent updates", () => {
+    let setValue: ((v: string) => void) | null = null
+    const snapshots: string[] = []
+
+    function Comp() {
+      const [value, sv] = useState("first")
+      setValue = sv
+      const deferred = useDeferredValue(value, "init")
+      snapshots.push(deferred)
+      return h("span", null, deferred)
+    }
+
+    const container = document.createElement("div")
+    mount(h(Comp, null), container)
+
+    // First render: initialValue
+    expect(snapshots[0]).toBe("init")
+
+    // Flush to catch up
+    flushUpdates()
+    expect(snapshots[snapshots.length - 1]).toBe("first")
+
+    // Update value -- initialValue should have no effect
+    setValue!("second")
+    flushUpdates()
+    expect(snapshots[snapshots.length - 1]).toBe("second")
+    expect(container.innerHTML).toBe("<span>second</span>")
+  })
 })

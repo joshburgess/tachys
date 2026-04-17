@@ -43,10 +43,13 @@
 import type { ComponentInstance } from "./component"
 import {
   beginCollecting,
+  clearTransitionRestorers,
   commitEffects,
+  discardEffects,
   flushDeferredEffects,
   isCollecting,
   pauseCollecting,
+  restoreTransitionState,
   resumeCollecting,
 } from "./effects"
 import {
@@ -87,6 +90,44 @@ const SLICE_BUDGET = 5
 
 /** Current transition lane context. Set by startTransition. */
 let currentLane: Lane = Lane.Default
+
+/**
+ * Transition generation counter. Incremented each time a Transition-lane
+ * update is scheduled. Used to detect when a new Transition supersedes
+ * an in-progress one (the generation advances while the old Transition
+ * is yielded across frames).
+ */
+let _transitionGen = 0
+
+/**
+ * Generation snapshot taken when Transition processing begins. If
+ * _transitionGen !== _transitionRenderGen when resuming after a yield,
+ * the in-progress Transition has been superseded.
+ */
+let _transitionRenderGen = 0
+
+/**
+ * Instances processed during the current Transition batch. On
+ * abandonment, these are re-queued so the new Transition re-renders them.
+ */
+let _processedInstances: ComponentInstance[] = []
+
+/**
+ * Whether the current Transition render was suspended by a Suspense
+ * boundary. Set by signalTransitionSuspended() when a component throws
+ * a thenable during Transition-lane processing. The scheduler checks
+ * this after the Transition loop completes -- if true, the Transition
+ * is abandoned (effects discarded, VNode state restored) instead of
+ * committed, keeping the old committed UI visible.
+ */
+let _transitionSuspended = false
+
+/**
+ * The promise that suspended the current Transition. After abandonment,
+ * the scheduler attaches a .then() to re-schedule the Transition queue
+ * when the data resolves.
+ */
+let _suspendedPromise: Promise<unknown> | null = null
 
 // --- MessageChannel for yielding ---
 
@@ -156,6 +197,9 @@ export function scheduleUpdate(instance: ComponentInstance, lane?: Lane): void {
 
   laneQueues[targetLane]!.push(instance)
 
+  // Track Transition generations for abandonment detection
+  if (targetLane === Lane.Transition) _transitionGen++
+
   if (!isScheduled) {
     isScheduled = true
     if (targetLane === Lane.Sync) {
@@ -196,6 +240,23 @@ export function getActiveLane(): Lane | -1 {
 export function shouldYield(): boolean {
   if (activeLane === Lane.Sync) return false
   return performance.now() - sliceStart > SLICE_BUDGET
+}
+
+/**
+ * Signal that the current Transition render has been suspended by a
+ * Suspense boundary (a child threw a thenable). The scheduler will
+ * abandon the Transition (discard effects, restore VNode state) instead
+ * of committing, keeping the old committed UI visible.
+ *
+ * Called by the Suspense handler in component.ts when a thrown promise
+ * is caught during Transition-lane processing.
+ *
+ * @param promise - The thenable that caused suspension. The scheduler
+ *   attaches a .then() to re-schedule the Transition after it resolves.
+ */
+export function signalTransitionSuspended(promise: Promise<unknown>): void {
+  _transitionSuspended = true
+  _suspendedPromise = promise
 }
 
 // --- Auto-flush (from scheduler) ---
@@ -275,9 +336,21 @@ function autoFlush(): void {
       return
     }
 
+    // Detect superseded Transition: if we're resuming a yielded
+    // Transition and new Transition work arrived since we started,
+    // the old render is stale. Discard its effects and restart.
+    if (resumingTransition && _transitionGen !== _transitionRenderGen) {
+      abandonTransition()
+      // Fall through to start fresh below
+    }
+
     // Begin effect collection for Transition render phase (if not already
     // collecting from a resumed yield).
-    if (!isCollecting()) beginCollecting()
+    if (!isCollecting()) {
+      beginCollecting()
+      _transitionRenderGen = _transitionGen
+      _processedInstances.length = 0
+    }
 
     activeLane = Lane.Transition
     sliceStart = performance.now()
@@ -310,6 +383,7 @@ function autoFlush(): void {
 
       const instance = transitionQueue.shift()!
       instance._queuedLanes &= ~(1 << Lane.Transition)
+      _processedInstances.push(instance)
       instance._rerender()
 
       // After rerender, a mid-render yield may have saved a continuation.
@@ -339,14 +413,40 @@ function autoFlush(): void {
       }
     }
 
-    // All Transition work complete -- commit DOM effects atomically,
-    // then run deferred component effects (useEffect/useLayoutEffect).
-    commitEffects()
-    flushDeferredEffects()
+    // All Transition work complete. If a Suspense boundary suspended
+    // during the render, abandon instead of committing -- the old
+    // committed UI stays visible until the suspended data resolves.
+    if (_transitionSuspended) {
+      _transitionSuspended = false
+      const promise = _suspendedPromise
+      _suspendedPromise = null
+      abandonTransition()
+      // When the suspended data resolves, schedule a new autoFlush to
+      // retry the Transition. The re-queued instances from abandonTransition
+      // are already in the Transition queue.
+      if (promise !== null) {
+        const retryFlush = () => {
+          if (!isScheduled) {
+            isScheduled = true
+            scheduleCallback(autoFlush)
+          }
+        }
+        promise.then(retryFlush, retryFlush)
+      }
+    } else {
+      // Commit DOM effects atomically, then run deferred component
+      // effects (useEffect/useLayoutEffect).
+      commitEffects()
+      flushDeferredEffects()
+      clearTransitionRestorers()
+      _processedInstances.length = 0
+    }
   } else if (isCollecting()) {
     // Transition queue was drained externally -- commit residual effects.
     commitEffects()
     flushDeferredEffects()
+    clearTransitionRestorers()
+    _processedInstances.length = 0
   }
 
   activeLane = IDLE_LANE
@@ -450,6 +550,32 @@ function hasHigherPriorityWork(currentLane: Lane): boolean {
     if (laneQueues[i]!.length > 0) return true
   }
   return false
+}
+
+/**
+ * Abandon a superseded Transition render.
+ *
+ * Discards all collected DOM effects and pending continuations,
+ * restores component VNode state to pre-render values (so the VNode
+ * tree matches the live DOM), and re-queues all previously processed
+ * instances for the Transition lane so the new render includes them.
+ */
+function abandonTransition(): void {
+  restoreTransitionState()
+  discardEffects()
+  discardPendingWork()
+
+  // Re-queue instances from the abandoned batch
+  const transitionQueue = laneQueues[Lane.Transition]!
+  for (let i = 0; i < _processedInstances.length; i++) {
+    const inst = _processedInstances[i]!
+    const laneBit = 1 << Lane.Transition
+    if (!(inst._queuedLanes & laneBit)) {
+      inst._queuedLanes |= laneBit
+      transitionQueue.push(inst)
+    }
+  }
+  _processedInstances.length = 0
 }
 
 /**

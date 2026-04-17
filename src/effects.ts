@@ -96,6 +96,15 @@ let _effects: DOMEffect[] = []
  */
 let _deferredEffects: (() => void)[] = []
 
+/**
+ * Transition state restorers. Before each component render during
+ * Transition, a closure is pushed that can restore the component's
+ * VNode state (_rendered, _vnode.children, _vnode.dom) to its
+ * pre-render values. On Transition abandonment, these are run in
+ * reverse order so the VNode tree matches the live DOM.
+ */
+let _transitionRestorers: (() => void)[] = []
+
 // --- Collection lifecycle ---
 
 /**
@@ -106,6 +115,7 @@ export function beginCollecting(): void {
   _collecting = true
   _effects.length = 0
   _deferredEffects.length = 0
+  _transitionRestorers.length = 0
 }
 
 /**
@@ -306,4 +316,41 @@ export function flushDeferredEffects(): void {
 /** Number of deferred component effects. Exposed for testing. */
 export function pendingDeferredEffectCount(): number {
   return _deferredEffects.length
+}
+
+// --- Transition state restorers ---
+//
+// When a Transition render is abandoned (superseded by a newer
+// Transition), component VNode state must be rolled back so the
+// VNode tree matches the live DOM. Each restorer closure captures
+// the pre-render values of a component instance's _rendered,
+// _vnode.children, and _vnode.dom.
+
+/**
+ * Push a restorer closure. Called by component.ts before each
+ * component render during Transition (both rerenderComponent and
+ * patchComponent).
+ */
+export function pushTransitionRestorer(fn: () => void): void {
+  _transitionRestorers.push(fn)
+}
+
+/**
+ * Run all restorers in reverse order to roll back component VNode
+ * state. Called by the scheduler when abandoning a superseded
+ * Transition render.
+ */
+export function restoreTransitionState(): void {
+  for (let i = _transitionRestorers.length - 1; i >= 0; i--) {
+    _transitionRestorers[i]!()
+  }
+  _transitionRestorers.length = 0
+}
+
+/**
+ * Clear restorers without running them.
+ * Called after a successful Transition commit.
+ */
+export function clearTransitionRestorers(): void {
+  _transitionRestorers.length = 0
 }

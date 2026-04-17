@@ -15,7 +15,13 @@ import {
   propagateRenderError,
   pushErrorHandler,
 } from "./error-boundary"
-import { domAppendChild, domRemoveChild, isCollecting, pushDeferredEffect } from "./effects"
+import {
+  domAppendChild,
+  domRemoveChild,
+  isCollecting,
+  pushDeferredEffect,
+  pushTransitionRestorer,
+} from "./effects"
 import { ChildFlags, VNodeFlags } from "./flags"
 import { getMemoCompare } from "./memo"
 import {
@@ -26,7 +32,7 @@ import {
 import { acquireVNode, releaseVNode } from "./pool"
 import { getPortalContainer } from "./portal"
 import type { RefObject } from "./ref"
-import { scheduleUpdate, Lane, setCurrentLane, getCurrentLane, getActiveLane } from "./scheduler"
+import { scheduleUpdate, Lane, setCurrentLane, getCurrentLane, getActiveLane, signalTransitionSuspended } from "./scheduler"
 import {
   isSuspenseFn,
   isThenable,
@@ -471,6 +477,37 @@ export function patchComponent(oldVNode: VNode, newVNode: VNode, parentDom: Elem
     return
   }
 
+  // Save state for Transition abandonment (restore if render is discarded)
+  if (isCollecting()) {
+    const savedProps = oldInstance._props
+    const savedVNode = oldInstance._vnode
+    const savedParentDom = oldInstance._parentDom
+    const savedRendered = oldInstance._rendered
+    const savedDom = oldVNode.dom
+    // Snapshot hook values so resolveHookState mutations are reversible
+    const hooks = oldInstance._hooks
+    const savedHooks: Array<{ value: unknown; pending: StateUpdate[] | null }> = []
+    for (let i = 0; i < hooks.length; i++) {
+      const hk = hooks[i]!
+      savedHooks.push({
+        value: hk.value,
+        pending: hk.pendingUpdates === null ? null : hk.pendingUpdates.slice(),
+      })
+    }
+    pushTransitionRestorer(() => {
+      oldInstance._props = savedProps
+      oldInstance._vnode = savedVNode
+      oldInstance._parentDom = savedParentDom
+      oldInstance._rendered = savedRendered
+      savedVNode.dom = savedDom
+      instanceMap.set(savedVNode, oldInstance)
+      for (let i = 0; i < savedHooks.length; i++) {
+        hooks[i]!.value = savedHooks[i]!.value
+        hooks[i]!.pendingUpdates = savedHooks[i]!.pending
+      }
+    })
+  }
+
   oldInstance._props = newProps
   oldInstance._vnode = newVNode
   oldInstance._parentDom = parentDom
@@ -517,7 +554,32 @@ export function patchComponent(oldVNode: VNode, newVNode: VNode, parentDom: Elem
   if (hasPendingWork()) {
     appendAfterWork(() => {
       newVNode.dom = portalTarget !== undefined ? oldVNode.dom : newRendered.dom
-      if (isSuspense) popSuspendHandler()
+      if (isSuspense) {
+        popSuspendHandler()
+        if (suspendedPromise !== undefined) {
+          if (isCollecting()) {
+            signalTransitionSuspended(suspendedPromise)
+          } else {
+            oldInstance._hooks[0]!.value = true
+            const fallback = renderComponent(oldInstance, newProps)
+            detachRenderedDOM(newRendered, patchParent)
+            oldInstance._rendered = fallback
+            newVNode.children = fallback
+            mountInternal(fallback, patchParent, false)
+            newVNode.dom = portalTarget !== undefined ? oldVNode.dom : fallback.dom
+            suspendedPromise.then(
+              () => {
+                oldInstance._hooks[0]!.value = false
+                scheduleUpdate(oldInstance)
+              },
+              () => {
+                oldInstance._hooks[0]!.value = false
+                scheduleUpdate(oldInstance)
+              },
+            )
+          }
+        }
+      }
       if (isEB) popErrorHandler()
       runEffects(oldInstance)
       if (providerCtx !== null) providerCtx._stack.pop()
@@ -530,24 +592,33 @@ export function patchComponent(oldVNode: VNode, newVNode: VNode, parentDom: Elem
   if (isSuspense) {
     popSuspendHandler()
     if (suspendedPromise !== undefined) {
-      oldInstance._hooks[0]!.value = true
-      const fallback = renderComponent(oldInstance, newProps)
-      detachRenderedDOM(newRendered, patchParent)
-      oldInstance._rendered = fallback
-      newVNode.children = fallback
-      mountInternal(fallback, patchParent, false)
-      newVNode.dom = portalTarget !== undefined ? oldVNode.dom : fallback.dom
+      if (isCollecting()) {
+        // Transition-lane suspension (two-phase commit active): keep old
+        // UI visible. The scheduler will abandon this Transition (discard
+        // effects, restore VNode state). Re-schedule at Transition
+        // priority when data resolves.
+        signalTransitionSuspended(suspendedPromise)
+      } else {
+        // Sync/Default lane: show the fallback immediately
+        oldInstance._hooks[0]!.value = true
+        const fallback = renderComponent(oldInstance, newProps)
+        detachRenderedDOM(newRendered, patchParent)
+        oldInstance._rendered = fallback
+        newVNode.children = fallback
+        mountInternal(fallback, patchParent, false)
+        newVNode.dom = portalTarget !== undefined ? oldVNode.dom : fallback.dom
 
-      suspendedPromise.then(
-        () => {
-          oldInstance._hooks[0]!.value = false
-          scheduleUpdate(oldInstance)
-        },
-        () => {
-          oldInstance._hooks[0]!.value = false
-          scheduleUpdate(oldInstance)
-        },
-      )
+        suspendedPromise.then(
+          () => {
+            oldInstance._hooks[0]!.value = false
+            scheduleUpdate(oldInstance)
+          },
+          () => {
+            oldInstance._hooks[0]!.value = false
+            scheduleUpdate(oldInstance)
+          },
+        )
+      }
     }
   }
 
@@ -1216,7 +1287,7 @@ export function useTransition(): readonly [boolean, (callback: () => void) => vo
  * @param value - The value to defer
  * @returns The deferred value (lags behind during transitions)
  */
-export function useDeferredValue<T>(value: T): T {
+export function useDeferredValue<T>(value: T, initialValue?: T): T {
   const instance = currentInstance
   if (instance === null) {
     throw new Error(
@@ -1225,7 +1296,10 @@ export function useDeferredValue<T>(value: T): T {
     )
   }
 
-  const [deferredValue, setDeferredValue] = useState(value)
+  // When initialValue is provided, the first mount returns initialValue
+  // instead of value, then a Transition update catches up to value.
+  const initial = arguments.length >= 2 ? initialValue as T : value
+  const [deferredValue, setDeferredValue] = useState(initial)
 
   // Schedule the catch-up update in an effect (runs after paint, not during render)
   useEffect(() => {
@@ -1385,6 +1459,32 @@ function rerenderComponent(instance: ComponentInstance): void {
   const oldRendered = instance._rendered
   if (oldRendered === null) return
 
+  // Save state for Transition abandonment
+  if (isCollecting()) {
+    const savedRendered = oldRendered
+    const savedVnodeChildren = instance._vnode.children
+    const savedVnodeDom = instance._vnode.dom
+    // Snapshot hook values so resolveHookState mutations are reversible
+    const hooks = instance._hooks
+    const savedHooks: Array<{ value: unknown; pending: StateUpdate[] | null }> = []
+    for (let i = 0; i < hooks.length; i++) {
+      const h = hooks[i]!
+      savedHooks.push({
+        value: h.value,
+        pending: h.pendingUpdates === null ? null : h.pendingUpdates.slice(),
+      })
+    }
+    pushTransitionRestorer(() => {
+      instance._rendered = savedRendered
+      instance._vnode.children = savedVnodeChildren
+      instance._vnode.dom = savedVnodeDom
+      for (let i = 0; i < savedHooks.length; i++) {
+        hooks[i]!.value = savedHooks[i]!.value
+        hooks[i]!.pendingUpdates = savedHooks[i]!.pending
+      }
+    })
+  }
+
   const providerCtx = getProviderContext(instance._type)
   if (providerCtx !== null) providerCtx._stack.push(instance._props["value"])
 
@@ -1423,7 +1523,34 @@ function rerenderComponent(instance: ComponentInstance): void {
       if (portalTarget === undefined) {
         instance._vnode.dom = newRendered.dom
       }
-      if (isSuspense) popSuspendHandler()
+      if (isSuspense) {
+        popSuspendHandler()
+        if (suspendedPromise !== undefined) {
+          if (isCollecting()) {
+            signalTransitionSuspended(suspendedPromise)
+          } else {
+            instance._hooks[0]!.value = true
+            const fallback = renderComponent(instance, instance._props)
+            detachRenderedDOM(newRendered, patchParent)
+            instance._rendered = fallback
+            instance._vnode.children = fallback
+            mountInternal(fallback, patchParent, false)
+            if (portalTarget === undefined) {
+              instance._vnode.dom = fallback.dom
+            }
+            suspendedPromise.then(
+              () => {
+                instance._hooks[0]!.value = false
+                scheduleUpdate(instance)
+              },
+              () => {
+                instance._hooks[0]!.value = false
+                scheduleUpdate(instance)
+              },
+            )
+          }
+        }
+      }
       if (isEB) popErrorHandler()
       runEffects(instance)
       if (providerCtx !== null) providerCtx._stack.pop()
@@ -1438,26 +1565,35 @@ function rerenderComponent(instance: ComponentInstance): void {
   if (isSuspense) {
     popSuspendHandler()
     if (suspendedPromise !== undefined) {
-      instance._hooks[0]!.value = true
-      const fallback = renderComponent(instance, instance._props)
-      detachRenderedDOM(newRendered, patchParent)
-      instance._rendered = fallback
-      instance._vnode.children = fallback
-      mountInternal(fallback, patchParent, false)
-      if (portalTarget === undefined) {
-        instance._vnode.dom = fallback.dom
-      }
+      if (isCollecting()) {
+        // Transition-lane suspension (two-phase commit active): keep old
+        // UI visible. The scheduler will abandon this Transition (discard
+        // effects, restore VNode state). Re-schedule at Transition
+        // priority when data resolves.
+        signalTransitionSuspended(suspendedPromise)
+      } else {
+        // Sync/Default lane: show the fallback immediately
+        instance._hooks[0]!.value = true
+        const fallback = renderComponent(instance, instance._props)
+        detachRenderedDOM(newRendered, patchParent)
+        instance._rendered = fallback
+        instance._vnode.children = fallback
+        mountInternal(fallback, patchParent, false)
+        if (portalTarget === undefined) {
+          instance._vnode.dom = fallback.dom
+        }
 
-      suspendedPromise.then(
-        () => {
-          instance._hooks[0]!.value = false
-          scheduleUpdate(instance)
-        },
-        () => {
-          instance._hooks[0]!.value = false
-          scheduleUpdate(instance)
-        },
-      )
+        suspendedPromise.then(
+          () => {
+            instance._hooks[0]!.value = false
+            scheduleUpdate(instance)
+          },
+          () => {
+            instance._hooks[0]!.value = false
+            scheduleUpdate(instance)
+          },
+        )
+      }
     }
   }
 
