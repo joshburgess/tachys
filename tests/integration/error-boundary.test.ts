@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { ErrorBoundary, flushUpdates, h, mount, patch, unmount } from "../../src/index"
+import { ErrorBoundary, Suspense, flushUpdates, h, lazy, mount, patch, unmount } from "../../src/index"
 import type { ComponentFn } from "../../src/vnode"
 import type { VNode } from "../../src/vnode"
 
@@ -334,5 +334,132 @@ describe("ErrorBoundary", () => {
     const eb = ErrorBoundary as ComponentFn
     expect(typeof eb).toBe("function")
     expect(eb.length).toBeGreaterThanOrEqual(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// ErrorBoundary + Suspense interaction
+// ---------------------------------------------------------------------------
+
+function flushMicrotasks(): Promise<void> {
+  flushUpdates()
+  return new Promise((resolve) => {
+    setTimeout(resolve, 0)
+  })
+}
+
+describe("ErrorBoundary + Suspense", () => {
+  it("ErrorBoundary catches synchronous errors from children inside Suspense", () => {
+    const container = setup()
+
+    function Thrower(): VNode {
+      throw new Error("sync error")
+    }
+
+    const fallback = (err: unknown): VNode =>
+      h("div", null, `caught: ${(err as Error).message}`)
+
+    const vnode = h(
+      ErrorBoundary,
+      { fallback },
+      h(
+        Suspense,
+        { fallback: h("span", null, "loading...") },
+        h(Thrower, null),
+      ),
+    )
+
+    mount(vnode, container)
+    expect(container.innerHTML).toBe("<div>caught: sync error</div>")
+  })
+
+  it("Suspense shows fallback then resolves, ErrorBoundary stays inactive", async () => {
+    const container = setup()
+
+    function Greeting(): VNode {
+      return h("span", null, "Hello!")
+    }
+
+    const LazyGreeting = lazy(() => Promise.resolve({ default: Greeting }))
+    const fallback = (_err: unknown): VNode => h("div", null, "error!")
+
+    const vnode = h(
+      ErrorBoundary,
+      { fallback },
+      h(
+        Suspense,
+        { fallback: h("span", null, "loading...") },
+        h(LazyGreeting, null),
+      ),
+    )
+
+    mount(vnode, container)
+    // Initially shows Suspense fallback, not ErrorBoundary fallback
+    expect(container.innerHTML).toBe("<span>loading...</span>")
+
+    await flushMicrotasks()
+    flushUpdates()
+    await flushMicrotasks()
+    flushUpdates()
+
+    // Resolved: shows greeting, ErrorBoundary never activated
+    expect(container.innerHTML).toBe("<span>Hello!</span>")
+  })
+
+  it("lazy rejection renders empty content within Suspense (no ErrorBoundary)", async () => {
+    const container = setup()
+
+    const LazyBroken = lazy(() => Promise.reject(new Error("load failed")))
+
+    const vnode = h(
+      Suspense,
+      { fallback: h("span", null, "loading...") },
+      h(LazyBroken, null),
+    )
+
+    mount(vnode, container)
+    expect(container.innerHTML).toBe("<span>loading...</span>")
+
+    await flushMicrotasks()
+    flushUpdates()
+    await flushMicrotasks()
+    flushUpdates()
+
+    // Without ErrorBoundary, Suspense clears loading and child renders empty
+    expect(container.textContent).toBe("")
+  })
+
+  it("ErrorBoundary inside Suspense catches lazy rejection", async () => {
+    const container = setup()
+
+    const LazyBroken = lazy(() => Promise.reject(new Error("load failed")))
+
+    const errorFallback = (err: unknown): VNode =>
+      h("div", null, `error: ${(err as Error).message}`)
+
+    // ErrorBoundary inside Suspense: errors from rejected lazy() are caught
+    // when the ErrorBoundary's children re-render after the promise rejects.
+    const vnode = h(
+      Suspense,
+      { fallback: h("span", null, "loading...") },
+      h(
+        ErrorBoundary,
+        { fallback: errorFallback },
+        h(LazyBroken, null),
+      ),
+    )
+
+    mount(vnode, container)
+    // Initially shows Suspense fallback (lazy threw a promise)
+    expect(container.innerHTML).toBe("<span>loading...</span>")
+
+    await flushMicrotasks()
+    flushUpdates()
+    await flushMicrotasks()
+    flushUpdates()
+
+    // After rejection, the Suspense re-renders (loading=false), then the
+    // lazy component throws a real error which the ErrorBoundary catches.
+    expect(container.innerHTML).toBe("<div>error: load failed</div>")
   })
 })

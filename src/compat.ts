@@ -10,6 +10,9 @@
  * are used.
  */
 
+import { useState, useReducer } from "./component"
+import { flushUpdates } from "./scheduler"
+
 // --- react ---
 
 export { h as createElement, createTextVNode } from "./jsx"
@@ -35,6 +38,7 @@ export {
   useEffect,
   useId,
   useImperativeHandle,
+  useInsertionEffect,
   useLayoutEffect,
   useMemo,
   useReducer,
@@ -49,7 +53,8 @@ export { __DEV__ } from "./dev"
 
 // --- react-dom ---
 
-export { render } from "./render"
+export { createRoot, hydrateRoot, render } from "./render"
+export type { Root } from "./render"
 export { createPortal } from "./portal"
 export { flushUpdates as flushSync } from "./scheduler"
 export { unmount } from "./unmount"
@@ -85,6 +90,143 @@ export class Component {
 }
 
 export class PureComponent extends Component {}
+
+// --- StrictMode ---
+
+/**
+ * No-op StrictMode component. In React, StrictMode enables additional
+ * development warnings and double-invokes render functions. Phasm does
+ * not implement double-invocation but exports this so that libraries
+ * using <StrictMode> don't break.
+ */
+export function StrictMode(props: Record<string, unknown>): import("./vnode").VNode {
+  return props["children"] as import("./vnode").VNode
+}
+
+// --- Profiler ---
+
+/**
+ * No-op Profiler component. In React, Profiler measures rendering
+ * performance. Phasm exports this as a passthrough so that code
+ * using <Profiler> doesn't break.
+ */
+export function Profiler(props: Record<string, unknown>): import("./vnode").VNode {
+  return props["children"] as import("./vnode").VNode
+}
+
+// --- act ---
+
+/**
+ * Testing utility. Wraps a callback that triggers state updates and
+ * flushes all pending work synchronously before returning.
+ *
+ * Compatible with React Testing Library's act() usage:
+ *   await act(() => { button.click() })
+ *   await act(async () => { await fetchData() })
+ */
+export async function act(callback: () => void | Promise<void>): Promise<void> {
+  const result = callback()
+  flushUpdates()
+  // If the callback returned a promise, await it and flush again
+  if (result !== undefined && result !== null && typeof (result as Promise<void>).then === "function") {
+    await result
+    flushUpdates()
+  }
+}
+
+// --- React 19 form APIs ---
+
+/**
+ * useOptimistic provides optimistic UI updates. Returns the current
+ * optimistic state and a function to apply optimistic updates.
+ *
+ * When updateFn is called, the state immediately reflects the optimistic
+ * value. The passthrough (initial state) is the "confirmed" value from
+ * the server or parent.
+ *
+ * @param passthrough - The actual/confirmed state value
+ * @param updateFn - Optional reducer: (currentState, optimisticValue) => newState
+ * @returns [optimisticState, addOptimistic]
+ */
+export function useOptimistic<T, A = T>(
+  passthrough: T,
+  updateFn?: (currentState: T, optimisticValue: A) => T,
+): [T, (action: A) => void] {
+  const [optimistic, setOptimistic] = useState<{ value: T; active: boolean }>({
+    value: passthrough,
+    active: false,
+  })
+
+  // When passthrough changes and there's no active optimistic update, sync
+  const current = optimistic.active ? optimistic.value : passthrough
+
+  const addOptimistic = (action: A) => {
+    const newValue = updateFn !== undefined ? updateFn(current, action) : (action as unknown as T)
+    setOptimistic({ value: newValue, active: true })
+  }
+
+  return [current, addOptimistic]
+}
+
+/**
+ * useActionState manages form action state with a reducer pattern.
+ * Returns the current state, a dispatch function, and a pending flag.
+ *
+ * @param action - Async reducer: (prevState, formData) => Promise<newState>
+ * @param initialState - Initial state value
+ * @param permalink - Optional permalink (unused in client-only mode)
+ * @returns [state, dispatch, isPending]
+ */
+export function useActionState<S, P>(
+  action: (prevState: S, payload: P) => S | Promise<S>,
+  initialState: S,
+  _permalink?: string,
+): [S, (payload: P) => void, boolean] {
+  const [state, setState] = useState(initialState)
+  const [isPending, setIsPending] = useState(false)
+
+  const dispatch = (payload: P) => {
+    setIsPending(true)
+    const result = action(state, payload)
+    if (result !== null && typeof result === "object" && typeof (result as Promise<S>).then === "function") {
+      ;(result as Promise<S>).then(
+        (newState) => {
+          setState(newState as S)
+          setIsPending(false)
+        },
+        () => {
+          setIsPending(false)
+        },
+      )
+    } else {
+      setState(result as S)
+      setIsPending(false)
+    }
+  }
+
+  return [state, dispatch, isPending]
+}
+
+/**
+ * useFormStatus returns the status of the parent form action.
+ *
+ * Since Phasm does not have a built-in form action runtime, this
+ * always returns a "not pending" status. Libraries that check for
+ * useFormStatus will get a stable, non-pending response.
+ */
+export function useFormStatus(): {
+  pending: boolean
+  data: FormData | null
+  method: string | null
+  action: string | null
+} {
+  return {
+    pending: false,
+    data: null,
+    method: null,
+    action: null,
+  }
+}
 
 // --- version ---
 

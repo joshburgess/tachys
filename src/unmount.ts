@@ -8,6 +8,7 @@ import { getComponentInstance, unmountComponent as unmountComp } from "./compone
 import { cleanupEvents } from "./events"
 import { ChildFlags, VNodeFlags } from "./flags"
 import { releaseVNode } from "./pool"
+import { registerUnmount } from "./reconcile-bridge"
 import { clearRef } from "./ref"
 import type { VNode } from "./vnode"
 
@@ -34,6 +35,9 @@ export function unmount(vnode: VNode, parentDom: Element): void {
     unmountFragment(vnode, parentDom)
   }
 }
+
+// Register with the bridge so component.ts can call unmount without a direct import.
+registerUnmount(unmount)
 
 /**
  * Remove a VNode's DOM node from its parent without recursing into children.

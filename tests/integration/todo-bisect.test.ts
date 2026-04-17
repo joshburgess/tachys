@@ -15,8 +15,8 @@ import type { VNode } from "../../src/vnode"
 interface Todo { id: number; title: string; completed: boolean }
 interface TodoActions { toggle: (id: number) => void; destroy: (id: number) => void; edit: (id: number, title: string) => void }
 
-describe("useEffect toggle bug - detailed trace", () => {
-  it("traces DOM changes during toggle", () => {
+describe("Regression: TodoMVC toggle with useEffect and Context", () => {
+  it("preserves all list items when toggling todo with Provider context", () => {
     const ActionsCtx = createContext<TodoActions>({ toggle: () => {}, destroy: () => {}, edit: () => {} })
 
     let triggerAdd: (title: string) => void
@@ -78,22 +78,15 @@ describe("useEffect toggle bug - detailed trace", () => {
     triggerAdd!("B")
     flushUpdates()
     expect(root.querySelectorAll(".todo-list li").length).toBe(2)
-    const beforeToggle = root.innerHTML
 
     // Toggle first todo
     triggerToggle!(1)
     flushUpdates()
-    const afterToggle = root.innerHTML
-
-    // Detailed output for debugging
-    console.log("BEFORE toggle:", beforeToggle)
-    console.log("AFTER toggle:", afterToggle)
-    console.log("li count:", root.querySelectorAll(".todo-list li").length)
 
     expect(root.querySelectorAll(".todo-list li").length).toBe(2)
   })
 
-  it("works without Provider wrapper", () => {
+  it("preserves all list items when toggling todo without Provider", () => {
     let triggerAdd: (title: string) => void
     let triggerToggle: (id: number) => void
     let nextId = 1
@@ -137,7 +130,6 @@ describe("useEffect toggle bug - detailed trace", () => {
 
     triggerToggle!(1)
     flushUpdates()
-    console.log("No provider result:", root.innerHTML)
     expect(root.querySelectorAll("li").length).toBe(2)
   })
 })

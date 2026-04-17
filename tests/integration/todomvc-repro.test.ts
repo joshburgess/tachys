@@ -2,8 +2,8 @@ import { describe, it, expect } from "vitest"
 import { createContext, useState, useCallback, h, mount, flushUpdates } from "../../src/index"
 import { jsxDEV } from "../../src/jsx-dev-runtime"
 
-describe("Provider with conditional children", () => {
-  it("h() - should handle children changing from 1 to 3", () => {
+describe("Regression: Provider with conditional children expansion", () => {
+  it("h() - expands from 1 to 3 children when state changes", () => {
     const Ctx = createContext({ action: () => {} })
 
     let triggerAdd: () => void
@@ -30,7 +30,7 @@ describe("Provider with conditional children", () => {
     expect(root.innerHTML).toBe("<header>Header</header><section>List</section><footer>Footer</footer>")
   })
 
-  it("jsxDEV - should handle children changing from 1 to 3", () => {
+  it("jsxDEV - expands from 1 to 3 children when state changes", () => {
     const Ctx = createContext({ action: () => {} })
 
     let triggerAdd: () => void

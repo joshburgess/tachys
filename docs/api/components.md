@@ -35,19 +35,36 @@ Creates a lazily loaded component. Must be used with `Suspense`. The loader func
 
 ```tsx
 <ErrorBoundary
-  fallback={<p>Error occurred</p>}
-  onError={(error: unknown) => console.error(error)}
-  onReset={() => console.log("reset")}
+  fallback={(error, reset) => (
+    <div>
+      <p>Error: {error.message}</p>
+      <button onClick={reset}>Retry</button>
+    </div>
+  )}
 >
   {children}
 </ErrorBoundary>
 ```
 
 **Props:**
-- `fallback` - VNode to render when an error is caught
-- `onError` (optional) - Called with the caught error
-- `onReset` (optional) - Called when the error state is reset
+- `fallback` - A function `(error: unknown, reset: () => void) => VNode` called when an error is caught. The `reset` function re-renders the children.
 - `children` - The subtree to monitor for errors
+
+### ErrorBoundary + Suspense
+
+Place an `ErrorBoundary` *inside* a `Suspense` boundary to catch errors from lazy-loaded components and rejected promises from `use()`:
+
+```tsx
+<Suspense fallback={<p>Loading...</p>}>
+  <ErrorBoundary fallback={(err) => <p>Failed: {err.message}</p>}>
+    <LazyComponent />
+  </ErrorBoundary>
+</Suspense>
+```
+
+::: info
+An `ErrorBoundary` *wrapping* a `Suspense` boundary cannot catch async rejections from lazy components, because the re-render is triggered by the scheduler (no parent error handler on the stack). The `ErrorBoundary`-inside-`Suspense` pattern works correctly.
+:::
 
 ## Suspense
 
@@ -60,6 +77,12 @@ Creates a lazily loaded component. Must be used with `Suspense`. The loader func
 **Props:**
 - `fallback` - VNode to render while suspended content is loading
 - `children` - The subtree that may suspend (via `lazy` or `use(promise)`)
+
+Suspense works with:
+- **`lazy()`** components that are still loading
+- **`use(promise)`** calls with pending promises
+- **Streaming SSR** with `renderToReadableStream` (sends fallback immediately, swaps in content when ready)
+- **Hydration** (handles both streaming placeholders and non-streaming children)
 
 ## createPortal
 
@@ -76,3 +99,27 @@ function createRef<T = unknown>(): RefObject<T>
 ```
 
 Creates a `{ current: null }` ref object. Prefer `useRef` inside components.
+
+## StrictMode
+
+```tsx
+<StrictMode>
+  {children}
+</StrictMode>
+```
+
+No-op passthrough in Phasm. In React, `StrictMode` double-invokes render functions and enables additional development warnings. Exported so that `<StrictMode>` usage in third-party code does not break when aliased to `phasm/compat`.
+
+## Profiler
+
+```tsx
+<Profiler id="MyComponent" onRender={onRenderCallback}>
+  {children}
+</Profiler>
+```
+
+**Props:**
+- `id` - Identifies the part of the tree being profiled
+- `onRender` - Callback invoked after the profiled subtree commits
+
+No-op passthrough in Phasm. In React, `Profiler` measures rendering performance and calls `onRender` with timing data. Exported so that `<Profiler>` usage in third-party code does not break when aliased to `phasm/compat`.

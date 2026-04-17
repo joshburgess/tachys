@@ -12,12 +12,10 @@ import {
 } from "../../src/index"
 import type { VNode } from "../../src/vnode"
 
-// Flush the microtask queue so scheduled re-renders run before assertions.
-function flushMicrotasks(): Promise<void> {
-  return new Promise((resolve) => {
-    setTimeout(resolve, 0)
-  })
-}
+// Flush the scheduler queue so re-renders complete before assertions.
+// Using flushUpdates() instead of setTimeout-based flushMicrotasks
+// because the scheduler uses MessageChannel (when available), which
+// doesn't have guaranteed ordering relative to setTimeout(0).
 
 // ---------------------------------------------------------------------------
 // useReducer
@@ -50,7 +48,7 @@ describe("useReducer", () => {
     expect(container.innerHTML).toBe("<span>0</span>")
 
     dispatch(5)
-    await flushMicrotasks()
+    flushUpdates()
     expect(container.innerHTML).toBe("<span>5</span>")
   })
 
@@ -84,15 +82,15 @@ describe("useReducer", () => {
     expect(container.innerHTML).toBe("<span>10</span>")
 
     dispatch({ type: "inc" })
-    await flushMicrotasks()
+    flushUpdates()
     expect(container.innerHTML).toBe("<span>11</span>")
 
     dispatch({ type: "dec" })
-    await flushMicrotasks()
+    flushUpdates()
     expect(container.innerHTML).toBe("<span>10</span>")
 
     dispatch({ type: "reset" })
-    await flushMicrotasks()
+    flushUpdates()
     expect(container.innerHTML).toBe("<span>0</span>")
   })
 
@@ -118,7 +116,7 @@ describe("useReducer", () => {
     expect(renderCount).toBe(1)
 
     dispatch("noop") // reducer returns same primitive value
-    await flushMicrotasks()
+    flushUpdates()
     expect(renderCount).toBe(1) // no re-render
     expect(container.innerHTML).toBe("<span>0</span>")
   })
@@ -140,11 +138,11 @@ describe("useReducer", () => {
     expect(container.innerHTML).toBe("<div>hello:0</div>")
 
     dispatchCount(3)
-    await flushMicrotasks()
+    flushUpdates()
     expect(container.innerHTML).toBe("<div>hello:3</div>")
 
     setLabel("world")
-    await flushMicrotasks()
+    flushUpdates()
     expect(container.innerHTML).toBe("<div>world:3</div>")
   })
 
@@ -171,7 +169,7 @@ describe("useReducer", () => {
     // Only the last scheduled state is visible because each dispatch immediately
     // updates the hook slot before the next dispatch reads it — same behaviour
     // as useState batching.
-    await flushMicrotasks()
+    flushUpdates()
     expect(renderCount).toBe(2)
     // Each dispatch saw the value from the previous one: 0+1=1, 1+1=2, 2+1=3.
     expect(container.innerHTML).toBe("<span>3</span>")
@@ -212,11 +210,11 @@ describe("useReducer", () => {
     expect(container.innerHTML).toBe("<div>Alice, age 30</div>")
 
     dispatch({ type: "setName", name: "Bob" })
-    await flushMicrotasks()
+    flushUpdates()
     expect(container.innerHTML).toBe("<div>Bob, age 30</div>")
 
     dispatch({ type: "birthday" })
-    await flushMicrotasks()
+    flushUpdates()
     expect(container.innerHTML).toBe("<div>Bob, age 31</div>")
   })
 })
@@ -255,11 +253,11 @@ describe("useLayoutEffect", () => {
     expect(effectFn).toHaveBeenCalledTimes(1)
 
     setter(1)
-    await flushMicrotasks()
+    flushUpdates()
     expect(effectFn).toHaveBeenCalledTimes(2)
 
     setter(2)
-    await flushMicrotasks()
+    flushUpdates()
     expect(effectFn).toHaveBeenCalledTimes(3)
   })
 
@@ -283,12 +281,12 @@ describe("useLayoutEffect", () => {
 
     // Changing `b` does NOT retrigger the layout effect.
     setB(99)
-    await flushMicrotasks()
+    flushUpdates()
     expect(effectFn).toHaveBeenCalledTimes(1)
 
     // Changing `a` DOES retrigger it.
     setA(1)
-    await flushMicrotasks()
+    flushUpdates()
     expect(effectFn).toHaveBeenCalledTimes(2)
   })
 
@@ -308,11 +306,11 @@ describe("useLayoutEffect", () => {
     expect(effectFn).toHaveBeenCalledTimes(1)
 
     setter(1)
-    await flushMicrotasks()
+    flushUpdates()
     expect(effectFn).toHaveBeenCalledTimes(1) // still 1
 
     setter(2)
-    await flushMicrotasks()
+    flushUpdates()
     expect(effectFn).toHaveBeenCalledTimes(1) // still 1
   })
 
@@ -334,7 +332,7 @@ describe("useLayoutEffect", () => {
     expect(cleanup).not.toHaveBeenCalled()
 
     setter(1)
-    await flushMicrotasks()
+    flushUpdates()
     expect(cleanup).toHaveBeenCalledTimes(1) // cleanup ran before re-running
     expect(effectFn).toHaveBeenCalledTimes(2)
   })
@@ -379,7 +377,7 @@ describe("useLayoutEffect", () => {
     expect(effectFn).toHaveBeenCalledTimes(1)
 
     setter(1)
-    await flushMicrotasks()
+    flushUpdates()
     // Both should fire again when the dep changes.
     expect(layoutEffectFn).toHaveBeenCalledTimes(2)
     expect(effectFn).toHaveBeenCalledTimes(2)

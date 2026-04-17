@@ -8,7 +8,6 @@
 
 import type { Context, ProviderFunction } from "./context"
 import { __DEV__, getComponentName, warn } from "./dev"
-import { patch as patchVNode } from "./diff"
 import {
   type ErrorBoundaryFn,
   isErrorBoundaryFn,
@@ -18,7 +17,11 @@ import {
 } from "./error-boundary"
 import { ChildFlags, VNodeFlags } from "./flags"
 import { getMemoCompare } from "./memo"
-import { mountInternal } from "./mount"
+import {
+  bridgeMount as mountInternal,
+  bridgePatch as patchVNode,
+  bridgeUnmount as unmount,
+} from "./reconcile-bridge"
 import { acquireVNode, releaseVNode } from "./pool"
 import { getPortalContainer } from "./portal"
 import type { RefObject } from "./ref"
@@ -30,7 +33,6 @@ import {
   propagateSuspend,
   pushSuspendHandler,
 } from "./suspense"
-import { unmount } from "./unmount"
 import type { ComponentFn } from "./vnode"
 import { VNode } from "./vnode"
 
@@ -260,14 +262,17 @@ export function mountComponent(vnode: VNode, parentDom: Element, isSvg: boolean)
       mountInternal(fallback, mountParent, isSvg)
       vnode.dom = portalTarget !== undefined ? vnode.dom : fallback.dom
 
-      // When the promise resolves, clear loading state and re-render
+      // When the promise resolves, clear loading state and re-render.
+      // On rejection, also re-render so the lazy component throws a real
+      // error that propagates to the nearest ErrorBoundary.
       suspendedPromise.then(
         () => {
           instance._hooks[0]!.value = false
           scheduleUpdate(instance)
         },
         () => {
-          // Rejection handled by the component via use() or ErrorBoundary
+          instance._hooks[0]!.value = false
+          scheduleUpdate(instance)
         },
       )
     }
@@ -360,6 +365,81 @@ export function finalizeHydratedComponent(
 }
 
 /**
+ * Hydration-aware Suspense boundary mount. Creates the Suspense component
+ * instance and renders it (calling the Suspense function, which returns
+ * the children VNode). The caller (hydrate.ts) is responsible for
+ * walking the returned VNode against existing DOM and handling thrown
+ * promises from lazy child components.
+ */
+export function hydrateSuspenseInstance(
+  vnode: VNode,
+  parentDom: Element,
+): { rendered: VNode; instance: ComponentInstance } {
+  const type = vnode.type as ComponentFn
+  const props = buildComponentProps(vnode)
+
+  const instance: ComponentInstance = {
+    _type: type,
+    _props: props,
+    _vnode: vnode,
+    _rendered: null,
+    _parentDom: parentDom,
+    _queuedLanes: 0,
+    _hooks: [],
+    _effects: [],
+    _mounted: false,
+    _rerender: () => {
+      rerenderComponent(instance)
+    },
+    _contexts: null,
+    _hookCount: -1,
+  }
+
+  instanceMap.set(vnode, instance)
+
+  const providerCtx = getProviderContext(type)
+  if (providerCtx !== null) providerCtx._stack.push(props["value"])
+
+  const rendered = renderComponent(instance, props)
+  instance._rendered = rendered
+  vnode.children = rendered
+  vnode.parentDom = parentDom
+
+  if (providerCtx !== null) providerCtx._stack.pop()
+
+  return { rendered, instance }
+}
+
+/**
+ * Finalize a hydrated Suspense component: set the dom reference, mark as
+ * mounted, and run effects.
+ */
+export function finalizeSuspenseComponent(
+  vnode: VNode,
+  instance: ComponentInstance,
+  rendered: VNode,
+): void {
+  vnode.dom = rendered.dom
+  instance._mounted = true
+  runEffects(instance)
+}
+
+/**
+ * Switch a hydrated Suspense boundary to its fallback state.
+ * Used when a child throws a promise during hydration.
+ */
+export function switchSuspenseToFallback(
+  vnode: VNode,
+  instance: ComponentInstance,
+): VNode {
+  instance._hooks[0]!.value = true
+  const fallback = renderComponent(instance, instance._props)
+  instance._rendered = fallback
+  vnode.children = fallback
+  return fallback
+}
+
+/**
  * Patch a functional component — called by diff.ts.
  * Re-renders with new props and patches the output.
  */
@@ -418,7 +498,8 @@ export function patchComponent(oldVNode: VNode, newVNode: VNode, parentDom: Elem
     })
   }
 
-  // Suspense boundary: push handler before patching children
+  // Suspense boundary: push error handler to capture child errors, then
+  // push suspend handler for thrown promises.
   const isSuspense = isSuspenseFn(newVNode.type as ComponentFn)
   let suspendedPromise: Promise<unknown> | undefined
   if (isSuspense) {
@@ -447,7 +528,8 @@ export function patchComponent(oldVNode: VNode, newVNode: VNode, parentDom: Elem
           scheduleUpdate(oldInstance)
         },
         () => {
-          // Rejection handled by the component via use() or ErrorBoundary
+          oldInstance._hooks[0]!.value = false
+          scheduleUpdate(oldInstance)
         },
       )
     }
@@ -678,6 +760,22 @@ export const useLayoutEffect: (callback: () => EffectCleanup, deps?: readonly un
   useEffect
 
 /**
+ * Hook: register an effect that fires before any DOM mutations.
+ *
+ * In React, useInsertionEffect runs before useLayoutEffect and is intended
+ * for CSS-in-JS libraries to inject <style> rules. In Phasm, all effects
+ * run synchronously after render, so this is identical to useEffect.
+ *
+ * Exported for React API compatibility -- CSS-in-JS libraries like
+ * styled-components and Emotion call this hook.
+ *
+ * @param callback - The effect function (may return a cleanup function)
+ * @param deps - Dependency array (undefined = run every render, [] = run once)
+ */
+export const useInsertionEffect: (callback: () => EffectCleanup, deps?: readonly unknown[]) => void =
+  useEffect
+
+/**
  * Hook: memoize a computed value, recomputing only when deps change.
  *
  * @param factory - Function that computes the value
@@ -766,13 +864,21 @@ export function useRef<T>(initial: T): RefObject<T> {
  * current store value -- it must be referentially stable when the
  * underlying data has not changed (return the same reference).
  *
+ * Tearing prevention: on every render, the current snapshot is compared
+ * against getSnapshot(). If they differ (store changed between renders),
+ * the hook updates immediately and schedules at Sync priority so all
+ * components in the tree see a consistent store value. Store change
+ * notifications also schedule at Sync priority for the same reason.
+ *
  * @param subscribe - Function to subscribe to the store: (onStoreChange) => unsubscribe
  * @param getSnapshot - Function that returns the current store value
+ * @param getServerSnapshot - Optional function for SSR (returns server-side snapshot)
  * @returns The current snapshot value
  */
 export function useSyncExternalStore<T>(
   subscribe: (onStoreChange: () => void) => () => void,
   getSnapshot: () => T,
+  getServerSnapshot?: () => T,
 ): T {
   const instance = currentInstance
   if (instance === null) {
@@ -791,6 +897,20 @@ export function useSyncExternalStore<T>(
   }
 
   const hook = instance._hooks[idx]!
+
+  // Tearing check: compare stored snapshot against current store state.
+  // If the store changed between renders (e.g. during a Transition-lane
+  // render), update the snapshot immediately so this component sees the
+  // latest value. This prevents "tearing" where different components in
+  // the same tree see different store states.
+  const freshSnapshot = getSnapshot()
+  if (freshSnapshot !== hook.value) {
+    hook.value = freshSnapshot
+    // Schedule at Sync priority to ensure all subscribers re-render
+    // with the same snapshot before the frame ends.
+    scheduleUpdate(instance, Lane.Sync)
+  }
+
   const snapshot = hook.value as T
 
   // Use an effect to subscribe/unsubscribe. The effect cleanup handles
@@ -801,14 +921,16 @@ export function useSyncExternalStore<T>(
       const next = getSnapshot()
       if (next !== instance._hooks[idx]!.value) {
         instance._hooks[idx]!.value = next
-        scheduleUpdate(instance)
+        // Schedule at Sync priority for tearing prevention: all
+        // subscribers must re-render atomically with the same value.
+        scheduleUpdate(instance, Lane.Sync)
       }
     })
     // Sync immediately in case store changed between render and subscribe
     const current = getSnapshot()
     if (current !== instance._hooks[idx]!.value) {
       instance._hooks[idx]!.value = current
-      scheduleUpdate(instance)
+      scheduleUpdate(instance, Lane.Sync)
     }
     return unsubscribe
   }, [subscribe, getSnapshot])
@@ -1300,7 +1422,8 @@ function rerenderComponent(instance: ComponentInstance): void {
           scheduleUpdate(instance)
         },
         () => {
-          // Rejection handled by the component via use() or ErrorBoundary
+          instance._hooks[0]!.value = false
+          scheduleUpdate(instance)
         },
       )
     }

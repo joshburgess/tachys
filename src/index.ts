@@ -15,6 +15,7 @@ export {
   useEffect,
   useId,
   useImperativeHandle,
+  useInsertionEffect,
   useLayoutEffect,
   useMemo,
   useReducer,
@@ -41,7 +42,8 @@ export { mount, mountRoot } from "./mount"
 export { EMPTY_PROPS } from "./patch"
 export { clearPool, getPoolSize } from "./pool"
 export { createRef } from "./ref"
-export { render } from "./render"
+export { createRoot, hydrateRoot, render } from "./render"
+export type { Root } from "./render"
 export type { Ref, RefCallback, RefObject } from "./ref"
 export { flushUpdates, flushSyncWork, Lane, shouldYield } from "./scheduler"
 export type { Lane as LaneType } from "./scheduler"

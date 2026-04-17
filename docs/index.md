@@ -13,11 +13,11 @@ hero:
       link: /api/rendering
 features:
   - title: Tiny Footprint
-    details: 8 KB gzipped core with object pooling, bitwise flags, and zero-allocation hot paths.
+    details: ~8.6 KB gzipped core with object pooling, bitwise flags, and zero-allocation hot paths.
   - title: React-Compatible API
-    details: Drop-in hooks (useState, useEffect, useMemo, useContext, etc.), memo, forwardRef, Suspense, and ErrorBoundary.
+    details: Full hooks API (useState, useEffect, useMemo, use, useSyncExternalStore, etc.), memo, forwardRef, Suspense, lazy, ErrorBoundary, and React 19 use() hook.
   - title: Server-Side Rendering
-    details: Built-in renderToString, renderToReadableStream, and hydrate for full SSR support.
-  - title: Delegated Events
-    details: Automatic event delegation at the root container for reduced memory usage and faster event handling.
+    details: renderToString, renderToStringAsync, renderToReadableStream with streaming Suspense, and Suspense-aware hydration with selective hydration.
+  - title: Priority-Based Scheduler
+    details: Three-lane scheduler (Sync, Default, Transition) with tearing prevention for useSyncExternalStore and non-blocking transitions.
 ---

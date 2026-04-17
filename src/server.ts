@@ -197,44 +197,10 @@ function renderElement(vnode: VNode): string {
     html += ` class="${escapeHtml(vnode.className)}"`
   }
 
-  // Props -> attributes
+  // Props -> attributes (shared helper used by sync, async, and streaming paths)
   const props = vnode.props
   if (props !== null) {
-    for (const key in props) {
-      const value = props[key]
-
-      // Skip internal/client-only props
-      if (key === "ref" || key === "key" || key === "className") continue
-
-      // Skip event handlers
-      if (key.charCodeAt(0) === 111 && key.charCodeAt(1) === 110) continue
-
-      // dangerouslySetInnerHTML handled below
-      if (key === "dangerouslySetInnerHTML" || key === "innerHTML") continue
-
-      if (key === "style") {
-        if (value !== null && typeof value === "object") {
-          const styleStr = styleToString(value as Record<string, string | number>)
-          if (styleStr !== "") {
-            html += ` style="${escapeHtml(styleStr)}"`
-          }
-        }
-        continue
-      }
-
-      const attrName = mapPropName(key)
-
-      // Boolean attributes
-      if (value === true) {
-        html += ` ${attrName}`
-        continue
-      }
-      if (value === false || value === null || value === undefined) {
-        continue
-      }
-
-      html += ` ${attrName}="${escapeHtml(String(value))}"`
-    }
+    html += renderAttributes(props)
   }
 
   // Void elements: self-closing, no children

@@ -15,6 +15,7 @@ import { resetWarnings } from "../../src/dev"
 import type { VNode } from "../../src/vnode"
 
 function flushMicrotasks(): Promise<void> {
+  flushUpdates()
   return new Promise((resolve) => {
     setTimeout(resolve, 0)
   })
@@ -439,6 +440,47 @@ describe("useSyncExternalStore", () => {
         () => 0,
       ),
     ).toThrow("useSyncExternalStore must be called inside a component render")
+  })
+
+  it("detects snapshot changes during render (tearing prevention)", () => {
+    const container = document.createElement("div")
+    const store = createMockStore(1)
+
+    const snapshots: number[] = []
+
+    function Comp() {
+      const value = useSyncExternalStore(store.subscribe, store.getSnapshot)
+      snapshots.push(value)
+      return h("span", null, String(value))
+    }
+
+    mount(h(Comp, null), container)
+    expect(container.innerHTML).toBe("<span>1</span>")
+    expect(snapshots).toEqual([1])
+
+    // Change the store and trigger a re-render
+    store.set(2)
+    flushUpdates()
+
+    // The component should see the fresh snapshot value
+    expect(container.innerHTML).toBe("<span>2</span>")
+  })
+
+  it("accepts getServerSnapshot parameter for API compatibility", () => {
+    const container = document.createElement("div")
+
+    function Comp() {
+      const value = useSyncExternalStore(
+        (cb: () => void) => { cb; return () => {} },
+        () => "client",
+        () => "server",
+      )
+      return h("span", null, value)
+    }
+
+    mount(h(Comp, null), container)
+    // Client-side: uses getSnapshot, not getServerSnapshot
+    expect(container.innerHTML).toBe("<span>client</span>")
   })
 })
 

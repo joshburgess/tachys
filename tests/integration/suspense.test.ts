@@ -13,6 +13,7 @@ import type { VNode } from "../../src/vnode"
 import type { ComponentFn } from "../../src/vnode"
 
 function flushMicrotasks(): Promise<void> {
+  flushUpdates()
   return new Promise((resolve) => {
     setTimeout(resolve, 0)
   })

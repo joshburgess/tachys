@@ -18,6 +18,13 @@ export interface Context<T> {
   _stack: T[]
   /** The Provider component function (tagged with _context) */
   Provider: ProviderFunction<T>
+  /** Render-prop Consumer component for React compat */
+  Consumer: ConsumerFunction<T>
+}
+
+export interface ConsumerFunction<T> {
+  (props: Record<string, unknown>): VNode
+  _contextRef: Context<T>
 }
 
 export interface ProviderFunction<T> {
@@ -36,6 +43,7 @@ export function createContext<T>(defaultValue: T): Context<T> {
     _defaultValue: defaultValue,
     _stack: [],
     Provider: null!,
+    Consumer: null!,
   }
 
   // Provider is a component that passes through its children.
@@ -46,8 +54,23 @@ export function createContext<T>(defaultValue: T): Context<T> {
   } as ProviderFunction<T>
 
   Provider._context = context
-
   context.Provider = Provider
+
+  // Consumer is a render-prop component that reads the current context value
+  // and calls its children function with that value.
+  // Usage: <MyContext.Consumer>{value => <div>{value}</div>}</MyContext.Consumer>
+  const Consumer = function ContextConsumer(props: Record<string, unknown>): VNode {
+    const value =
+      context._stack.length > 0
+        ? context._stack[context._stack.length - 1]!
+        : context._defaultValue
+    registerContextDep(context as Context<unknown>, value)
+    const children = props["children"] as (val: T) => VNode
+    return children(value)
+  } as ConsumerFunction<T>
+
+  Consumer._contextRef = context
+  context.Consumer = Consumer
 
   return context
 }

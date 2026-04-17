@@ -3,14 +3,22 @@ import {
   Children,
   Component,
   Fragment,
+  Profiler,
   PureComponent,
+  StrictMode,
+  act,
   cloneElement,
+  createRoot,
   createElement,
   flushSync,
+  hydrateRoot,
   isValidElement,
+  useActionState,
+  useFormStatus,
+  useOptimistic,
   version,
 } from "../../src/compat"
-import { h, mount } from "../../src/index"
+import { flushUpdates, h, mount, useState } from "../../src/index"
 import type { VNode } from "../../src/vnode"
 
 // ---------------------------------------------------------------------------
@@ -284,6 +292,214 @@ describe("flushSync", () => {
     expect(typeof flushSync).toBe("function")
     // Should not throw when called with no pending updates
     flushSync()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// version
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// StrictMode
+// ---------------------------------------------------------------------------
+
+describe("StrictMode", () => {
+  it("is a passthrough component", () => {
+    const container = document.createElement("div")
+    mount(h(StrictMode, null, h("div", null, "inside strict")), container)
+    expect(container.innerHTML).toBe("<div>inside strict</div>")
+  })
+
+  it("can wrap multiple children via fragment", () => {
+    const container = document.createElement("div")
+    mount(
+      h(StrictMode, null, h(null, null, h("span", null, "a"), h("span", null, "b"))),
+      container,
+    )
+    expect(container.innerHTML).toBe("<span>a</span><span>b</span>")
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Profiler
+// ---------------------------------------------------------------------------
+
+describe("Profiler", () => {
+  it("is a passthrough component", () => {
+    const container = document.createElement("div")
+    mount(h(Profiler, { id: "test", onRender: () => {} }, h("div", null, "profiled")), container)
+    expect(container.innerHTML).toBe("<div>profiled</div>")
+  })
+})
+
+// ---------------------------------------------------------------------------
+// act
+// ---------------------------------------------------------------------------
+
+describe("act", () => {
+  it("flushes synchronous updates", async () => {
+    const container = document.createElement("div")
+    let setCount: (n: number) => void
+
+    function Counter() {
+      const [count, sc] = useState(0)
+      setCount = sc
+      return h("span", null, String(count))
+    }
+
+    mount(h(Counter, null), container)
+    expect(container.innerHTML).toBe("<span>0</span>")
+
+    await act(() => {
+      setCount(1)
+    })
+    expect(container.innerHTML).toBe("<span>1</span>")
+  })
+
+  it("handles async callbacks", async () => {
+    const container = document.createElement("div")
+    let setCount: (n: number) => void
+
+    function Counter() {
+      const [count, sc] = useState(0)
+      setCount = sc
+      return h("span", null, String(count))
+    }
+
+    mount(h(Counter, null), container)
+
+    await act(async () => {
+      await Promise.resolve()
+      setCount(42)
+    })
+    expect(container.innerHTML).toBe("<span>42</span>")
+  })
+})
+
+// ---------------------------------------------------------------------------
+// createRoot / hydrateRoot (compat exports)
+// ---------------------------------------------------------------------------
+
+describe("createRoot compat export", () => {
+  it("renders and unmounts", () => {
+    const container = document.createElement("div")
+    const root = createRoot(container)
+    root.render(h("div", null, "root api"))
+    expect(container.innerHTML).toBe("<div>root api</div>")
+    root.unmount()
+    expect(container.innerHTML).toBe("")
+  })
+})
+
+// ---------------------------------------------------------------------------
+// useOptimistic
+// ---------------------------------------------------------------------------
+
+describe("useOptimistic", () => {
+  it("returns passthrough value by default", () => {
+    const container = document.createElement("div")
+
+    function Comp() {
+      const [optimistic] = useOptimistic("confirmed")
+      return h("span", null, optimistic)
+    }
+
+    mount(h(Comp, null), container)
+    expect(container.innerHTML).toBe("<span>confirmed</span>")
+  })
+
+  it("applies optimistic update with updateFn", () => {
+    const container = document.createElement("div")
+    let addOptimistic!: (action: string) => void
+
+    function Comp() {
+      const [optimistic, add] = useOptimistic(
+        "initial",
+        (_current: string, action: string) => action,
+      )
+      addOptimistic = add
+      return h("span", null, optimistic)
+    }
+
+    mount(h(Comp, null), container)
+    expect(container.innerHTML).toBe("<span>initial</span>")
+
+    addOptimistic("optimistic-value")
+    flushUpdates()
+    expect(container.innerHTML).toBe("<span>optimistic-value</span>")
+  })
+})
+
+// ---------------------------------------------------------------------------
+// useActionState
+// ---------------------------------------------------------------------------
+
+describe("useActionState", () => {
+  it("returns initial state and isPending=false", () => {
+    const container = document.createElement("div")
+
+    function Comp() {
+      const [state, , isPending] = useActionState(
+        (prev: number, n: number) => prev + n,
+        0,
+      )
+      return h("span", null, `${state}:${isPending}`)
+    }
+
+    mount(h(Comp, null), container)
+    expect(container.innerHTML).toBe("<span>0:false</span>")
+  })
+
+  it("dispatches synchronous action", () => {
+    const container = document.createElement("div")
+    let dispatch!: (payload: number) => void
+
+    function Comp() {
+      const [state, d, isPending] = useActionState(
+        (prev: number, n: number) => prev + n,
+        0,
+      )
+      dispatch = d
+      return h("span", null, `${state}:${isPending}`)
+    }
+
+    mount(h(Comp, null), container)
+    dispatch(5)
+    flushUpdates()
+    expect(container.innerHTML).toBe("<span>5:false</span>")
+  })
+})
+
+// ---------------------------------------------------------------------------
+// useFormStatus
+// ---------------------------------------------------------------------------
+
+describe("useFormStatus", () => {
+  it("returns not-pending status", () => {
+    const container = document.createElement("div")
+
+    function Comp() {
+      const status = useFormStatus()
+      return h("span", null, `pending:${status.pending}`)
+    }
+
+    mount(h(Comp, null), container)
+    expect(container.innerHTML).toBe("<span>pending:false</span>")
+  })
+
+  it("returns null data, method, and action", () => {
+    const container = document.createElement("div")
+    let capturedStatus!: ReturnType<typeof useFormStatus>
+
+    function Comp() {
+      capturedStatus = useFormStatus()
+      return h("span", null, "test")
+    }
+
+    mount(h(Comp, null), container)
+    expect(capturedStatus.data).toBeNull()
+    expect(capturedStatus.method).toBeNull()
+    expect(capturedStatus.action).toBeNull()
   })
 })
 

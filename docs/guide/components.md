@@ -80,12 +80,19 @@ const FancyInput = forwardRef(function FancyInput(
 
 ## Error Boundaries
 
-Catch rendering errors with `ErrorBoundary`:
+Catch rendering errors with `ErrorBoundary`. The `fallback` prop is a function that receives the error and a `reset` function:
 
 ```tsx
 import { ErrorBoundary } from "phasm"
 
-<ErrorBoundary fallback={<p>Something went wrong.</p>}>
+<ErrorBoundary
+  fallback={(error, reset) => (
+    <div>
+      <p>Something went wrong: {error.message}</p>
+      <button onClick={reset}>Try again</button>
+    </div>
+  )}
+>
   <RiskyComponent />
 </ErrorBoundary>
 ```
@@ -107,6 +114,32 @@ function Dashboard() {
   )
 }
 ```
+
+### ErrorBoundary + Suspense
+
+Place an `ErrorBoundary` inside a `Suspense` boundary to catch errors from lazy-loaded components or rejected promises from `use()`:
+
+```tsx
+import { lazy, Suspense, ErrorBoundary } from "phasm"
+
+const HeavyChart = lazy(() => import("./HeavyChart"))
+
+function Dashboard() {
+  return (
+    <Suspense fallback={<p>Loading chart...</p>}>
+      <ErrorBoundary
+        fallback={(err) => <p>Chart failed to load: {err.message}</p>}
+      >
+        <HeavyChart />
+      </ErrorBoundary>
+    </Suspense>
+  )
+}
+```
+
+::: tip
+The `ErrorBoundary` must be *inside* the `Suspense` boundary, not wrapping it. This is because async rejections from lazy components trigger a re-render via the scheduler, and only error handlers inside the same Suspense scope can catch them.
+:::
 
 ## Portals
 

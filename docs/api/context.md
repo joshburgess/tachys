@@ -31,9 +31,20 @@ Returns the current value of the given context, reading from the nearest Provide
 ```ts
 interface Context<T> {
   Provider: (props: { value: T; children?: VNode }) => VNode
-  _defaultValue: T
-  _stack: T[]
+  Consumer: (props: { children: (value: T) => VNode }) => VNode
 }
 ```
 
-The context object. You typically only interact with `.Provider` and pass the context itself to `useContext`.
+The context object. Use `.Provider` to supply a value and either `useContext` or `.Consumer` to read it.
+
+## Context.Consumer
+
+```tsx
+<ThemeCtx.Consumer>
+  {(value) => <span>{value}</span>}
+</ThemeCtx.Consumer>
+```
+
+Render-prop component that reads the current context value. The `children` prop must be a function that receives the context value and returns a VNode.
+
+This is the legacy React pattern for consuming context. Prefer `useContext` in new code, but `Consumer` is useful for interop with third-party libraries that rely on this pattern.

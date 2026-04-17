@@ -13,6 +13,7 @@ import type { ChildFlag } from "./flags"
 import { ChildFlags, VNodeFlags } from "./flags"
 import { mountInternal } from "./mount"
 import { patchProp, setRootContainer } from "./patch"
+import { registerPatch } from "./reconcile-bridge"
 import { clearRef, setRef } from "./ref"
 import { unmount, unmountChildren } from "./unmount"
 import type { DangerousInnerHTML, VNode } from "./vnode"
@@ -118,6 +119,9 @@ export function patch(oldVNode: VNode, newVNode: VNode, parentDom: Element): voi
   setRootContainer(parentDom)
   patchInner(oldVNode, newVNode, parentDom)
 }
+
+// Register with the bridge so component.ts can call patch without a direct import.
+registerPatch(patch)
 
 /**
  * Internal patch dispatch -- skips setRootContainer for recursive calls.

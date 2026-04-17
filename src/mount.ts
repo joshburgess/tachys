@@ -14,6 +14,7 @@
 import { mountComponent as mountComp } from "./component"
 import { ChildFlags, VNodeFlags } from "./flags"
 import { mountProps, setRootContainer } from "./patch"
+import { registerMount } from "./reconcile-bridge"
 import { setRef } from "./ref"
 import type { DangerousInnerHTML, VNode } from "./vnode"
 
@@ -57,6 +58,9 @@ export function mountInternal(vnode: VNode, parentDom: Element, isSvg: boolean):
     mountFragment(vnode, parentDom, isSvg)
   }
 }
+
+// Register with the bridge so component.ts can call mountInternal without a direct import.
+registerMount(mountInternal)
 
 /**
  * Mount an element VNode.

@@ -520,6 +520,7 @@ describe("effect cleanup in deeply nested unmount", () => {
 })
 
 function flushMicrotasks(): Promise<void> {
+  flushUpdates()
   return new Promise((resolve) => {
     setTimeout(resolve, 0)
   })

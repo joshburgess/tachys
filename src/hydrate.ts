@@ -6,17 +6,132 @@
  * DOM elements. After hydration, the VNode tree is fully live and
  * subsequent updates use the normal patch/diff path.
  *
+ * Suspense-aware hydration:
+ *   - Suspense boundary components are detected and wired up with
+ *     suspend/resolve handlers, just like mountComponent.
+ *   - Streaming SSR placeholders (ph:N spans, phr:N divs, swap scripts)
+ *     are cleaned up during hydration.
+ *   - Selective hydration: when the user interacts with content inside
+ *     a not-yet-hydrated Suspense boundary, that boundary is hydrated
+ *     at Sync priority.
+ *
  * Usage:
  *   import { hydrate } from "phasm/server"
  *   hydrate(h(App, null), document.getElementById("app")!)
  */
 
-import { finalizeHydratedComponent, hydrateComponentInstance, resetIdCounter } from "./component"
+import {
+  finalizeHydratedComponent,
+  hydrateComponentInstance,
+  hydrateSuspenseInstance,
+  finalizeSuspenseComponent,
+  switchSuspenseToFallback,
+  resetIdCounter,
+} from "./component"
+import type { ComponentInstance } from "./component"
 import { ChildFlags, VNodeFlags } from "./flags"
 import { mountInternal } from "./mount"
 import { mountProps, setRootContainer } from "./patch"
 import { setRef } from "./ref"
+import { scheduleUpdate } from "./scheduler"
+import { isSuspenseFn, isThenable, pushSuspendHandler, popSuspendHandler } from "./suspense"
+import type { ComponentFn } from "./vnode"
 import type { VNode } from "./vnode"
+
+// --- Streaming SSR cleanup ---
+
+/**
+ * Remove streaming SSR artifacts from the container before hydration.
+ * This cleans up:
+ *   - Swap script elements (<script> containing $ph)
+ *   - Hidden resolved content divs (<div hidden id="phr:N">)
+ *   - Placeholder comments (<!--$ph:N-->)
+ *   - Placeholder spans are left in place -- they contain the fallback
+ *     content that gets replaced during Suspense hydration.
+ */
+function cleanStreamingArtifacts(container: Element): void {
+  // Remove swap scripts and hidden resolved-content divs
+  const scripts = container.querySelectorAll("script")
+  for (let i = scripts.length - 1; i >= 0; i--) {
+    const script = scripts[i]!
+    if (script.textContent && script.textContent.indexOf("$ph") !== -1) {
+      script.remove()
+    }
+  }
+
+  // Remove hidden phr:N divs (resolved content already swapped in by scripts)
+  const hiddenDivs = container.querySelectorAll("div[hidden][id^='phr:']")
+  for (let i = hiddenDivs.length - 1; i >= 0; i--) {
+    hiddenDivs[i]!.remove()
+  }
+
+  // Remove placeholder comments
+  removeCommentNodes(container, "$ph:")
+}
+
+/**
+ * Walk the DOM tree and remove comment nodes matching a prefix.
+ */
+function removeCommentNodes(node: Node, prefix: string): void {
+  const walker = document.createTreeWalker(node, NodeFilter.SHOW_COMMENT)
+  const toRemove: Comment[] = []
+  let current = walker.nextNode()
+  while (current !== null) {
+    if ((current as Comment).data.indexOf(prefix) === 0) {
+      toRemove.push(current as Comment)
+    }
+    current = walker.nextNode()
+  }
+  for (let i = 0; i < toRemove.length; i++) {
+    toRemove[i]!.remove()
+  }
+}
+
+// --- Selective hydration ---
+
+/**
+ * Pending Suspense boundaries that haven't finished hydrating.
+ * Maps placeholder DOM node to a callback that hydrates the boundary.
+ */
+const pendingBoundaries = new Map<Node, () => void>()
+
+/**
+ * Event types that trigger selective hydration. When a user interacts
+ * with content inside a pending Suspense boundary, we hydrate it
+ * immediately at Sync priority.
+ */
+const INTERACTIVE_EVENTS = ["click", "input", "keydown", "focusin"]
+
+let selectiveHydrationInstalled = false
+
+function installSelectiveHydration(root: Element): void {
+  if (selectiveHydrationInstalled) return
+  selectiveHydrationInstalled = true
+
+  for (const eventType of INTERACTIVE_EVENTS) {
+    root.addEventListener(
+      eventType,
+      (event: Event) => {
+        if (pendingBoundaries.size === 0) return
+        const target = event.target as Node | null
+        if (target === null) return
+
+        // Walk up from the event target to find a pending boundary
+        for (const [placeholder, hydrateFn] of pendingBoundaries) {
+          if (placeholder.contains(target)) {
+            // Hydrate this boundary immediately
+            pendingBoundaries.delete(placeholder)
+            hydrateFn()
+            break
+          }
+        }
+      },
+      { capture: true },
+    )
+  }
+}
+
+// --- Public API ---
 
 /**
  * Hydrate a server-rendered DOM tree with a VNode tree.
@@ -26,12 +141,17 @@ import type { VNode } from "./vnode"
  * After hydration, the app is interactive and further updates
  * use the normal diff/patch path.
  *
+ * Handles streaming SSR artifacts (placeholder spans, swap scripts,
+ * hidden resolved-content divs) by cleaning them up before walking.
+ *
  * @param vnode - The VNode tree (same tree used for renderToString)
  * @param container - The DOM element containing the server-rendered HTML
  */
 export function hydrate(vnode: VNode, container: Element): void {
   resetIdCounter()
   setRootContainer(container)
+  cleanStreamingArtifacts(container)
+  installSelectiveHydration(container)
   hydrateNode(vnode, container, container.firstChild)
 }
 
@@ -139,17 +259,221 @@ function hydrateComponent(
   parentDom: Element,
   domNode: ChildNode | null,
 ): ChildNode | null {
-  // Hydration-aware component mount: create the instance and render the
-  // component (setting up hooks), then walk existing DOM for the rendered
-  // output instead of creating new elements.
+  const type = vnode.type as ComponentFn
+
+  // Suspense boundary: needs special handling for suspend/resolve lifecycle
+  if (isSuspenseFn(type)) {
+    return hydrateSuspenseBoundary(vnode, parentDom, domNode)
+  }
+
+  // Regular component: create instance, render, walk existing DOM
   const { rendered, instance } = hydrateComponentInstance(vnode, parentDom)
-
-  // Hydrate the rendered VNode tree against existing DOM
   const next = hydrateNode(rendered, parentDom, domNode)
-
-  // Finalize: set dom reference, mark mounted, run effects
   finalizeHydratedComponent(vnode, instance, rendered)
 
+  return next
+}
+
+/**
+ * Hydrate a Suspense boundary. If the children rendered synchronously on
+ * the server (no suspension), we hydrate them normally. If the content
+ * was streamed (placeholder span), we handle the swap.
+ *
+ * During hydration, lazy() components that haven't loaded yet will throw
+ * a Promise. We catch it, show the fallback (which should match the
+ * server-rendered fallback), and schedule re-hydration when the Promise
+ * resolves.
+ */
+function hydrateSuspenseBoundary(
+  vnode: VNode,
+  parentDom: Element,
+  domNode: ChildNode | null,
+): ChildNode | null {
+  // Check if this is a streaming placeholder (span with id="ph:N")
+  const placeholderSpan = findStreamingPlaceholder(domNode)
+
+  if (placeholderSpan !== null) {
+    // This Suspense boundary was streamed with a placeholder.
+    // The swap script should have already replaced the placeholder with
+    // resolved content. If the swap hasn't happened yet, hydrate the
+    // fallback and register for selective hydration.
+    return hydrateStreamedSuspense(vnode, parentDom, domNode, placeholderSpan)
+  }
+
+  // Normal case: children rendered synchronously on the server.
+  // Create the Suspense instance and render it (gets children VNode).
+  const { rendered, instance } = hydrateSuspenseInstance(vnode, parentDom)
+
+  // Push a suspend handler so thrown promises from lazy children during
+  // hydration are caught by this Suspense boundary.
+  let suspendedPromise: Promise<unknown> | null = null
+  pushSuspendHandler((promise: Promise<unknown>) => {
+    suspendedPromise = promise
+  })
+
+  let next: ChildNode | null
+  try {
+    next = hydrateNode(rendered, parentDom, domNode)
+  } catch (err) {
+    popSuspendHandler()
+    if (isThenable(err)) {
+      suspendedPromise = err
+      return handleSuspenseDuringHydration(vnode, instance, parentDom, domNode, err)
+    }
+    throw err
+  }
+
+  popSuspendHandler()
+
+  if (suspendedPromise !== null) {
+    return handleSuspenseDuringHydration(vnode, instance, parentDom, domNode, suspendedPromise)
+  }
+
+  // Children hydrated without suspending
+  finalizeSuspenseComponent(vnode, instance, rendered)
+  return next
+}
+
+/**
+ * Handle a suspended child during Suspense hydration. Switches the
+ * Suspense to fallback state and re-hydrates when the promise resolves.
+ */
+function handleSuspenseDuringHydration(
+  vnode: VNode,
+  instance: ComponentInstance,
+  parentDom: Element,
+  domNode: ChildNode | null,
+  promise: Promise<unknown>,
+): ChildNode | null {
+  // Switch to fallback state
+  const fallback = switchSuspenseToFallback(vnode, instance)
+
+  // The server-rendered fallback DOM should be in place.
+  // Hydrate the fallback VNode against existing DOM.
+  const next = hydrateNode(fallback, parentDom, domNode)
+  finalizeSuspenseComponent(vnode, instance, fallback)
+
+  // Register for selective hydration
+  if (domNode !== null) {
+    pendingBoundaries.set(domNode, () => {
+      instance._hooks[0]!.value = false
+      instance._rerender()
+    })
+  }
+
+  // When promise resolves, clear loading state and re-render
+  promise.then(
+    () => {
+      if (domNode !== null) pendingBoundaries.delete(domNode)
+      instance._hooks[0]!.value = false
+      scheduleUpdate(instance)
+    },
+    () => {
+      if (domNode !== null) pendingBoundaries.delete(domNode)
+      instance._hooks[0]!.value = false
+      scheduleUpdate(instance)
+    },
+  )
+
+  return next
+}
+
+/**
+ * Check if a DOM node is a streaming placeholder span (id="ph:N").
+ */
+function findStreamingPlaceholder(domNode: ChildNode | null): HTMLSpanElement | null {
+  if (
+    domNode !== null &&
+    domNode.nodeType === 1 &&
+    (domNode as Element).tagName === "SPAN"
+  ) {
+    const id = (domNode as Element).id
+    if (id.indexOf("ph:") === 0) {
+      return domNode as HTMLSpanElement
+    }
+  }
+  return null
+}
+
+/**
+ * Hydrate a streamed Suspense boundary. The placeholder span contains
+ * fallback content (or has already been swapped to resolved content).
+ */
+function hydrateStreamedSuspense(
+  vnode: VNode,
+  parentDom: Element,
+  domNode: ChildNode | null,
+  placeholderSpan: HTMLSpanElement,
+): ChildNode | null {
+  const next = placeholderSpan.nextSibling
+
+  // Check if resolved content exists (swap script may have already run)
+  const id = placeholderSpan.id.slice(3) // "ph:N" -> "N"
+  const resolvedDiv = parentDom.querySelector(`#phr\\:${id}`)
+
+  if (resolvedDiv !== null) {
+    // Swap script already placed resolved content. Move children from
+    // the hidden div to replace the placeholder, then hydrate normally.
+    const fragment = document.createDocumentFragment()
+    while (resolvedDiv.firstChild) {
+      fragment.appendChild(resolvedDiv.firstChild)
+    }
+    parentDom.replaceChild(fragment, placeholderSpan)
+    resolvedDiv.remove()
+  } else {
+    // Swap hasn't happened yet (placeholder still contains fallback).
+    // Unwrap the span so the fallback content is directly in the tree.
+    const fragment = document.createDocumentFragment()
+    while (placeholderSpan.firstChild) {
+      fragment.appendChild(placeholderSpan.firstChild)
+    }
+    parentDom.replaceChild(fragment, placeholderSpan)
+  }
+
+  // Now hydrate the Suspense component against the (possibly swapped) DOM
+  const { rendered, instance } = hydrateSuspenseInstance(vnode, parentDom)
+
+  // Recalculate domNode after our DOM manipulation
+  const currentDom = next !== null ? next.previousSibling : parentDom.lastChild
+
+  // Push suspend handler for lazy children
+  let streamSuspendedPromise: Promise<unknown> | null = null
+  pushSuspendHandler((promise: Promise<unknown>) => {
+    streamSuspendedPromise = promise
+  })
+
+  try {
+    hydrateNode(rendered, parentDom, currentDom)
+  } catch (err) {
+    popSuspendHandler()
+    if (isThenable(err)) {
+      streamSuspendedPromise = err
+      const fallback = switchSuspenseToFallback(vnode, instance)
+      hydrateNode(fallback, parentDom, currentDom)
+      finalizeSuspenseComponent(vnode, instance, fallback)
+      err.then(
+        () => { instance._hooks[0]!.value = false; scheduleUpdate(instance) },
+        () => { instance._hooks[0]!.value = false; scheduleUpdate(instance) },
+      )
+      return next
+    }
+    throw err
+  }
+
+  popSuspendHandler()
+
+  if (streamSuspendedPromise !== null) {
+    const fallback = switchSuspenseToFallback(vnode, instance)
+    hydrateNode(fallback, parentDom, currentDom)
+    finalizeSuspenseComponent(vnode, instance, fallback)
+    ;(streamSuspendedPromise as Promise<unknown>).then(
+      () => { instance._hooks[0]!.value = false; scheduleUpdate(instance) },
+      () => { instance._hooks[0]!.value = false; scheduleUpdate(instance) },
+    )
+    return next
+  }
+
+  finalizeSuspenseComponent(vnode, instance, rendered)
   return next
 }
 

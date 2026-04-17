@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import {
+  ErrorBoundary,
   Suspense,
   createContext,
   flushUpdates,
@@ -11,6 +12,7 @@ import {
 import type { VNode } from "../../src/vnode"
 
 function flushMicrotasks(): Promise<void> {
+  flushUpdates()
   return new Promise((resolve) => {
     setTimeout(resolve, 0)
   })
@@ -175,13 +177,51 @@ describe("use() with Promise", () => {
     // Suspense shows fallback while pending
     expect(container.innerHTML).toBe("<div>Loading</div>")
 
-    // Reject the promise -- Suspense fallback remains since the
-    // Suspense boundary only re-renders on fulfillment, not rejection.
+    // Reject the promise -- Suspense clears loading state and re-renders.
+    // use() throws the rejection error, which renderComponent catches and
+    // returns an empty placeholder (no ErrorBoundary to catch it).
     doReject!(new Error("fail"))
     await flushMicrotasks()
     flushUpdates()
 
+    expect(container.textContent).toBe("")
+  })
+
+  it("rejection is caught by ErrorBoundary inside Suspense", async () => {
+    let doReject: (err: Error) => void
+    const promise = new Promise<string>((_, reject) => {
+      doReject = (err) => reject(err)
+    })
+    promise.catch(() => {})
+
+    function Comp() {
+      const value = use(promise)
+      return h("span", null, String(value))
+    }
+
+    const errorFallback = (err: unknown): VNode =>
+      h("div", null, `error: ${(err as Error).message}`)
+
+    const container = document.createElement("div")
+    mount(
+      h(
+        Suspense,
+        { fallback: h("div", null, "Loading") },
+        h(ErrorBoundary, { fallback: errorFallback }, h(Comp, null)),
+      ),
+      container,
+    )
+
     expect(container.innerHTML).toBe("<div>Loading</div>")
+
+    doReject!(new Error("network failure"))
+    await flushMicrotasks()
+    flushUpdates()
+    await flushMicrotasks()
+    flushUpdates()
+
+    // ErrorBoundary inside Suspense catches the rejection error
+    expect(container.innerHTML).toBe("<div>error: network failure</div>")
   })
 
   it("caches Promise results across re-reads", async () => {

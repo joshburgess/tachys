@@ -4,6 +4,30 @@
   "description": "A high-performance virtual DOM library optimized for V8",
   "license": "MIT",
   "author": "Josh Burgess",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/joshburgess/phasm.git"
+  },
+  "homepage": "https://github.com/joshburgess/phasm",
+  "bugs": {
+    "url": "https://github.com/joshburgess/phasm/issues"
+  },
+  "keywords": [
+    "virtual-dom",
+    "vdom",
+    "dom",
+    "ui",
+    "jsx",
+    "react",
+    "hooks",
+    "ssr",
+    "hydration",
+    "suspense",
+    "performance"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
   "type": "module",
   "sideEffects": false,
   "main": "./dist/index.cjs",
@@ -59,14 +83,32 @@
         "types": "./dist/server.d.cts",
         "default": "./dist/server.cjs"
       }
+    },
+    "./client": {
+      "import": {
+        "types": "./dist/compat.d.ts",
+        "default": "./dist/compat.js"
+      },
+      "require": {
+        "types": "./dist/compat.d.cts",
+        "default": "./dist/compat.cjs"
+      }
     }
   },
   "files": [
-    "dist"
+    "dist/*.js",
+    "dist/*.js.map",
+    "dist/*.cjs",
+    "dist/*.cjs.map",
+    "dist/*.d.ts",
+    "dist/*.d.cts",
+    "dist/*.d.ts.map",
+    "dist/*.d.cts.map"
   ],
   "packageManager": "pnpm@9.15.4",
   "scripts": {
-    "build": "rm -rf dist && rollup -c rollup.config.mjs && tsc -p tsconfig.build.json && cp dist/index.d.ts dist/index.d.cts && cp dist/jsx-runtime.d.ts dist/jsx-runtime.d.cts && cp dist/jsx-dev-runtime.d.ts dist/jsx-dev-runtime.d.cts && cp dist/compat.d.ts dist/compat.d.cts && cp dist/server.d.ts dist/server.d.cts",
+    "prepublishOnly": "pnpm run build && pnpm run typecheck && pnpm run test",
+    "build": "rm -rf dist && rollup -c rollup.config.mjs && tsc -p tsconfig.build.json && cp dist/index.d.ts dist/index.d.cts && cp dist/jsx-runtime.d.ts dist/jsx-runtime.d.cts && cp dist/jsx-dev-runtime.d.ts dist/jsx-dev-runtime.d.cts && cp dist/compat.d.ts dist/compat.d.cts && cp dist/server.d.ts dist/server.d.cts && cp dist/index.d.ts.map dist/index.d.cts.map && cp dist/jsx-runtime.d.ts.map dist/jsx-runtime.d.cts.map && cp dist/jsx-dev-runtime.d.ts.map dist/jsx-dev-runtime.d.cts.map && cp dist/compat.d.ts.map dist/compat.d.cts.map && cp dist/server.d.ts.map dist/server.d.cts.map",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",

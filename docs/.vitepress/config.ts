@@ -46,7 +46,7 @@ export default defineConfig({
             { text: "Hooks", link: "/api/hooks" },
             { text: "Components", link: "/api/components" },
             { text: "Context", link: "/api/context" },
-            { text: "SSR", link: "/api/ssr" },
+            { text: "SSR & Hydration", link: "/api/ssr" },
             { text: "Types & Flags", link: "/api/types" },
           ],
         },

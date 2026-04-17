@@ -3,6 +3,7 @@ import { createContext, flushUpdates, h, mount, patch, useContext, useState } fr
 import type { VNode } from "../../src/vnode"
 
 function flushMicrotasks(): Promise<void> {
+  flushUpdates()
   return new Promise((resolve) => {
     setTimeout(resolve, 0)
   })
@@ -176,6 +177,62 @@ describe("duplicate useContext calls", () => {
     const tree = h(Ctx.Provider, { value: "shared" }, h(Consumer, null))
     mount(tree, container)
     expect(container.innerHTML).toBe("<span>shared-shared</span>")
+  })
+})
+
+describe("Context.Consumer render-prop", () => {
+  it("should read the default value", () => {
+    const container = document.createElement("div")
+    const Ctx = createContext("default-val")
+
+    const tree = h(Ctx.Consumer, null, (value: string) => h("span", null, value))
+    mount(tree, container)
+    expect(container.innerHTML).toBe("<span>default-val</span>")
+  })
+
+  it("should read from a Provider", () => {
+    const container = document.createElement("div")
+    const Ctx = createContext("default")
+
+    const tree = h(
+      Ctx.Provider,
+      { value: "provided" },
+      h(Ctx.Consumer, null, (value: string) => h("span", null, value)),
+    )
+    mount(tree, container)
+    expect(container.innerHTML).toBe("<span>provided</span>")
+  })
+
+  it("should update when Provider value changes", () => {
+    const container = document.createElement("div")
+    const Ctx = createContext("default")
+
+    const renderFn = (value: string) => h("span", null, value)
+
+    const old = h(Ctx.Provider, { value: "v1" }, h(Ctx.Consumer, null, renderFn))
+    mount(old, container)
+    expect(container.innerHTML).toBe("<span>v1</span>")
+
+    const next = h(Ctx.Provider, { value: "v2" }, h(Ctx.Consumer, null, renderFn))
+    patch(old, next, container)
+    expect(container.innerHTML).toBe("<span>v2</span>")
+  })
+
+  it("should work with nested Providers (innermost wins)", () => {
+    const container = document.createElement("div")
+    const Ctx = createContext("default")
+
+    const tree = h(
+      Ctx.Provider,
+      { value: "outer" },
+      h(
+        Ctx.Provider,
+        { value: "inner" },
+        h(Ctx.Consumer, null, (value: string) => h("span", null, value)),
+      ),
+    )
+    mount(tree, container)
+    expect(container.innerHTML).toBe("<span>inner</span>")
   })
 })
 

@@ -173,7 +173,7 @@ const FancyInput = forwardRef(function FancyInput(props, ref) {
 
 ## useSyncExternalStore
 
-Subscribe to an external store:
+Subscribe to an external store with tearing prevention. Updates are scheduled at `Lane.Sync` priority:
 
 ```tsx
 import { useSyncExternalStore } from "phasm"
@@ -190,3 +190,81 @@ function WindowWidth() {
   return <span>Window width: {width}px</span>
 }
 ```
+
+The optional third parameter `getServerSnapshot` provides a snapshot for SSR:
+
+```tsx
+const width = useSyncExternalStore(subscribe, getSnapshot, () => 1024)
+```
+
+## useTransition
+
+Mark state updates as non-urgent. Updates inside `startTransition` are scheduled at `Lane.Transition` priority, so higher-priority updates (Sync, Default) process first:
+
+```tsx
+import { useState, useTransition } from "phasm"
+
+function Search() {
+  const [query, setQuery] = useState("")
+  const [results, setResults] = useState<string[]>([])
+  const [isPending, startTransition] = useTransition()
+
+  function handleInput(e: Event) {
+    const value = (e.target as HTMLInputElement).value
+    setQuery(value) // urgent: update the input immediately
+
+    startTransition(() => {
+      setResults(filterItems(value)) // non-urgent: can be deferred
+    })
+  }
+
+  return (
+    <div>
+      <input value={query} onInput={handleInput} />
+      {isPending ? <p>Searching...</p> : <ResultsList items={results} />}
+    </div>
+  )
+}
+```
+
+## useDeferredValue
+
+Defer a value so urgent renders are not blocked:
+
+```tsx
+import { useState, useDeferredValue } from "phasm"
+
+function SearchResults(props: { query: string }) {
+  const deferredQuery = useDeferredValue(props.query)
+  const results = filterItems(deferredQuery) // computed with deferred value
+
+  return <ul>{results.map((r) => <li key={r}>{r}</li>)}</ul>
+}
+```
+
+## use
+
+The `use()` hook reads Promises or Context values. Unlike other hooks, it can be called conditionally:
+
+```tsx
+import { use, Suspense } from "phasm"
+
+// With context (can be inside conditionals)
+function ThemedButton(props: { useTheme: boolean }) {
+  const theme = props.useTheme ? use(ThemeContext) : "default"
+  return <button className={theme}>Click</button>
+}
+
+// With a Promise (must be inside Suspense)
+function UserProfile(props: { userPromise: Promise<User> }) {
+  const user = use(props.userPromise)
+  return <h1>{user.name}</h1>
+}
+
+// Usage:
+<Suspense fallback={<p>Loading...</p>}>
+  <UserProfile userPromise={fetchUser(id)} />
+</Suspense>
+```
+
+When `use()` receives a pending Promise, it suspends the component until the Promise resolves. The resolved value is cached for subsequent renders. If the Promise rejects, the error can be caught by an `ErrorBoundary` inside the `Suspense` boundary.

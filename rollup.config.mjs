@@ -182,6 +182,24 @@ export default [
     plugins: minPlugins,
   },
   {
+    input: "src/compat.ts",
+    output: {
+      file: "dist/compat.min.js",
+      format: "es",
+      sourcemap: true,
+    },
+    plugins: minPlugins,
+  },
+  {
+    input: "src/server.ts",
+    output: {
+      file: "dist/server.min.js",
+      format: "es",
+      sourcemap: true,
+    },
+    plugins: minPlugins,
+  },
+  {
     input: "benchmarks/browser/inferno-bench-entry.js",
     output: {
       file: "benchmarks/browser/inferno-bench-bundle.js",

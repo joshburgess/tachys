@@ -24,13 +24,17 @@ All event handlers are delegated to a single root listener rather than individua
 
 The keyed children reconciliation uses an Inferno-style LIS (Longest Increasing Subsequence) algorithm for minimal DOM moves. A small-list fast path avoids Map/LIS overhead for lists under 32 items.
 
+### Priority-Based Scheduler
+
+Phasm's scheduler uses three priority lanes (Sync, Default, Transition) to process updates in the right order. `useSyncExternalStore` uses the Sync lane for tearing prevention, normal state updates use Default, and `startTransition`/`useDeferredValue` use the Transition lane so they don't block urgent work.
+
 ## Bundle Size
 
 | Build | Size | Gzipped |
 |-------|------|---------|
-| `index.js` (ESM) | 99 KB | ~22 KB |
-| `index.min.js` (ESM, minified) | 26 KB | **8 KB** |
-| `jsx-runtime.min.js` | 1.9 KB | ~1 KB |
+| `index.js` (ESM) | 117 KB | ~27 KB |
+| `index.min.js` (ESM, minified) | 28 KB | **~8.6 KB** |
+| `jsx-runtime.min.js` | 1.5 KB | ~0.7 KB |
 
 ## Tips
 
@@ -38,3 +42,5 @@ The keyed children reconciliation uses an Inferno-style LIS (Longest Increasing 
 2. **Memoize callbacks** with `useCallback` to prevent unnecessary child re-renders when passing handlers as props.
 3. **Split contexts** by update frequency to minimize re-renders.
 4. **Use `memo`** for components that receive complex props but re-render infrequently.
+5. **Use `startTransition`** for expensive state updates that don't need to block user input.
+6. **Use `useSyncExternalStore`** for external stores to get tearing prevention with Sync-lane scheduling.

@@ -62,6 +62,7 @@ let currentLane: Lane = Lane.Default
 // --- MessageChannel for yielding ---
 
 let scheduleCallback: (fn: () => void) => void
+let scheduleAfterPaint: (fn: () => void) => void
 let isMessageChannelAvailable = false
 
 // Use MessageChannel for yielding if available (browser), otherwise microtask (SSR/tests)
@@ -82,10 +83,27 @@ if (typeof MessageChannel !== "undefined") {
     channel.port2.postMessage(null)
   }
   isMessageChannelAvailable = true
+
+  // Schedule a callback guaranteed to run after the browser paints.
+  // rAF fires right before paint; a MessageChannel posted from rAF
+  // fires right after paint. This creates a true paint boundary so
+  // urgent renders are visible before transition work begins.
+  if (typeof requestAnimationFrame !== "undefined") {
+    scheduleAfterPaint = (fn: () => void) => {
+      requestAnimationFrame(() => {
+        pendingCallback = fn
+        channel.port2.postMessage(null)
+      })
+    }
+  } else {
+    // No rAF (e.g. Node with MessageChannel polyfill) -- fall back
+    scheduleAfterPaint = scheduleCallback
+  }
 } else {
   scheduleCallback = (fn: () => void) => {
     queueMicrotask(fn)
   }
+  scheduleAfterPaint = scheduleCallback
 }
 
 // --- Public API ---
@@ -203,12 +221,14 @@ function autoFlush(): void {
   const transitionQueue = laneQueues[Lane.Transition]!
   if (transitionQueue.length > 0) {
     if (processedUrgent && isMessageChannelAvailable) {
-      // Defer to next frame so the urgent renders paint first
+      // Defer transition work until after the browser paints so the
+      // urgent render is visible first. scheduleAfterPaint uses
+      // rAF + MessageChannel to guarantee a true paint boundary.
       activeLane = IDLE_LANE
       isFlushing = false
       if (!isScheduled) {
         isScheduled = true
-        scheduleCallback(autoFlush)
+        scheduleAfterPaint(autoFlush)
       }
       return
     }
@@ -231,10 +251,13 @@ function autoFlush(): void {
       instance._rerender()
 
       if (shouldYield() && transitionQueue.length > 0) {
+        // Yield transition work and schedule after paint so intermediate
+        // state is visible. This lets the browser stay responsive during
+        // long transition renders (e.g., filtering a large list).
         activeLane = IDLE_LANE
         isFlushing = false
         isScheduled = true
-        scheduleCallback(autoFlush)
+        scheduleAfterPaint(autoFlush)
         return
       }
     }

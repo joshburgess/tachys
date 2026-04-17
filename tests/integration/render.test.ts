@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
-import { h, render } from "../../src/index"
+import { createRoot, h, render } from "../../src/index"
+import type { Root } from "../../src/index"
 
 describe("render() convenience API", () => {
   let container: HTMLDivElement
@@ -84,5 +85,47 @@ describe("render() convenience API", () => {
     render(h("div", null, "c1-updated"), c1)
     expect(c1.innerHTML).toBe("<div>c1-updated</div>")
     expect(c2.innerHTML).toBe("<span>c2</span>")
+  })
+})
+
+describe("createRoot() API", () => {
+  function setup(): HTMLDivElement {
+    return document.createElement("div")
+  }
+
+  it("should mount via root.render()", () => {
+    const container = setup()
+    const root = createRoot(container)
+    root.render(h("div", null, "hello"))
+    expect(container.innerHTML).toBe("<div>hello</div>")
+  })
+
+  it("should patch on subsequent root.render() calls", () => {
+    const container = setup()
+    const root = createRoot(container)
+    root.render(h("div", null, "first"))
+    expect(container.innerHTML).toBe("<div>first</div>")
+
+    root.render(h("div", null, "second"))
+    expect(container.innerHTML).toBe("<div>second</div>")
+  })
+
+  it("should unmount via root.unmount()", () => {
+    const container = setup()
+    const root = createRoot(container)
+    root.render(h("div", null, "content"))
+    expect(container.innerHTML).toBe("<div>content</div>")
+
+    root.unmount()
+    expect(container.innerHTML).toBe("")
+  })
+
+  it("should re-render after unmount", () => {
+    const container = setup()
+    const root = createRoot(container)
+    root.render(h("span", null, "one"))
+    root.unmount()
+    root.render(h("span", null, "two"))
+    expect(container.innerHTML).toBe("<span>two</span>")
   })
 })

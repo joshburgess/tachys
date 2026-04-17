@@ -12,6 +12,7 @@ import {
 import type { VNode } from "../../src/vnode"
 
 function flushMicrotasks(): Promise<void> {
+  flushUpdates()
   return new Promise((resolve) => {
     setTimeout(resolve, 0)
   })

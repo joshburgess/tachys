@@ -43,6 +43,17 @@ function useLayoutEffect(
 
 Identical to `useEffect` in Phasm. Provided for React API compatibility.
 
+## useInsertionEffect
+
+```ts
+function useInsertionEffect(
+  callback: () => void | (() => void),
+  deps?: readonly unknown[],
+): void
+```
+
+Identical to `useEffect` in Phasm. In React, `useInsertionEffect` fires before any DOM mutations and is intended for CSS-in-JS libraries to inject `<style>` rules. Exported for compatibility with styled-components, Emotion, and similar libraries.
+
 ## useMemo
 
 ```ts
@@ -101,10 +112,15 @@ Customizes the value exposed to parent components when using `forwardRef`.
 function useSyncExternalStore<T>(
   subscribe: (onStoreChange: () => void) => () => void,
   getSnapshot: () => T,
+  getServerSnapshot?: () => T,
 ): T
 ```
 
-Subscribes to an external store. The `subscribe` function receives a callback to notify of changes and must return an unsubscribe function. `getSnapshot` must return a referentially stable value when the underlying data hasn't changed.
+Subscribes to an external store with tearing prevention. The `subscribe` function receives a callback to notify of changes and must return an unsubscribe function. `getSnapshot` must return a referentially stable value when the underlying data hasn't changed.
+
+On every render, the current snapshot is compared against the stored value. If it has changed (e.g., a store update occurred between scheduling and rendering), the component re-renders immediately at `Lane.Sync` priority to prevent tearing.
+
+The optional `getServerSnapshot` parameter provides a snapshot for server-side rendering contexts.
 
 ## useTransition
 
@@ -112,7 +128,15 @@ Subscribes to an external store. The `subscribe` function receives a callback to
 function useTransition(): readonly [boolean, (callback: () => void) => void]
 ```
 
-Returns `[isPending, startTransition]`. In Phasm's synchronous model, `isPending` is always `false`.
+Returns `[isPending, startTransition]`. State updates inside `startTransition` are scheduled at `Lane.Transition` priority, allowing higher-priority Sync and Default updates to process first.
+
+## startTransition
+
+```ts
+function startTransition(callback: () => void): void
+```
+
+Standalone version of the transition API. Marks state updates inside the callback as `Lane.Transition` priority.
 
 ## useDeferredValue
 
@@ -120,7 +144,7 @@ Returns `[isPending, startTransition]`. In Phasm's synchronous model, `isPending
 function useDeferredValue<T>(value: T): T
 ```
 
-Returns the value as-is. Exists for React API compatibility.
+Defers a value to allow more urgent updates to render first. The deferred update is scheduled at `Lane.Transition` priority.
 
 ## useDebugValue
 
@@ -136,4 +160,54 @@ No-op in Phasm. Exists for React API compatibility.
 function use<T>(usable: Promise<T> | Context<T>): T
 ```
 
-Reads a context value or a promise. When given a pending promise, throws to trigger the nearest Suspense boundary.
+React 19-compatible hook that reads a context value or a promise. Unlike other hooks, `use()` can be called conditionally (inside `if` blocks, loops, etc.).
+
+**With Context:** Returns the current context value, equivalent to `useContext(ctx)`.
+
+**With Promise:** If the promise is already resolved, returns the cached value synchronously. If pending, throws to trigger the nearest `Suspense` boundary. The component re-renders once the promise resolves. If the promise rejects, the error can be caught by an `ErrorBoundary` inside the `Suspense` boundary.
+
+---
+
+## React 19 Form Hooks
+
+The following hooks are imported from `phasm/compat`, not the core `phasm` package.
+
+```ts
+import { useOptimistic, useActionState, useFormStatus } from "phasm/compat"
+```
+
+## useOptimistic
+
+```ts
+function useOptimistic<T, A>(
+  passthrough: T,
+  updateFn?: (currentState: T, optimisticValue: A) => T,
+): [T, (action: A) => void]
+```
+
+Manages optimistic UI state. Returns the current optimistic state and a setter function. When an optimistic update is applied, the state is immediately updated using `updateFn`. When `passthrough` changes and no optimistic update is active, the state syncs back to the new `passthrough` value.
+
+## useActionState
+
+```ts
+function useActionState<S, P>(
+  action: (prevState: S, payload: P) => S | Promise<S>,
+  initialState: S,
+  permalink?: string,
+): [S, (payload: P) => void, boolean]
+```
+
+Manages form action state with a reducer pattern. Returns `[state, dispatch, isPending]`. Calling `dispatch` invokes `action` with the current state and the given payload, then updates state with the result. Handles both synchronous and asynchronous actions. `isPending` is `true` while an async action is in flight.
+
+## useFormStatus
+
+```ts
+function useFormStatus(): {
+  pending: boolean
+  data: FormData | null
+  method: string | null
+  action: string | null
+}
+```
+
+Returns the status of a parent form action. Always returns a not-pending status (`pending: false`, all other fields `null`) because Phasm does not include a built-in form action runtime. Exported for compatibility with third-party components that call this hook.
