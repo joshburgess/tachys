@@ -475,16 +475,17 @@ export function flushUpdates(): void {
 }
 
 function processAllLanes(): void {
-  for (let lane = Lane.Sync; lane <= Lane.Transition; lane++) {
+  // Sync + Default lanes: no R.pending handling (only Transition renders yield).
+  // Keeping these paths free of R.pending reads shrinks the hot-path bytecode
+  // for flushUpdates-driven setState/dispatch benches.
+  for (let lane = Lane.Sync; lane <= Lane.Default; lane++) {
     const queue = laneQueues[lane]!
-
-    if (queue.length === 0 && !((lane as number) === Lane.Transition && R.pending)) continue
+    if (queue.length === 0) continue
 
     R.activeLane = lane
     sliceStart = performance.now()
 
-    while (queue.length > 0 || ((lane as number) === Lane.Transition && R.pending)) {
-      // Check for higher-priority work that arrived during this lane
+    while (queue.length > 0) {
       if (lane > Lane.Sync && hasHigherPriorityWork(lane)) {
         for (let hp = Lane.Sync; hp < lane; hp++) {
           processQueue(laneQueues[hp]!, hp)
@@ -492,32 +493,57 @@ function processAllLanes(): void {
         sliceStart = performance.now()
       }
 
-      // Resume pending continuation (Transition lane mid-render yield)
-      if (R.pending) {
-        resumePendingWork()
-        // In processAllLanes (synchronous flush), don't yield mid-continuation --
-        // just keep draining. shouldYield checks are for the outer loop below.
-        continue
-      }
-
       const instance = queue.shift()!
       instance._queuedLanes &= ~(1 << lane)
       instance._rerender()
 
-      // Drain any continuations from mid-render yields
-      while (R.pending) {
-        resumePendingWork()
-      }
-
-      // Check if we should yield (not for Sync lane)
       if (lane !== Lane.Sync && shouldYield() && queue.length > 0) {
-        // Yield and reschedule
         R.activeLane = IDLE_LANE
         isFlushing = false
         isScheduled = true
         scheduleCallback(flushUpdates)
         return
       }
+    }
+  }
+
+  // Transition lane: handle mid-render continuations via R.pending.
+  const transitionQueue = laneQueues[Lane.Transition]!
+  if (transitionQueue.length === 0 && !R.pending) {
+    R.activeLane = IDLE_LANE
+    return
+  }
+
+  R.activeLane = Lane.Transition
+  sliceStart = performance.now()
+
+  while (transitionQueue.length > 0 || R.pending) {
+    if (hasHigherPriorityWork(Lane.Transition)) {
+      for (let hp = Lane.Sync; hp < Lane.Transition; hp++) {
+        processQueue(laneQueues[hp]!, hp)
+      }
+      sliceStart = performance.now()
+    }
+
+    if (R.pending) {
+      resumePendingWork()
+      continue
+    }
+
+    const instance = transitionQueue.shift()!
+    instance._queuedLanes &= ~(1 << Lane.Transition)
+    instance._rerender()
+
+    while (R.pending) {
+      resumePendingWork()
+    }
+
+    if (shouldYield() && transitionQueue.length > 0) {
+      R.activeLane = IDLE_LANE
+      isFlushing = false
+      isScheduled = true
+      scheduleCallback(flushUpdates)
+      return
     }
   }
 
