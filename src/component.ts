@@ -15,6 +15,7 @@ import {
   propagateRenderError,
   pushErrorHandler,
 } from "./error-boundary"
+import { domAppendChild, domRemoveChild, isCollecting, pushDeferredEffect } from "./effects"
 import { ChildFlags, VNodeFlags } from "./flags"
 import { getMemoCompare } from "./memo"
 import {
@@ -35,6 +36,7 @@ import {
 } from "./suspense"
 import type { ComponentFn } from "./vnode"
 import { VNode } from "./vnode"
+import { appendAfterWork, hasPendingWork } from "./work-loop"
 
 // --- Component instance ---
 
@@ -242,7 +244,7 @@ export function mountComponent(vnode: VNode, parentDom: Element, isSvg: boolean)
     // Portal: mount children into the portal container, leave a placeholder
     mountInternal(rendered, portalTarget, isSvg)
     const placeholder = document.createTextNode("")
-    parentDom.appendChild(placeholder)
+    domAppendChild(parentDom, placeholder)
     vnode.dom = placeholder
   } else {
     mountInternal(rendered, parentDom, isSvg)
@@ -509,6 +511,20 @@ export function patchComponent(oldVNode: VNode, newVNode: VNode, parentDom: Elem
   }
 
   patchVNode(oldRendered, newRendered, patchParent)
+
+  // If a descendant yielded mid-children-diff, defer all post-patch
+  // work (dom ref, suspense/EB handling, effects, provider cleanup).
+  if (hasPendingWork()) {
+    appendAfterWork(() => {
+      newVNode.dom = portalTarget !== undefined ? oldVNode.dom : newRendered.dom
+      if (isSuspense) popSuspendHandler()
+      if (isEB) popErrorHandler()
+      runEffects(oldInstance)
+      if (providerCtx !== null) providerCtx._stack.pop()
+    })
+    return
+  }
+
   newVNode.dom = portalTarget !== undefined ? oldVNode.dom : newRendered.dom
 
   if (isSuspense) {
@@ -583,7 +599,7 @@ export function unmountComponent(vnode: VNode, parentDom: Element): void {
 
   // Portal: remove the placeholder from the original tree
   if (portalTarget !== undefined && vnode.dom !== null) {
-    parentDom.removeChild(vnode.dom)
+    domRemoveChild(parentDom, vnode.dom)
   }
 
   releaseVNode(vnode)
@@ -1399,6 +1415,22 @@ function rerenderComponent(instance: ComponentInstance): void {
   }
 
   patchVNode(oldRendered, newRendered, patchParent)
+
+  // If a descendant yielded mid-children-diff, defer all post-patch
+  // work (dom ref, suspense/EB handling, effects, provider cleanup).
+  if (hasPendingWork()) {
+    appendAfterWork(() => {
+      if (portalTarget === undefined) {
+        instance._vnode.dom = newRendered.dom
+      }
+      if (isSuspense) popSuspendHandler()
+      if (isEB) popErrorHandler()
+      runEffects(instance)
+      if (providerCtx !== null) providerCtx._stack.pop()
+    })
+    return
+  }
+
   if (portalTarget === undefined) {
     instance._vnode.dom = newRendered.dom
   }
@@ -1465,14 +1497,30 @@ function detachRenderedDOM(vnode: VNode, parentDom: Element): void {
         detachRenderedDOM(children[i]!, parentDom)
       }
     } else if (vnode.dom !== null && vnode.dom.parentNode === parentDom) {
-      parentDom.removeChild(vnode.dom)
+      domRemoveChild(parentDom, vnode.dom)
     }
   } else if (vnode.dom !== null && vnode.dom.parentNode === parentDom) {
-    parentDom.removeChild(vnode.dom)
+    domRemoveChild(parentDom, vnode.dom)
   }
 }
 
 function runEffects(instance: ComponentInstance): void {
+  // During Transition-lane rendering (effect collection active), defer
+  // effects to post-commit so callbacks see the final committed DOM.
+  if (isCollecting()) {
+    // Only defer if there are pending effects to run
+    for (let i = 0; i < instance._effects.length; i++) {
+      if (instance._effects[i]!.pendingRun) {
+        pushDeferredEffect(() => runEffectsImmediate(instance))
+        return
+      }
+    }
+    return
+  }
+  runEffectsImmediate(instance)
+}
+
+function runEffectsImmediate(instance: ComponentInstance): void {
   for (let i = 0; i < instance._effects.length; i++) {
     const effect = instance._effects[i]!
     if (effect.pendingRun) {
