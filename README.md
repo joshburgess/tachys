@@ -702,7 +702,7 @@ Tachys vs Inferno, Chromium headless (median of 50 runs):
 
 Ratio < 1.0 = Tachys faster.
 
-Bundle: **~36KB min / ~10.6KB gzip**.
+Bundle: **~40KB min / ~11.8KB gzip**.
 
 ## Entry Points
 
@@ -713,6 +713,7 @@ Bundle: **~36KB min / ~10.6KB gzip**.
 | `tachys/jsx-runtime` | Automatic JSX transform (`jsx`, `jsxs`, `Fragment`) |
 | `tachys/jsx-dev-runtime` | Dev-mode JSX transform (`jsxDEV`, `Fragment`) |
 | `tachys/compat` | React API surface for bundler aliasing |
+| `tachys/tags` | Typed tag-name helpers (`div`, `span`, `button`, ...) for no-JSX setups |
 
 All entry points ship as both ESM and CJS with TypeScript declarations.
 
@@ -720,7 +721,7 @@ All entry points ship as both ESM and CJS with TypeScript declarations.
 
 ```bash
 pnpm install            # Install dependencies
-pnpm test               # Run tests (777 tests)
+pnpm test               # Run tests (900 tests)
 pnpm run typecheck      # Type check
 pnpm run build          # Build dist/
 pnpm run bench          # Run microbenchmarks

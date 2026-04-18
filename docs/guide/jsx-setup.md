@@ -83,3 +83,17 @@ function List() {
   )
 }
 ```
+
+## No JSX
+
+If you'd rather not set up a JSX compiler at all, Tachys also exports typed tag helpers that produce VNodes directly:
+
+```ts
+import { div, li, ul } from "tachys/tags"
+
+function List() {
+  return ul(null, li(null, "One"), li(null, "Two"))
+}
+```
+
+See [Tag Helpers](/guide/tags) for details.

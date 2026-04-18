@@ -153,6 +153,23 @@ export default [
     ],
     plugins,
   },
+  {
+    input: "src/tags.ts",
+    output: [
+      {
+        file: "dist/tags.js",
+        format: "es",
+        sourcemap: true,
+      },
+      {
+        file: "dist/tags.cjs",
+        format: "cjs",
+        sourcemap: true,
+        exports: "named",
+      },
+    ],
+    plugins,
+  },
   // --- Minified builds ---
   {
     input: "src/index.ts",
@@ -194,6 +211,15 @@ export default [
     input: "src/server.ts",
     output: {
       file: "dist/server.min.js",
+      format: "es",
+      sourcemap: true,
+    },
+    plugins: minPlugins,
+  },
+  {
+    input: "src/tags.ts",
+    output: {
+      file: "dist/tags.min.js",
       format: "es",
       sourcemap: true,
     },

@@ -84,6 +84,16 @@
         "default": "./dist/server.cjs"
       }
     },
+    "./tags": {
+      "import": {
+        "types": "./dist/tags.d.ts",
+        "default": "./dist/tags.js"
+      },
+      "require": {
+        "types": "./dist/tags.d.cts",
+        "default": "./dist/tags.cjs"
+      }
+    },
     "./client": {
       "import": {
         "types": "./dist/compat.d.ts",
@@ -108,7 +118,7 @@
   "packageManager": "pnpm@9.15.4",
   "scripts": {
     "prepublishOnly": "pnpm run build && pnpm run typecheck && pnpm run test",
-    "build": "rm -rf dist && rollup -c rollup.config.mjs && tsc -p tsconfig.build.json && cp dist/index.d.ts dist/index.d.cts && cp dist/jsx-runtime.d.ts dist/jsx-runtime.d.cts && cp dist/jsx-dev-runtime.d.ts dist/jsx-dev-runtime.d.cts && cp dist/compat.d.ts dist/compat.d.cts && cp dist/server.d.ts dist/server.d.cts && cp dist/index.d.ts.map dist/index.d.cts.map && cp dist/jsx-runtime.d.ts.map dist/jsx-runtime.d.cts.map && cp dist/jsx-dev-runtime.d.ts.map dist/jsx-dev-runtime.d.cts.map && cp dist/compat.d.ts.map dist/compat.d.cts.map && cp dist/server.d.ts.map dist/server.d.cts.map",
+    "build": "rm -rf dist && rollup -c rollup.config.mjs && tsc -p tsconfig.build.json && cp dist/index.d.ts dist/index.d.cts && cp dist/jsx-runtime.d.ts dist/jsx-runtime.d.cts && cp dist/jsx-dev-runtime.d.ts dist/jsx-dev-runtime.d.cts && cp dist/compat.d.ts dist/compat.d.cts && cp dist/server.d.ts dist/server.d.cts && cp dist/tags.d.ts dist/tags.d.cts && cp dist/index.d.ts.map dist/index.d.cts.map && cp dist/jsx-runtime.d.ts.map dist/jsx-runtime.d.cts.map && cp dist/jsx-dev-runtime.d.ts.map dist/jsx-dev-runtime.d.cts.map && cp dist/compat.d.ts.map dist/compat.d.cts.map && cp dist/server.d.ts.map dist/server.d.cts.map && cp dist/tags.d.ts.map dist/tags.d.cts.map",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",

@@ -23,6 +23,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - New `R` singleton (`src/render-state.ts`) holding `collecting`, `activeLane`, and `pending` flags. Hot-path callers read these as property loads instead of cross-module function calls so V8 can inline the concurrent-mode guards.
 
+**Tag helpers**
+
+- New `tachys/tags` entry exports typed tag-name functions for every HTML and SVG element (`div`, `span`, `button`, `svg`, `circle`, ...). Each helper accepts `(props, ...children)` or `(...children)` and is typed per-element from `JSX.IntrinsicElements`. Useful for no-JSX setups, REPLs, and FP-style codebases. JS reserved identifiers are suffixed (`var_`, `switch_`); SVG `<use>` is exported as `useEl` to avoid colliding with the React `use()` hook.
+
 ### Changed
 
 - Scheduler `processAllLanes` is split into a dedicated Sync+Default loop and a Transition loop. Sync/Default flushes no longer pay the `R.pending` check that only matters for resumable Transition work.

@@ -18,6 +18,7 @@ export default defineConfig({
           items: [
             { text: "Getting Started", link: "/guide/getting-started" },
             { text: "JSX Setup", link: "/guide/jsx-setup" },
+            { text: "Tag Helpers", link: "/guide/tags" },
           ],
         },
         {
