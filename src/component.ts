@@ -198,6 +198,15 @@ const instanceMap = new WeakMap<VNode, ComponentInstance>()
 // `rerenderComponent` is a hoisted function declaration, so this call sees it.
 registerRerender(rerenderComponent as (instance: unknown) => void)
 
+// Shared frozen empty arrays used as the initial _hooks / _effects sentinels.
+// A component that never calls a hook never allocates a real array -- the
+// sentinel's length is 0, reads short-circuit, and the first push site lifts
+// the instance onto a per-instance array before mutating. Freezing guarantees
+// that any accidental direct `.push` onto the sentinel is caught loudly
+// rather than silently corrupting every other instance.
+const EMPTY_HOOKS: HookState[] = Object.freeze([] as HookState[]) as HookState[]
+const EMPTY_EFFECTS: EffectEntry[] = Object.freeze([] as EffectEntry[]) as EffectEntry[]
+
 /**
  * Mount a functional component — called by mount.ts.
  * Creates a ComponentInstance and renders for the first time.
@@ -220,8 +229,8 @@ export function mountComponent(vnode: VNode, parentDom: Element, isSvg: boolean)
     _rendered: null,
     _parentDom: parentDom,
     _queuedLanes: 0,
-    _hooks: [],
-    _effects: [],
+    _hooks: EMPTY_HOOKS,
+    _effects: EMPTY_EFFECTS,
     _mounted: false,
     _contexts: null,
     _hookCount: -1,
@@ -347,8 +356,8 @@ export function hydrateComponentInstance(
     _rendered: null,
     _parentDom: parentDom,
     _queuedLanes: 0,
-    _hooks: [],
-    _effects: [],
+    _hooks: EMPTY_HOOKS,
+    _effects: EMPTY_EFFECTS,
     _mounted: false,
     _contexts: null,
     _hookCount: -1,
@@ -405,8 +414,8 @@ export function hydrateSuspenseInstance(
     _rendered: null,
     _parentDom: parentDom,
     _queuedLanes: 0,
-    _hooks: [],
-    _effects: [],
+    _hooks: EMPTY_HOOKS,
+    _effects: EMPTY_EFFECTS,
     _mounted: false,
     _contexts: null,
     _hookCount: -1,
@@ -669,6 +678,7 @@ export function useState<T>(initial: T): readonly [T, (newVal: T | ((prev: T) =>
   // Initialize on first render (call lazy initializer if it's a function)
   if (idx >= instance._hooks.length) {
     const initialValue = typeof initial === "function" ? (initial as () => T)() : initial
+    if (instance._hooks === EMPTY_HOOKS) instance._hooks = []
     instance._hooks.push({ value: initialValue, pendingUpdates: null })
   }
 
@@ -729,6 +739,7 @@ export function useReducer<S, A>(
   const idx = stateIndex++
 
   if (idx >= instance._hooks.length) {
+    if (instance._hooks === EMPTY_HOOKS) instance._hooks = []
     instance._hooks.push({ value: initialState, pendingUpdates: null })
   }
 
@@ -782,6 +793,7 @@ export function useEffect(callback: () => EffectCleanup, deps?: readonly unknown
 
   if (effectIdx >= instance._effects.length) {
     // First render -- create effect entry, schedule to run
+    if (instance._effects === EMPTY_EFFECTS) instance._effects = []
     instance._effects.push({
       callback,
       deps: resolvedDeps,
@@ -854,6 +866,7 @@ export function useMemo<T>(factory: () => T, deps: readonly unknown[]): T {
   if (idx >= instance._hooks.length) {
     // First render — compute and store
     const value = factory()
+    if (instance._hooks === EMPTY_HOOKS) instance._hooks = []
     instance._hooks.push({ value: [value, deps], pendingUpdates: null })
     return value
   }
@@ -905,6 +918,7 @@ export function useRef<T>(initial: T): RefObject<T> {
 
   if (idx >= instance._hooks.length) {
     const ref = { current: initial }
+    if (instance._hooks === EMPTY_HOOKS) instance._hooks = []
     instance._hooks.push({ value: ref, pendingUpdates: null })
     return ref
   }
@@ -950,6 +964,7 @@ export function useSyncExternalStore<T>(
 
   // Initialize snapshot on first render
   if (idx >= instance._hooks.length) {
+    if (instance._hooks === EMPTY_HOOKS) instance._hooks = []
     instance._hooks.push({ value: getSnapshot(), pendingUpdates: null })
   }
 
@@ -1034,6 +1049,7 @@ export function useId(): string {
   const idx = stateIndex++
 
   if (idx >= instance._hooks.length) {
+    if (instance._hooks === EMPTY_HOOKS) instance._hooks = []
     instance._hooks.push({ value: `:b${idCounter++}:`, pendingUpdates: null })
   }
 
@@ -1327,8 +1343,8 @@ export function renderComponentSSR(type: ComponentFn, props: Record<string, unkn
     _rendered: null,
     _parentDom: null!,
     _queuedLanes: 0,
-    _hooks: [],
-    _effects: [],
+    _hooks: EMPTY_HOOKS,
+    _effects: EMPTY_EFFECTS,
     _mounted: false,
     _contexts: null,
     _hookCount: -1,
