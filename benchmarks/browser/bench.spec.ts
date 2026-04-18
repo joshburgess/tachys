@@ -110,6 +110,10 @@ test("Tachys vs Inferno browser benchmark", async ({ page }) => {
     const lines: string[] = [
       "# Tachys vs Inferno Browser Benchmark",
       "",
+      "> **WARNING: this harness produces misleading numbers. Do not cite these results.**",
+      ">",
+      "> The Inferno setup here is handicapped (no `$HasKeyedChildren` hint, no `onComponentShouldUpdate` memoization hook) and the measurement surface is a raw `patch()` loop, not click-to-paint. For authoritative numbers use the official [Krausest](https://github.com/krausest/js-framework-benchmark) harness — see [`krausest-official.md`](./krausest-official.md).",
+      "",
       `Date: ${new Date().toISOString()}`,
       `User Agent: ${userAgent}`,
       "",

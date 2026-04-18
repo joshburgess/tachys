@@ -36,20 +36,32 @@ export function jsx(type: VNodeType, props: Record<string, unknown>, key?: strin
 
   const resolvedKey = key !== undefined ? key : null
 
-  // Extract children and className from props without object spread
-  const rawChildren = props["children"]
-  let className: string | null = null
-  const cn = props["className"]
-  if (cn !== undefined && cn !== null) {
-    className = cn as string
-  }
+  // Detect children/className presence via `in` (O(1) hidden class check)
+  // before deciding whether we need to allocate a cleaned props object.
+  // Component callsites like `<Row id={d.id} />` have neither key, so the
+  // original props literal can be reused directly (zero allocation).
+  const hasChildrenKey = "children" in props
+  const hasClassNameKey = "className" in props
 
-  // Build clean props without children/className (avoid spread allocation)
-  let cleanProps: Record<string, unknown> | null = null
-  for (const k in props) {
-    if (k !== "children" && k !== "className") {
-      if (cleanProps === null) cleanProps = {}
-      cleanProps[k] = props[k]
+  let rawChildren: unknown = undefined
+  let className: string | null = null
+  let cleanProps: Record<string, unknown> | null = props
+
+  if (hasChildrenKey || hasClassNameKey) {
+    if (hasChildrenKey) rawChildren = props["children"]
+    if (hasClassNameKey) {
+      const cn = props["className"]
+      if (cn !== undefined && cn !== null) className = cn as string
+    }
+
+    // Rebuild props without children/className to avoid downstream
+    // attribute writes. `cleanProps` stays null when no other keys exist.
+    cleanProps = null
+    for (const k in props) {
+      if (k !== "children" && k !== "className") {
+        if (cleanProps === null) cleanProps = {}
+        cleanProps[k] = props[k]
+      }
     }
   }
 
@@ -134,7 +146,8 @@ export function jsxs(
 
   const resolvedKey = key !== undefined ? key : null
 
-  // Extract children and className from props without object spread
+  // jsxs() is only emitted when the JSX literal has multiple children, so
+  // children is always present. className may or may not be.
   const rawChildren = props["children"] as Array<VNode | string | number>
   let className: string | null = null
   const cn = props["className"]
@@ -142,7 +155,8 @@ export function jsxs(
     className = cn as string
   }
 
-  // Build clean props without children/className
+  // Rebuild props without children/className. `cleanProps` stays null when
+  // no other keys exist (common case for most container elements).
   let cleanProps: Record<string, unknown> | null = null
   for (const k in props) {
     if (k !== "children" && k !== "className") {

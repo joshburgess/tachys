@@ -4,21 +4,21 @@
 >
 > The Inferno setup here is handicapped (no `$HasKeyedChildren` hint, no `onComponentShouldUpdate` memoization hook) and the measurement surface is a raw `patch()` loop, not click-to-paint. For authoritative numbers use the official [Krausest](https://github.com/krausest/js-framework-benchmark) harness — see [`krausest-official.md`](./krausest-official.md).
 
-Date: 2026-04-18T03:37:32.005Z
+Date: 2026-04-18T11:46:24.226Z
 User Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/147.0.7727.15 Safari/537.36
 
 ## Comparison
 
 | Operation | Tachys Median | Inferno Median | Ratio | Tachys Mean | Inferno Mean |
 |---|---|---|---|---|---|
-| create 1,000 rows | 2.00ms | 2.10ms | 0.95x | 2.45ms | 2.39ms |
-| create 10,000 rows | 22.20ms | 22.50ms | 0.99x | 21.75ms | 23.67ms |
-| replace all 1,000 rows | 0.40ms | 0.60ms | 0.67x | 0.49ms | 0.67ms |
-| update every 10th row (of 1,000) | 0.30ms | 0.50ms | 0.60x | 0.36ms | 0.54ms |
-| swap rows (2nd and 999th) | 0.40ms | 0.50ms | 0.80x | 0.51ms | 0.57ms |
-| remove row (middle of 1,000) | 0.30ms | 0.50ms | 0.60x | 0.41ms | 0.57ms |
-| select row (highlight one) | 0.30ms | 2.30ms | 0.13x | 0.39ms | 2.44ms |
-| append 1,000 rows to 1,000 | 2.10ms | 2.50ms | 0.84x | 2.29ms | 2.69ms |
+| create 1,000 rows | 2.00ms | 2.20ms | 0.91x | 2.45ms | 2.47ms |
+| create 10,000 rows | 22.10ms | 21.90ms | 1.01x | 22.69ms | 23.36ms |
+| replace all 1,000 rows | 0.40ms | 0.60ms | 0.67x | 0.51ms | 0.72ms |
+| update every 10th row (of 1,000) | 0.30ms | 0.50ms | 0.60x | 0.38ms | 0.59ms |
+| swap rows (2nd and 999th) | 0.40ms | 0.50ms | 0.80x | 0.50ms | 0.64ms |
+| remove row (middle of 1,000) | 0.30ms | 0.50ms | 0.60x | 0.36ms | 0.55ms |
+| select row (highlight one) | 0.30ms | 2.30ms | 0.13x | 0.40ms | 2.49ms |
+| append 1,000 rows to 1,000 | 2.10ms | 2.60ms | 0.81x | 2.31ms | 2.76ms |
 
 Ratio < 1.0 = Tachys faster, > 1.0 = Inferno faster
 
@@ -26,24 +26,24 @@ Ratio < 1.0 = Tachys faster, > 1.0 = Inferno faster
 
 | Operation | Median (ms) | Mean (ms) | Min (ms) | Max (ms) |
 |---|---|---|---|---|
-| create 1,000 rows | 2.00 | 2.45 | 1.80 | 11.80 |
-| create 10,000 rows | 22.20 | 21.75 | 19.60 | 26.60 |
-| replace all 1,000 rows | 0.40 | 0.49 | 0.20 | 3.70 |
-| update every 10th row (of 1,000) | 0.30 | 0.36 | 0.20 | 1.50 |
-| swap rows (2nd and 999th) | 0.40 | 0.51 | 0.20 | 2.70 |
-| remove row (middle of 1,000) | 0.30 | 0.41 | 0.20 | 3.30 |
-| select row (highlight one) | 0.30 | 0.39 | 0.20 | 3.00 |
-| append 1,000 rows to 1,000 | 2.10 | 2.29 | 1.90 | 6.50 |
+| create 1,000 rows | 2.00 | 2.45 | 1.80 | 9.50 |
+| create 10,000 rows | 22.10 | 22.69 | 19.90 | 32.40 |
+| replace all 1,000 rows | 0.40 | 0.51 | 0.20 | 4.30 |
+| update every 10th row (of 1,000) | 0.30 | 0.38 | 0.20 | 2.80 |
+| swap rows (2nd and 999th) | 0.40 | 0.50 | 0.20 | 2.70 |
+| remove row (middle of 1,000) | 0.30 | 0.36 | 0.20 | 3.00 |
+| select row (highlight one) | 0.30 | 0.40 | 0.20 | 3.10 |
+| append 1,000 rows to 1,000 | 2.10 | 2.31 | 1.90 | 5.80 |
 
 ## Inferno Detail
 
 | Operation | Median (ms) | Mean (ms) | Min (ms) | Max (ms) |
 |---|---|---|---|---|
-| create 1,000 rows | 2.10 | 2.39 | 1.90 | 6.10 |
-| create 10,000 rows | 22.50 | 23.67 | 21.10 | 29.70 |
-| replace all 1,000 rows | 0.60 | 0.67 | 0.50 | 2.80 |
-| update every 10th row (of 1,000) | 0.50 | 0.54 | 0.40 | 2.20 |
-| swap rows (2nd and 999th) | 0.50 | 0.57 | 0.40 | 2.80 |
-| remove row (middle of 1,000) | 0.50 | 0.57 | 0.40 | 2.90 |
-| select row (highlight one) | 2.30 | 2.44 | 2.00 | 5.70 |
-| append 1,000 rows to 1,000 | 2.50 | 2.69 | 2.30 | 5.40 |
+| create 1,000 rows | 2.20 | 2.47 | 1.90 | 6.00 |
+| create 10,000 rows | 21.90 | 23.36 | 20.40 | 28.00 |
+| replace all 1,000 rows | 0.60 | 0.72 | 0.40 | 2.90 |
+| update every 10th row (of 1,000) | 0.50 | 0.59 | 0.40 | 2.80 |
+| swap rows (2nd and 999th) | 0.50 | 0.64 | 0.40 | 4.00 |
+| remove row (middle of 1,000) | 0.50 | 0.55 | 0.40 | 2.90 |
+| select row (highlight one) | 2.30 | 2.49 | 2.10 | 6.00 |
+| append 1,000 rows to 1,000 | 2.60 | 2.76 | 2.20 | 5.70 |

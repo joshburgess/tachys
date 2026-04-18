@@ -193,7 +193,14 @@ const instanceMap = new WeakMap<VNode, ComponentInstance>()
  */
 export function mountComponent(vnode: VNode, parentDom: Element, isSvg: boolean): void {
   const type = vnode.type as ComponentFn
-  const props = buildComponentProps(vnode)
+  // Fast path: no JSX children → reuse vnode.props directly (no spread allocation).
+  // buildComponentProps only needs to run when children must be spliced in.
+  const props =
+    vnode.children === null
+      ? vnode.props !== null
+        ? vnode.props
+        : EMPTY_PROPS
+      : buildComponentProps(vnode)
 
   const instance: ComponentInstance = {
     _type: type,
