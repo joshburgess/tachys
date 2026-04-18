@@ -15,6 +15,7 @@
  */
 
 import { registerContextDep } from "./component"
+import { ComponentMeta } from "./flags"
 import type { VNode } from "./vnode"
 
 export interface Context<T> {
@@ -26,6 +27,8 @@ export interface Context<T> {
   _stack: T[]
   /** Self-reference: required by mountComponent's getProviderContext check */
   _context: Context<T>
+  /** Meta bitmask flagging this function as a Provider (see flags.ComponentMeta) */
+  _meta: number
   /** Self-reference for React 18 compat: `<MyContext.Provider value={v}>` */
   Provider: Context<T>
   /** Render-prop Consumer component for React compat */
@@ -57,6 +60,7 @@ export function createContext<T>(defaultValue: T): Context<T> {
   Context._defaultValue = defaultValue
   Context._stack = []
   Context._context = Context
+  Context._meta = ComponentMeta.Provider
   Context.Provider = Context
 
   const Consumer = function ContextConsumer(props: Record<string, unknown>): VNode {

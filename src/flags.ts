@@ -54,3 +54,24 @@ export const ChildFlags: {
   HasSingleChild: (1 << 7) as ChildFlag,
   NoChildren: 0 as ChildFlag,
 }
+
+// --- Component meta flags ---
+//
+// Bitmask set on special component function types (ErrorBoundary, Suspense,
+// createPortal, createContext Provider). Replaces four separate `"_xxx" in type`
+// prototype-chain lookups per mount/patch with a single property read + bit
+// test. Components without any meta tag read 0 and skip all four branches.
+
+export const ComponentMeta: {
+  readonly None: number
+  readonly ErrorBoundary: number
+  readonly Suspense: number
+  readonly Portal: number
+  readonly Provider: number
+} = {
+  None: 0,
+  ErrorBoundary: 1,
+  Suspense: 1 << 1,
+  Portal: 1 << 2,
+  Provider: 1 << 3,
+}

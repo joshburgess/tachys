@@ -8,6 +8,7 @@
  * original position so the diff system can track the portal's location.
  */
 
+import { ComponentMeta } from "./flags"
 import { h } from "./jsx"
 import type { ComponentFn } from "./vnode"
 import type { VNode } from "./vnode"
@@ -17,6 +18,7 @@ import type { VNode } from "./vnode"
  */
 export interface PortalFn extends ComponentFn {
   _portalContainer: Element
+  _meta: number
 }
 
 /**
@@ -35,6 +37,7 @@ export function createPortal(children: VNode, container: Element): VNode {
     return props["children"] as VNode
   }) as PortalFn
   portal._portalContainer = container
+  portal._meta = ComponentMeta.Portal
   return h(portal, null, children)
 }
 

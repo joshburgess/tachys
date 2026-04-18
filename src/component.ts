@@ -10,7 +10,6 @@ import type { Context, ProviderFunction } from "./context"
 import { __DEV__, getComponentName, warn } from "./dev"
 import {
   type ErrorBoundaryFn,
-  isErrorBoundaryFn,
   popErrorHandler,
   propagateRenderError,
   pushErrorHandler,
@@ -21,7 +20,7 @@ import {
   pushDeferredEffect,
   pushTransitionRestorer,
 } from "./effects"
-import { ChildFlags, VNodeFlags } from "./flags"
+import { ChildFlags, ComponentMeta, VNodeFlags } from "./flags"
 import type { MemoComponentFn } from "./memo"
 import {
   bridgeMount as mountInternal,
@@ -30,11 +29,10 @@ import {
   registerRerender,
 } from "./reconcile-bridge"
 import { acquireVNode, releaseVNode } from "./pool"
-import { getPortalContainer } from "./portal"
+import type { PortalFn } from "./portal"
 import type { RefObject } from "./ref"
 import { scheduleUpdate, Lane, setCurrentLane, getCurrentLane, signalTransitionSuspended } from "./scheduler"
 import {
-  isSuspenseFn,
   isThenable,
   popSuspendHandler,
   propagateSuspend,
@@ -243,12 +241,19 @@ export function mountComponent(vnode: VNode, parentDom: Element, isSvg: boolean)
 
   vnode.instance = instance
 
+  // Consolidated tag lookup: plain components (>>99% of mounts) have no _meta,
+  // so this collapses four "_xxx in type" prototype-chain lookups to a single
+  // property read that returns 0 and bypasses all four branches.
+  const meta = ((type as Partial<{ _meta: number }>)._meta ?? 0) | 0
+
   // Check if this is a Context Provider
-  const providerCtx = getProviderContext(type)
+  const providerCtx =
+    (meta & ComponentMeta.Provider) !== 0 ? (type as ProviderFunction<unknown>)._context : null
   if (providerCtx !== null) providerCtx._stack.push(props["value"])
 
   // Check if this is a Portal
-  const portalTarget = getPortalContainer(type)
+  const portalTarget =
+    (meta & ComponentMeta.Portal) !== 0 ? (type as PortalFn)._portalContainer : undefined
 
   // Render the component
   const rendered = renderComponent(instance, props)
@@ -257,7 +262,7 @@ export function mountComponent(vnode: VNode, parentDom: Element, isSvg: boolean)
   vnode.parentDom = parentDom
 
   // Error boundary: push handler after render (hooks exist) but before mounting children
-  const isEB = isErrorBoundaryFn(type)
+  const isEB = (meta & ComponentMeta.ErrorBoundary) !== 0
   let caughtError: unknown
   if (isEB) {
     pushErrorHandler((err: unknown) => {
@@ -266,7 +271,7 @@ export function mountComponent(vnode: VNode, parentDom: Element, isSvg: boolean)
   }
 
   // Suspense boundary: push handler before mounting children
-  const isSuspense = isSuspenseFn(type)
+  const isSuspense = (meta & ComponentMeta.Suspense) !== 0
   let suspendedPromise: Promise<unknown> | undefined
   if (isSuspense) {
     pushSuspendHandler((promise: Promise<unknown>) => {
@@ -371,7 +376,11 @@ export function hydrateComponentInstance(
   vnode.instance = instance
 
   // Check if this is a Context Provider
-  const providerCtx = getProviderContext(type)
+  const hydrateMeta = ((type as Partial<{ _meta: number }>)._meta ?? 0) | 0
+  const providerCtx =
+    (hydrateMeta & ComponentMeta.Provider) !== 0
+      ? (type as ProviderFunction<unknown>)._context
+      : null
   if (providerCtx !== null) providerCtx._stack.push(props["value"])
 
   const rendered = renderComponent(instance, props)
@@ -428,7 +437,11 @@ export function hydrateSuspenseInstance(
 
   vnode.instance = instance
 
-  const providerCtx = getProviderContext(type)
+  const suspenseMeta = ((type as Partial<{ _meta: number }>)._meta ?? 0) | 0
+  const providerCtx =
+    (suspenseMeta & ComponentMeta.Provider) !== 0
+      ? (type as ProviderFunction<unknown>)._context
+      : null
   if (providerCtx !== null) providerCtx._stack.push(props["value"])
 
   const rendered = renderComponent(instance, props)
@@ -524,8 +537,13 @@ export function patchComponent(oldVNode: VNode, newVNode: VNode, parentDom: Elem
   oldInstance._parentDom = parentDom
   newVNode.instance = oldInstance
 
+  // Consolidated tag lookup: see mountComponent for rationale.
+  const newType = newVNode.type as ComponentFn
+  const meta = ((newType as Partial<{ _meta: number }>)._meta ?? 0) | 0
+
   // Check if this is a Context Provider
-  const providerCtx = getProviderContext(newVNode.type as ComponentFn)
+  const providerCtx =
+    (meta & ComponentMeta.Provider) !== 0 ? (newType as ProviderFunction<unknown>)._context : null
   if (providerCtx !== null) providerCtx._stack.push(newProps["value"])
 
   const oldRendered = oldInstance._rendered!
@@ -536,11 +554,12 @@ export function patchComponent(oldVNode: VNode, newVNode: VNode, parentDom: Elem
   newVNode.parentDom = parentDom
 
   // Check if this is a Portal
-  const portalTarget = getPortalContainer(newVNode.type as ComponentFn)
+  const portalTarget =
+    (meta & ComponentMeta.Portal) !== 0 ? (newType as PortalFn)._portalContainer : undefined
   const patchParent = portalTarget ?? parentDom
 
   // Error boundary: push handler before patching children
-  const isEB = isErrorBoundaryFn(newVNode.type as ComponentFn)
+  const isEB = (meta & ComponentMeta.ErrorBoundary) !== 0
   let caughtError: unknown
   if (isEB) {
     pushErrorHandler((err: unknown) => {
@@ -550,7 +569,7 @@ export function patchComponent(oldVNode: VNode, newVNode: VNode, parentDom: Elem
 
   // Suspense boundary: push error handler to capture child errors, then
   // push suspend handler for thrown promises.
-  const isSuspense = isSuspenseFn(newVNode.type as ComponentFn)
+  const isSuspense = (meta & ComponentMeta.Suspense) !== 0
   let suspendedPromise: Promise<unknown> | undefined
   if (isSuspense) {
     pushSuspendHandler((promise: Promise<unknown>) => {
@@ -645,7 +664,12 @@ export function unmountComponent(vnode: VNode, parentDom: Element): void {
   }
 
   // Check if this is a Portal
-  const portalTarget = getPortalContainer(vnode.type as ComponentFn)
+  const unmountType = vnode.type as ComponentFn
+  const unmountMeta = ((unmountType as Partial<{ _meta: number }>)._meta ?? 0) | 0
+  const portalTarget =
+    (unmountMeta & ComponentMeta.Portal) !== 0
+      ? (unmountType as PortalFn)._portalContainer
+      : undefined
 
   const rendered = vnode.children as VNode | null
   if (rendered !== null) {
@@ -1391,10 +1415,6 @@ function contextValuesChanged(instance: ComponentInstance): boolean {
   return false
 }
 
-function getProviderContext(type: ComponentFn): Context<unknown> | null {
-  return "_context" in type ? (type as ProviderFunction<unknown>)._context : null
-}
-
 function renderComponent(instance: ComponentInstance, props: Record<string, unknown>): VNode {
   currentInstance = instance
   hookIndex = 0
@@ -1621,10 +1641,15 @@ function rerenderComponent(instance: ComponentInstance): void {
   // Save state for Transition abandonment
   if (R.collecting) saveRerenderRestorer(instance, oldRendered)
 
-  const providerCtx = getProviderContext(instance._type)
+  const type = instance._type
+  const meta = ((type as Partial<{ _meta: number }>)._meta ?? 0) | 0
+
+  const providerCtx =
+    (meta & ComponentMeta.Provider) !== 0 ? (type as ProviderFunction<unknown>)._context : null
   if (providerCtx !== null) providerCtx._stack.push(instance._props["value"])
 
-  const portalTarget = getPortalContainer(instance._type)
+  const portalTarget =
+    (meta & ComponentMeta.Portal) !== 0 ? (type as PortalFn)._portalContainer : undefined
 
   const newRendered = renderComponent(instance, instance._props)
   instance._rendered = newRendered
@@ -1633,7 +1658,7 @@ function rerenderComponent(instance: ComponentInstance): void {
   const patchParent = portalTarget ?? instance._parentDom
 
   // Error boundary: push handler before patching children
-  const isEB = isErrorBoundaryFn(instance._type)
+  const isEB = (meta & ComponentMeta.ErrorBoundary) !== 0
   let caughtError: unknown
   if (isEB) {
     pushErrorHandler((err: unknown) => {
@@ -1642,7 +1667,7 @@ function rerenderComponent(instance: ComponentInstance): void {
   }
 
   // Suspense boundary: push handler before patching children
-  const isSuspense = isSuspenseFn(instance._type)
+  const isSuspense = (meta & ComponentMeta.Suspense) !== 0
   let suspendedPromise: Promise<unknown> | undefined
   if (isSuspense) {
     pushSuspendHandler((promise: Promise<unknown>) => {
@@ -1874,6 +1899,7 @@ export function ErrorBoundary(props: Record<string, unknown>): VNode {
   return children as VNode
 }
 ;(ErrorBoundary as unknown as ErrorBoundaryFn)._errorBoundary = true
+;(ErrorBoundary as unknown as { _meta: number })._meta = ComponentMeta.ErrorBoundary
 
 // --- Suspense component ---
 
@@ -1926,3 +1952,4 @@ export function Suspense(props: Record<string, unknown>): VNode {
   return children as VNode
 }
 ;(Suspense as unknown as SuspenseFn)._suspense = true
+;(Suspense as unknown as { _meta: number })._meta = ComponentMeta.Suspense
