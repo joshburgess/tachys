@@ -683,6 +683,40 @@ function patchKeyedChildrenSync(
     return
   }
 
+  // Swap-outer fast path: prefix/suffix walks can't peel a swap pair, so
+  // the LIS path would otherwise build a 1000-entry keyIndexMap for the
+  // krausest swap1k case. Check whether this is actually just a 2-item
+  // swap with an unchanged interior and skip the map + LIS entirely.
+  if (
+    oldMiddleLen === newMiddleLen &&
+    !R.collecting &&
+    oldChildren[oldStart]!.key === newChildren[newEnd]!.key &&
+    oldChildren[oldEnd]!.key === newChildren[newStart]!.key
+  ) {
+    let innerMatch = true
+    for (let i = 1; i < oldMiddleLen - 1; i++) {
+      if (oldChildren[oldStart + i]!.key !== newChildren[newStart + i]!.key) {
+        innerMatch = false
+        break
+      }
+    }
+    if (innerMatch) {
+      const oldFirst = oldChildren[oldStart]!
+      const oldLast = oldChildren[oldEnd]!
+      const oldFirstDom = oldFirst.dom as Node
+      const oldLastDom = oldLast.dom as Node
+      const afterOldLast = oldLastDom.nextSibling
+      dom.insertBefore(oldLastDom, oldFirstDom)
+      dom.insertBefore(oldFirstDom, afterOldLast)
+      patchInner(oldFirst, newChildren[newEnd]!, dom)
+      patchInner(oldLast, newChildren[newStart]!, dom)
+      for (let i = 1; i < oldMiddleLen - 1; i++) {
+        patchInner(oldChildren[oldStart + i]!, newChildren[newStart + i]!, dom)
+      }
+      return
+    }
+  }
+
   keyIndexMap.clear()
   for (let i = newStart; i <= newEnd; i++) {
     keyIndexMap.set(newChildren[i]!.key!, i)
