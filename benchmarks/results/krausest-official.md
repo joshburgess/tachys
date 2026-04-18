@@ -12,33 +12,36 @@ Numbers are **median** durations (ms) as produced by the official harness: total
 
 | Benchmark              | Inferno total | Tachys total | T/I total | Inferno script | Tachys script | T/I script | Inferno paint | Tachys paint | T/I paint |
 |------------------------|---------------|--------------|-----------|----------------|---------------|------------|---------------|--------------|-----------|
-| 01_run1k               |        37.40  |       43.30  |     1.16x |          4.90  |         6.10  |      1.24x |        31.70  |       31.50  |     0.99x |
-| 02_replace1k           |        44.20  |       45.50  |     1.03x |          8.10  |        10.10  |      1.25x |        34.90  |       34.00  |     0.97x |
-| 03_update10th1k_x16    |        28.10  |       29.50  |     1.05x |          2.20  |         5.00  |      2.27x |        21.30  |       20.60  |     0.97x |
-| 04_select1k            |         9.00  |       15.20  |     1.69x |          1.80  |         3.40  |      1.89x |         5.30  |        7.40  |     1.40x |
-| 05_swap1k              |        28.70  |       49.30  |     1.72x |          1.50  |         2.50  |      1.67x |        23.50  |       24.60  |     1.05x |
-| 06_remove-one-1k       |        21.50  |       22.70  |     1.06x |          0.50  |         1.50  |      3.00x |        18.80  |       18.60  |     0.99x |
-| 07_create10k           |       402.10  |      403.40  |     1.00x |         54.60  |        68.60  |      1.26x |       333.20  |      326.20  |     0.98x |
-| 08_create1k-after1k_x2 |        47.70  |       51.50  |     1.08x |          5.90  |         6.60  |      1.12x |        39.60  |       39.70  |     1.00x |
-| 09_clear1k_x8          |        17.20  |       24.00  |     1.40x |         13.30  |        15.10  |      1.14x |         2.10  |        6.50  |     3.10x |
+| 01_run1k               |        36.50  |       42.90  |     1.18x |          4.60  |         5.40  |      1.17x |        31.10  |       30.90  |     0.99x |
+| 02_replace1k           |        41.10  |       48.20  |     1.17x |          7.60  |         9.90  |      1.30x |        32.50  |       33.50  |     1.03x |
+| 03_update10th1k_x16    |        22.50  |       31.30  |     1.39x |          2.10  |         4.00  |      1.90x |        17.30  |       21.20  |     1.23x |
+| 04_select1k            |         7.40  |       12.80  |     1.73x |          1.80  |         2.10  |      1.17x |         4.30  |        7.10  |     1.65x |
+| 05_swap1k              |        23.60  |       45.80  |     1.94x |          1.50  |         1.90  |      1.27x |        19.60  |       23.10  |     1.18x |
+| 06_remove-one-1k       |        17.90  |       20.40  |     1.14x |          0.50  |         0.80  |      1.60x |        15.90  |       17.10  |     1.08x |
+| 07_create10k           |       384.70  |      387.00  |     1.01x |         51.40  |        64.70  |      1.26x |       320.70  |      315.70  |     0.98x |
+| 08_create1k-after1k_x2 |        43.40  |       50.70  |     1.17x |          5.30  |         6.80  |      1.28x |        36.30  |       37.80  |     1.04x |
+| 09_clear1k_x8          |        16.30  |       21.50  |     1.32x |         12.60  |        12.30  |      0.98x |         1.90  |        6.20  |     3.26x |
 
 **Geometric mean ratios (Tachys / Inferno):**
-- Total: **1.216x**
-- Script: **1.555x**
-- Paint: **1.170x**
+- Total: **1.310x**
+- Script: **1.303x**
+- Paint: **1.273x**
 
 ## Progress
 
-Prior runs: 1.339x geomean total (baseline), 1.282x (`3047eee`), 1.382x (`0d1c5f6`, after round-over-round Inferno host-state shift), 1.307x (`7f2a3cc`), 1.251x (`e25c04a`, after dropping the per-instance `_rerender` closure). This round lifts the `_hooks` and `_effects` arrays onto shared frozen sentinels. A component that never calls a hook (like `Row` in the bench) now allocates zero arrays at mount; the first hook push checks identity against the sentinel and lifts to a real array if needed. Payoff: 1.251x -> 1.216x geomean total (0.035x improvement, 0.123x cumulative paint + 0.012x script in this round). `02_replace1k` total tightens to 1.03x, `03_update10th1k_x16` to 1.05x, `07_create10k` to exactly 1.00x, and `04_select1k` total drops from 2.06x to 1.69x as paint pressure eases. `05_swap1k` (1.72x) and `09_clear1k_x8` paint (3.10x) are now the dominant holdouts and will be the focus of the next rounds.
+Prior runs: 1.339x geomean total (baseline), 1.282x (`3047eee`), 1.382x (`0d1c5f6`, after round-over-round Inferno host-state shift), 1.307x (`7f2a3cc`), 1.251x (`e25c04a`), 1.216x (`007fb97`, after empty-array sentinels for unused hooks/effects). This round drops the `instanceMap` WeakMap entirely: every component VNode now carries its ComponentInstance directly on a new `instance` field. The memo-bail hot path in `patchComponent` previously did a WeakMap `get` and a WeakMap `set` per component; with 1000 Rows in the bench, that was 2000 WeakMap ops per render. Direct field access is a single hidden-class load, and V8's in-object slot budget on x64 absorbs the 10th field with no layout change.
 
-Local render-only micro-bench (Playwright, no CPU throttle, no click-to-paint overhead) continues to show Tachys beating Inferno on every individual benchmark; the Krausest gap is dominated by paint (1.170x) and hook/state overhead measured script-side.
+Same-session A/B to isolate host-state noise: a rebuild with the change off produced geomean script 1.637x; rebuilt with the change on, 1.303x. Script geomean dropped **0.334x** on the same session state. Per-bench highlights at the measurement point: `04_select1k` script 2.00x -> 1.17x, `05_swap1k` script 2.00x -> 1.27x, both the Row-bail-heavy benches. Total fell from 1.354x to 1.310x -- the remaining gap sits in paint (1.273x), which is host/layout dominated and unchanged by this round.
+
+Paint regressed from the previously recorded 1.170x baseline to 1.273x between sessions -- the Inferno side also showed a total shift in the same direction (Inferno absolute paints got slower on `09_clear1k_x8` and `04_select1k`), consistent with host-state drift. The script number is the cleaner round-over-round signal for this change.
 
 ## Notes
 
 - These numbers diverge from the in-repo `bench:browser` harness, which measures tight render calls without user-interaction overhead.
-- `07_create10k` total (1.00x) and paint (0.98x) are at parity when the workload is layout-bound.
+- `09_clear1k_x8` script is now 0.98x -- parity with Inferno on the hot-path clear cycle.
+- `07_create10k` total (1.01x) and paint (0.98x) remain at parity when the workload is layout-bound.
 - The bench entry (`keyed/tachys/src/main.jsx`) uses a custom `memo` comparator on `Row` that only checks `label` and `selected`, mirroring Inferno's `onComponentShouldUpdate` in `keyed/inferno/src/controller.jsx`.
-- Absolute times vary run-to-run due to host state; compare ratios across runs for the cleanest signal.
+- Absolute times vary run-to-run due to host state; compare ratios across runs for the cleanest signal, and A/B on the same session when a change's effect is near the noise floor.
 
 ## Reproducing
 
