@@ -12,31 +12,31 @@ Numbers are **median** durations (ms) as produced by the official harness: total
 
 | Benchmark              | Inferno total | Tachys total | T/I total | Inferno script | Tachys script | T/I script | Inferno paint | Tachys paint | T/I paint |
 |------------------------|---------------|--------------|-----------|----------------|---------------|------------|---------------|--------------|-----------|
-| 01_run1k               |        37.40  |       44.50  |     1.19x |          4.90  |         6.00  |      1.22x |        31.70  |       32.20  |     1.02x |
-| 02_replace1k           |        44.20  |       49.00  |     1.11x |          8.10  |        10.40  |      1.28x |        34.90  |       34.70  |     0.99x |
-| 03_update10th1k_x16    |        28.10  |       31.80  |     1.13x |          2.20  |         5.30  |      2.41x |        21.30  |       23.00  |     1.08x |
-| 04_select1k            |         9.00  |       18.50  |     2.06x |          1.80  |         3.50  |      1.94x |         5.30  |        9.20  |     1.74x |
-| 05_swap1k              |        28.70  |       46.70  |     1.63x |          1.50  |         2.60  |      1.73x |        23.50  |       25.70  |     1.09x |
-| 06_remove-one-1k       |        21.50  |       23.10  |     1.07x |          0.50  |         1.50  |      3.00x |        18.80  |       18.90  |     1.01x |
-| 07_create10k           |       402.10  |      405.10  |     1.01x |         54.60  |        69.90  |      1.28x |       333.20  |      326.00  |     0.98x |
-| 08_create1k-after1k_x2 |        47.70  |       51.70  |     1.08x |          5.90  |         6.70  |      1.14x |        39.60  |       39.10  |     0.99x |
-| 09_clear1k_x8          |        17.20  |       22.00  |     1.28x |         13.30  |        13.60  |      1.02x |         2.10  |        5.40  |     2.57x |
+| 01_run1k               |        37.40  |       43.30  |     1.16x |          4.90  |         6.10  |      1.24x |        31.70  |       31.50  |     0.99x |
+| 02_replace1k           |        44.20  |       45.50  |     1.03x |          8.10  |        10.10  |      1.25x |        34.90  |       34.00  |     0.97x |
+| 03_update10th1k_x16    |        28.10  |       29.50  |     1.05x |          2.20  |         5.00  |      2.27x |        21.30  |       20.60  |     0.97x |
+| 04_select1k            |         9.00  |       15.20  |     1.69x |          1.80  |         3.40  |      1.89x |         5.30  |        7.40  |     1.40x |
+| 05_swap1k              |        28.70  |       49.30  |     1.72x |          1.50  |         2.50  |      1.67x |        23.50  |       24.60  |     1.05x |
+| 06_remove-one-1k       |        21.50  |       22.70  |     1.06x |          0.50  |         1.50  |      3.00x |        18.80  |       18.60  |     0.99x |
+| 07_create10k           |       402.10  |      403.40  |     1.00x |         54.60  |        68.60  |      1.26x |       333.20  |      326.20  |     0.98x |
+| 08_create1k-after1k_x2 |        47.70  |       51.50  |     1.08x |          5.90  |         6.60  |      1.12x |        39.60  |       39.70  |     1.00x |
+| 09_clear1k_x8          |        17.20  |       24.00  |     1.40x |         13.30  |        15.10  |      1.14x |         2.10  |        6.50  |     3.10x |
 
 **Geometric mean ratios (Tachys / Inferno):**
-- Total: **1.251x**
-- Script: **1.567x**
-- Paint: **1.200x**
+- Total: **1.216x**
+- Script: **1.555x**
+- Paint: **1.170x**
 
 ## Progress
 
-Prior runs: 1.339x geomean total (baseline), 1.282x (`3047eee`), 1.382x (`0d1c5f6`, after round-over-round Inferno host-state shift), 1.307x (`7f2a3cc`). This round drops the per-component `_rerender` closure: every `mountComponent` used to allocate `() => rerenderComponent(instance)` and store it on the ComponentInstance. The scheduler now calls `rerenderComponent` through the reconcile bridge instead, so production mounts allocate no closure at all (tests can still set `_rerender` on the instance to intercept). The payoff is visible across nearly every benchmark -- `09_clear1k_x8` script goes from 1.35x to 1.02x, `05_swap1k` from 2.13x to 1.73x, `06_remove-one-1k` from 3.40x to 3.00x -- and geomean total landed at 1.251x (from 1.307x), a 0.056x improvement (0.131x cumulative since baseline).
+Prior runs: 1.339x geomean total (baseline), 1.282x (`3047eee`), 1.382x (`0d1c5f6`, after round-over-round Inferno host-state shift), 1.307x (`7f2a3cc`), 1.251x (`e25c04a`, after dropping the per-instance `_rerender` closure). This round lifts the `_hooks` and `_effects` arrays onto shared frozen sentinels. A component that never calls a hook (like `Row` in the bench) now allocates zero arrays at mount; the first hook push checks identity against the sentinel and lifts to a real array if needed. Payoff: 1.251x -> 1.216x geomean total (0.035x improvement, 0.123x cumulative paint + 0.012x script in this round). `02_replace1k` total tightens to 1.03x, `03_update10th1k_x16` to 1.05x, `07_create10k` to exactly 1.00x, and `04_select1k` total drops from 2.06x to 1.69x as paint pressure eases. `05_swap1k` (1.72x) and `09_clear1k_x8` paint (3.10x) are now the dominant holdouts and will be the focus of the next rounds.
 
-Local render-only micro-bench (Playwright, no CPU throttle, no click-to-paint overhead) now shows Tachys beating Inferno on every individual benchmark, with select-row at 0.13x (7.5x faster than Inferno). The Krausest gap is dominated by paint (1.28x) and hook/state overhead measured script-side.
+Local render-only micro-bench (Playwright, no CPU throttle, no click-to-paint overhead) continues to show Tachys beating Inferno on every individual benchmark; the Krausest gap is dominated by paint (1.170x) and hook/state overhead measured script-side.
 
 ## Notes
 
 - These numbers diverge from the in-repo `bench:browser` harness, which measures tight render calls without user-interaction overhead.
-- `07_create10k` paint (0.99x) is faster than Inferno when the workload is layout-bound.
+- `07_create10k` total (1.00x) and paint (0.98x) are at parity when the workload is layout-bound.
 - The bench entry (`keyed/tachys/src/main.jsx`) uses a custom `memo` comparator on `Row` that only checks `label` and `selected`, mirroring Inferno's `onComponentShouldUpdate` in `keyed/inferno/src/controller.jsx`.
 - Absolute times vary run-to-run due to host state; compare ratios across runs for the cleanest signal.
 
