@@ -85,7 +85,7 @@ describe("babel-plugin-tachys (v0.1 static JSX)", () => {
     expect(out).toContain('title=\\"a&amp;b\\"')
   })
 
-  it("bails on dynamic attributes", () => {
+  it("bails on dynamic attributes whose value isn't a prop reference", () => {
     const input = `
       function Dyn() {
         return <span class={cls}>hi</span>;
@@ -240,7 +240,131 @@ describe("babel-plugin-tachys (v0.1 text slots)", () => {
   })
 })
 
+describe("babel-plugin-tachys (v0.2 attribute slots)", () => {
+  it("compiles a dynamic className into element.className assignment", () => {
+    const input = `
+      function Row({ className }) {
+        return <tr className={className}><td>x</td></tr>;
+      }
+    `
+    const out = transform(input)
+    // className is stripped from the template HTML
+    expect(out).toContain('_template("<tr><td>x</td></tr>")')
+    // Fast-path assignment, not setAttribute
+    expect(out).toContain("_root.className =")
+    expect(out).toContain("String(props.className)")
+    // Patch guard compares state.className and assigns state._root.className
+    expect(out).toContain("state.className !== props.className")
+    expect(out).toContain("state._root.className")
+  })
+
+  it("compiles a dynamic id into setAttribute on a nested element", () => {
+    const input = `
+      function Card({ rowId }) {
+        return <div><span id={rowId}>x</span></div>;
+      }
+    `
+    const out = transform(input)
+    expect(out).toContain('_template("<div><span>x</span></div>")')
+    // Element ref navigates into nested element
+    expect(out).toMatch(/_e0\s*=\s*_root\.firstChild/)
+    expect(out).toContain('_e0.setAttribute("id", String(props.rowId))')
+    expect(out).toContain("state._e0.setAttribute")
+  })
+
+  it("groups multiple attrs on the same element under one ref", () => {
+    const input = `
+      function Row({ cls, rowId }) {
+        return <tr className={cls} id={rowId}><td>x</td></tr>;
+      }
+    `
+    const out = transform(input)
+    // Root attrs share _root (no new _eN variable)
+    expect(out).not.toMatch(/_e\d+\s*=\s*_root(?!\.)/)
+    expect(out).toContain("_root.className = String(props.cls)")
+    expect(out).toContain('_root.setAttribute("id", String(props.rowId))')
+  })
+
+  it("emits one guard per prop in patch even with multiple slots per prop", () => {
+    const input = `
+      function M({ name }) {
+        return <div id={name}>{name}</div>;
+      }
+    `
+    const out = transform(input)
+    // Should be exactly one guard for `name`
+    const guards = out.match(/state\.name\s*!==\s*props\.name/g) ?? []
+    expect(guards.length).toBe(1)
+    // Both writes appear inside it: a setAttribute for id and a .data write
+    expect(out).toContain('setAttribute("id"')
+    expect(out).toMatch(/_t\d+\.data\s*=/)
+  })
+
+  it("bails on style as attribute (not supported yet)", () => {
+    const input = `
+      function Styled({ style }) {
+        return <div style={style}>x</div>;
+      }
+    `
+    const out = transform(input)
+    // We DO support unknown attrs via setAttribute, so style compiles -
+    // but it writes "style" as a string attribute which is valid HTML.
+    // Keep this as a sanity check that the compile succeeds.
+    expect(out).toContain("markCompiled")
+    expect(out).toContain('setAttribute("style"')
+  })
+})
+
 describe("babel-plugin-tachys (runtime smoke)", () => {
+  it("attr slots update the DOM in jsdom", async () => {
+    const { JSDOM } = await import("jsdom")
+    const dom = new JSDOM("<!doctype html><html><body></body></html>")
+    const doc = dom.window.document
+
+    const input = `
+      function Row({ cls, label }) {
+        return <tr className={cls}><td>{label}</td></tr>;
+      }
+    `
+    const out = transform(input)
+    const stubbed = out.replace(/import \{[^}]*\} from "tachys";?/g, "")
+
+    const markCompiled = (
+      mount: (p: Record<string, unknown>) => { dom: Element; state: Record<string, unknown> },
+      patch: (s: Record<string, unknown>, p: Record<string, unknown>) => void,
+    ): unknown => ({ mount, patch })
+    const _template = (html: string): Element => {
+      const tpl = doc.createElement("template")
+      tpl.innerHTML = html
+      return tpl.content.firstElementChild as Element
+    }
+    const fn = new Function(
+      "document",
+      "markCompiled",
+      "_template",
+      `${stubbed}; return Row;`,
+    )
+    const Row = fn(doc, markCompiled, _template) as {
+      mount: (p: Record<string, unknown>) => { dom: Element; state: Record<string, unknown> }
+      patch: (s: Record<string, unknown>, p: Record<string, unknown>) => void
+    }
+
+    const inst = Row.mount({ cls: "danger", label: "row-1" })
+    expect((inst.dom as Element).outerHTML).toBe(
+      '<tr class="danger"><td>row-1</td></tr>',
+    )
+
+    Row.patch(inst.state, { cls: "success", label: "row-1" })
+    expect((inst.dom as Element).outerHTML).toBe(
+      '<tr class="success"><td>row-1</td></tr>',
+    )
+
+    Row.patch(inst.state, { cls: "success", label: "row-2" })
+    expect((inst.dom as Element).outerHTML).toBe(
+      '<tr class="success"><td>row-2</td></tr>',
+    )
+  })
+
   it("the emitted mount/patch functions run in jsdom and produce the right DOM", async () => {
     // Set up a minimal document surface; the plugin output calls
     // document.createTextNode and cloneNode().

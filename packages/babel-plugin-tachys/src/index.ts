@@ -148,6 +148,10 @@ function buildPathExpr(
   return expr
 }
 
+function pathKey(path: number[]): string {
+  return path.join(",")
+}
+
 function buildMount(
   t: typeof BabelCore.types,
   tplId: string,
@@ -175,12 +179,35 @@ function buildMount(
   const stateProps: BabelCore.types.ObjectProperty[] = []
   const seenPropNames = new Set<string>()
 
+  // Cache element refs for attribute-slot paths so multiple attrs on the
+  // same element share one navigation + one state entry.
+  const elementRefs = new Map<string, string>()
+  let elementCounter = 0
+  const ensureElementRef = (
+    path: number[],
+  ): string => {
+    if (path.length === 0) return "_root"
+    const key = pathKey(path)
+    const existing = elementRefs.get(key)
+    if (existing !== undefined) return existing
+    const name = `_e${elementCounter++}`
+    elementRefs.set(key, name)
+    stmts.push(
+      t.variableDeclaration("const", [
+        t.variableDeclarator(
+          t.identifier(name),
+          buildPathExpr(t, "_root", path),
+        ),
+      ]),
+    )
+    return name
+  }
+
   for (let i = 0; i < slots.length; i++) {
     const slot = slots[i]!
-    const refName = slotRefName(i)
 
     if (slot.kind === "text") {
-      // const _marker = <path>;
+      const refName = slotRefName(i)
       const markerName = `_m${i}`
       stmts.push(
         t.variableDeclaration("const", [
@@ -190,7 +217,6 @@ function buildMount(
           ),
         ]),
       )
-      // const _tN = document.createTextNode(String(props.x));
       stmts.push(
         t.variableDeclaration("const", [
           t.variableDeclarator(
@@ -212,7 +238,6 @@ function buildMount(
           ),
         ]),
       )
-      // _marker.parentNode.replaceChild(_tN, _marker);
       stmts.push(
         t.expressionStatement(
           t.callExpression(
@@ -243,10 +268,76 @@ function buildMount(
           ),
         )
       }
+      continue
+    }
+
+    if (slot.kind === "attr") {
+      const elName = ensureElementRef(slot.path)
+      const valueExpr = t.callExpression(t.identifier("String"), [
+        t.memberExpression(
+          t.identifier(propsName),
+          t.identifier(slot.propName),
+        ),
+      ])
+
+      if (slot.strategy === "className") {
+        stmts.push(
+          t.expressionStatement(
+            t.assignmentExpression(
+              "=",
+              t.memberExpression(
+                t.identifier(elName),
+                t.identifier("className"),
+              ),
+              valueExpr,
+            ),
+          ),
+        )
+      } else {
+        stmts.push(
+          t.expressionStatement(
+            t.callExpression(
+              t.memberExpression(
+                t.identifier(elName),
+                t.identifier("setAttribute"),
+              ),
+              [t.stringLiteral(slot.attrName), valueExpr],
+            ),
+          ),
+        )
+      }
+
+      if (!seenPropNames.has(slot.propName)) {
+        seenPropNames.add(slot.propName)
+        stateProps.push(
+          t.objectProperty(
+            t.identifier(slot.propName),
+            t.memberExpression(
+              t.identifier(propsName),
+              t.identifier(slot.propName),
+            ),
+          ),
+        )
+      }
     }
   }
 
-  // return { dom: _root, state: {...} };
+  // Attribute slots need element refs in patch. Expose them via state.
+  for (const [, elName] of elementRefs) {
+    stateProps.push(
+      t.objectProperty(t.identifier(elName), t.identifier(elName)),
+    )
+  }
+  // If any attr slot targets the root, expose _root as well.
+  const needsRoot = slots.some(
+    (s) => s.kind === "attr" && s.path.length === 0,
+  )
+  if (needsRoot) {
+    stateProps.push(
+      t.objectProperty(t.identifier("_root"), t.identifier("_root")),
+    )
+  }
+
   stmts.push(
     t.returnStatement(
       t.objectExpression([
@@ -259,12 +350,15 @@ function buildMount(
     ),
   )
 
-  const params =
-    slots.length > 0 ? [t.identifier(propsName)] : []
-
+  const params = slots.length > 0 ? [t.identifier(propsName)] : []
   return t.arrowFunctionExpression(params, t.blockStatement(stmts))
 }
 
+/**
+ * Build patch body. Groups slots by `propName` so each prop's compare
+ * happens exactly once per patch call, and all writes that depend on
+ * that prop sit inside the same `if` body.
+ */
 function buildPatch(
   t: typeof BabelCore.types,
   slots: Slot[],
@@ -274,115 +368,127 @@ function buildPatch(
     return t.arrowFunctionExpression([], t.blockStatement([]))
   }
 
+  const grouped = new Map<string, { slot: Slot; index: number }[]>()
+  slots.forEach((slot, index) => {
+    const arr = grouped.get(slot.propName) ?? []
+    arr.push({ slot, index })
+    grouped.set(slot.propName, arr)
+  })
+
   const stmts: BabelCore.types.Statement[] = []
-  const seenPropNames = new Set<string>()
 
-  for (let i = 0; i < slots.length; i++) {
-    const slot = slots[i]!
-    const refName = slotRefName(i)
+  for (const [propName, group] of grouped) {
+    const writes: BabelCore.types.Statement[] = []
+    for (const { slot, index } of group) {
+      const refName = slotRefName(index)
+      const valueExpr = t.callExpression(t.identifier("String"), [
+        t.memberExpression(
+          t.identifier(propsName),
+          t.identifier(slot.propName),
+        ),
+      ])
 
-    if (slot.kind === "text") {
-      if (seenPropNames.has(slot.propName)) {
-        // Another slot reads the same prop — emit an isolated write
-        // that still depends on the already-guarded comparison.
-        stmts.push(
-          t.ifStatement(
-            t.binaryExpression(
-              "!==",
+      if (slot.kind === "text") {
+        writes.push(
+          t.expressionStatement(
+            t.assignmentExpression(
+              "=",
               t.memberExpression(
-                t.identifier("state"),
-                t.identifier(slot.propName),
-              ),
-              t.memberExpression(
-                t.identifier(propsName),
-                t.identifier(slot.propName),
-              ),
-            ),
-            t.blockStatement([
-              t.expressionStatement(
-                t.assignmentExpression(
-                  "=",
-                  t.memberExpression(
-                    t.memberExpression(
-                      t.identifier("state"),
-                      t.identifier(refName),
-                    ),
-                    t.identifier("data"),
-                  ),
-                  t.callExpression(t.identifier("String"), [
-                    t.memberExpression(
-                      t.identifier(propsName),
-                      t.identifier(slot.propName),
-                    ),
-                  ]),
-                ),
-              ),
-            ]),
-          ),
-        )
-        continue
-      }
-      seenPropNames.add(slot.propName)
-
-      // if (state.x !== props.x) {
-      //   state._tN.data = String(props.x);
-      //   state.x = props.x;
-      // }
-      stmts.push(
-        t.ifStatement(
-          t.binaryExpression(
-            "!==",
-            t.memberExpression(
-              t.identifier("state"),
-              t.identifier(slot.propName),
-            ),
-            t.memberExpression(
-              t.identifier(propsName),
-              t.identifier(slot.propName),
-            ),
-          ),
-          t.blockStatement([
-            t.expressionStatement(
-              t.assignmentExpression(
-                "=",
-                t.memberExpression(
-                  t.memberExpression(
-                    t.identifier("state"),
-                    t.identifier(refName),
-                  ),
-                  t.identifier("data"),
-                ),
-                t.callExpression(t.identifier("String"), [
-                  t.memberExpression(
-                    t.identifier(propsName),
-                    t.identifier(slot.propName),
-                  ),
-                ]),
-              ),
-            ),
-            t.expressionStatement(
-              t.assignmentExpression(
-                "=",
                 t.memberExpression(
                   t.identifier("state"),
-                  t.identifier(slot.propName),
+                  t.identifier(refName),
                 ),
-                t.memberExpression(
-                  t.identifier(propsName),
-                  t.identifier(slot.propName),
-                ),
+                t.identifier("data"),
+              ),
+              valueExpr,
+            ),
+          ),
+        )
+      } else if (slot.kind === "attr") {
+        const elExpr: BabelCore.types.Expression =
+          slot.path.length === 0
+            ? t.memberExpression(
+                t.identifier("state"),
+                t.identifier("_root"),
+              )
+            : t.memberExpression(
+                t.identifier("state"),
+                t.identifier(attrElementRefNameForPath(slots, slot.path)),
+              )
+
+        if (slot.strategy === "className") {
+          writes.push(
+            t.expressionStatement(
+              t.assignmentExpression(
+                "=",
+                t.memberExpression(elExpr, t.identifier("className")),
+                valueExpr,
               ),
             ),
-          ]),
-        ),
-      )
+          )
+        } else {
+          writes.push(
+            t.expressionStatement(
+              t.callExpression(
+                t.memberExpression(elExpr, t.identifier("setAttribute")),
+                [t.stringLiteral(slot.attrName), valueExpr],
+              ),
+            ),
+          )
+        }
+      }
     }
+
+    // state.<prop> = props.<prop>
+    writes.push(
+      t.expressionStatement(
+        t.assignmentExpression(
+          "=",
+          t.memberExpression(t.identifier("state"), t.identifier(propName)),
+          t.memberExpression(t.identifier(propsName), t.identifier(propName)),
+        ),
+      ),
+    )
+
+    stmts.push(
+      t.ifStatement(
+        t.binaryExpression(
+          "!==",
+          t.memberExpression(t.identifier("state"), t.identifier(propName)),
+          t.memberExpression(t.identifier(propsName), t.identifier(propName)),
+        ),
+        t.blockStatement(writes),
+      ),
+    )
   }
 
   return t.arrowFunctionExpression(
     [t.identifier("state"), t.identifier(propsName)],
     t.blockStatement(stmts),
   )
+}
+
+/**
+ * Look up which `_eN` name was assigned to a given path during mount.
+ * We reconstruct deterministically by iterating attr slots in order --
+ * the same order used in buildMount -- and counting non-root unique paths.
+ */
+function attrElementRefNameForPath(slots: Slot[], path: number[]): string {
+  const key = path.join(",")
+  let counter = 0
+  const seen = new Map<string, number>()
+  for (const s of slots) {
+    if (s.kind !== "attr") continue
+    if (s.path.length === 0) continue
+    const k = s.path.join(",")
+    if (!seen.has(k)) {
+      seen.set(k, counter++)
+    }
+    if (k === key) {
+      return `_e${seen.get(k)!}`
+    }
+  }
+  throw new Error(`no element ref for path [${path.join(",")}]`)
 }
 
 function reserveImport(

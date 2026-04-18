@@ -51,7 +51,22 @@ export interface TextSlot {
   propName: string
 }
 
-export type Slot = TextSlot
+/**
+ * A dynamic attribute on an element. `path` is the path to the element
+ * itself (not a child). `attrName` is the HTML attribute name (e.g.,
+ * "class", "id"). `strategy` picks how the mount/patch writes the value:
+ *   - "className" uses the fast `.className =` assignment.
+ *   - "setAttribute" falls back to generic `setAttribute(name, value)`.
+ */
+export interface AttrSlot {
+  kind: "attr"
+  path: number[]
+  attrName: string
+  strategy: "className" | "setAttribute"
+  propName: string
+}
+
+export type Slot = TextSlot | AttrSlot
 
 export interface CompiledResult {
   html: string
@@ -128,7 +143,7 @@ function renderElement(
   if (name === null) return null
   if (!isHostTag(name)) return null
 
-  const attrs = renderAttributes(el.openingElement.attributes, t)
+  const attrs = renderAttributes(el.openingElement.attributes, ctx, parentPath)
   if (attrs === null) return null
 
   if (VOID_ELEMENTS.has(name)) {
@@ -163,23 +178,43 @@ function renderAttributes(
     | BabelCore.types.JSXAttribute
     | BabelCore.types.JSXSpreadAttribute
   >,
-  t: T,
+  ctx: CompileContext,
+  elementPath: number[],
 ): string | null {
+  const t = ctx.t
   let out = ""
   for (const attr of attrs) {
     if (!t.isJSXAttribute(attr)) return null
     const attrName = attr.name
     if (!t.isJSXIdentifier(attrName)) return null
-    const name = jsxAttrNameToHtml(attrName.name)
+    const jsxName = attrName.name
+    const htmlName = jsxAttrNameToHtml(jsxName)
     const value = attr.value
 
     if (value === null || value === undefined) {
-      out += ` ${name}`
+      out += ` ${htmlName}`
       continue
     }
 
     if (t.isStringLiteral(value)) {
-      out += ` ${name}="${escapeAttr(value.value)}"`
+      out += ` ${htmlName}="${escapeAttr(value.value)}"`
+      continue
+    }
+
+    if (t.isJSXExpressionContainer(value)) {
+      const propName = resolvePropExpr(value.expression, ctx)
+      if (propName === null) return null
+      const strategy: "className" | "setAttribute" =
+        jsxName === "className" || jsxName === "class"
+          ? "className"
+          : "setAttribute"
+      ctx.slots.push({
+        kind: "attr",
+        path: elementPath,
+        attrName: htmlName,
+        strategy,
+        propName,
+      })
       continue
     }
 
