@@ -1,6 +1,8 @@
 # Tachys
 
-A high-performance virtual DOM library optimized for V8. Designed to match or exceed [Inferno](https://github.com/infernojs/inferno) on reconciliation speed while providing a modern React-like hooks API with concurrent rendering.
+A virtual DOM library with a React-like hooks API and concurrent rendering. Reconciliation uses the same LIS keyed-diff algorithm as [Inferno](https://github.com/infernojs/inferno), with additional V8-focused tuning (monomorphic call sites, stable hidden classes, SMI-friendly flags, object pooling).
+
+Current state vs Inferno on the official [js-framework-benchmark](https://github.com/krausest/js-framework-benchmark): **Tachys is slower than Inferno on every CPU benchmark** (geomean 1.34x slower). See [Benchmarks](#benchmarks) for the full numbers and [Known performance gaps](#known-performance-gaps) for where the overhead lives.
 
 **~36KB min / ~10.6KB gzip** for the core runtime. Zero dependencies.
 
@@ -687,20 +689,35 @@ module.exports = {
 
 ## Benchmarks
 
-Tachys vs Inferno, Chromium headless (median of 50 runs):
+Official [js-framework-benchmark](https://github.com/krausest/js-framework-benchmark) (Krausest), Playwright runner, headless Chrome, 4x CPU throttling, 10 iterations per op. Both frameworks use their upstream framework entries (Inferno uses `$HasKeyedChildren` + `Row.defaultHooks.onComponentShouldUpdate`).
 
-| Operation | Tachys | Inferno | Ratio |
+| Benchmark | Tachys mean | Inferno mean | Tachys / Inferno |
 |---|---|---|---|
-| Create 1,000 rows | 2.00ms | 2.10ms | 0.95x |
-| Create 10,000 rows | 21.70ms | 23.40ms | 0.93x |
-| Replace all 1,000 rows | 0.30ms | 0.60ms | 0.50x |
-| Update every 10th row | 0.30ms | 0.50ms | 0.60x |
-| Swap rows | 0.30ms | 0.50ms | 0.60x |
-| Remove row | 0.30ms | 0.50ms | 0.60x |
-| Select row | 0.40ms | 2.20ms | 0.18x |
-| Append 1,000 rows | 2.10ms | 2.50ms | 0.84x |
+| 01_run1k | 48.19 ms | 37.87 ms | 1.27x |
+| 02_replace1k | 54.16 ms | 42.30 ms | 1.28x |
+| 03_update10th1k | 39.47 ms | 31.31 ms | 1.26x |
+| 04_select1k | 20.00 ms | 11.06 ms | **1.81x** |
+| 05_swap1k | 51.43 ms | 33.35 ms | **1.54x** |
+| 06_remove1k | 28.07 ms | 22.48 ms | 1.25x |
+| 07_create10k | 401.44 ms | 385.67 ms | 1.04x |
+| 08_append1k | 55.12 ms | 45.79 ms | 1.20x |
+| 09_clear1k | 29.05 ms | 18.85 ms | **1.54x** |
 
-Ratio < 1.0 = Tachys faster.
+Geometric mean ratio: **1.34x slower than Inferno**.
+
+Raw result JSONs and reproduction steps: [`benchmarks/results/krausest-official.md`](benchmarks/results/krausest-official.md).
+
+> **Note:** An earlier version of this README reported numbers from an in-repo harness (`benchmarks/browser/`) that showed Tachys winning every op. That harness compared against a handicapped Inferno setup (no `$HasKeyedChildren` hint, no `onComponentShouldUpdate`) and measured raw `patch()` calls rather than click-to-paint. The numbers above come from the standard industry benchmark and should be considered the authoritative measurement.
+
+### Known performance gaps
+
+The three largest gaps on Krausest are all small-DOM-change paths where per-operation overhead dominates:
+
+- **`04_select1k` (1.81x slower).** Toggling a single row's `className`. Event-dispatch + scheduler + commit overhead per click.
+- **`05_swap1k` (1.54x slower).** Two-row swap in a 1000-row keyed list. Likely LIS-path overhead for nearly-sorted sequences.
+- **`09_clear1k` (1.54x slower).** Unmounting 1000 rows. Cleanup path (effects, refs, pool release) cost.
+
+Core diff/allocation is near parity (`07_create10k` at 1.04x). The gap is concentrated in scheduler, event plumbing, and cleanup — not the diff algorithm itself.
 
 Bundle: **~40KB min / ~11.8KB gzip**.
 
@@ -724,8 +741,8 @@ pnpm install            # Install dependencies
 pnpm test               # Run tests (900 tests)
 pnpm run typecheck      # Type check
 pnpm run build          # Build dist/
-pnpm run bench          # Run microbenchmarks
-pnpm run bench:browser  # Run Playwright browser benchmarks
+pnpm run bench          # Run microbenchmarks (internal, non-authoritative)
+pnpm run bench:browser  # Run in-repo browser harness (see caveat in Benchmarks section)
 pnpm run lint           # Lint with Biome
 pnpm run lint:fix       # Lint and auto-fix
 ```

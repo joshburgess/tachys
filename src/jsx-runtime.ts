@@ -65,6 +65,38 @@ export function jsx(type: VNodeType, props: Record<string, unknown>, key?: strin
   } else if (typeof rawChildren === "number") {
     normalizedChildren = String(rawChildren)
     childFlags = ChildFlags.HasTextChildren
+  } else if (Array.isArray(rawChildren)) {
+    // A single JSX expression `{array}` lands here via the one-child `jsx()`
+    // overload. Normalize the array the same way `jsxs()` does so keyed
+    // diffing still works.
+    const raw = rawChildren as Array<VNode | string | number | null | undefined | boolean>
+    if (raw.length === 0) {
+      normalizedChildren = null
+      childFlags = ChildFlags.NoChildren
+    } else {
+      const vnodes: VNode[] = []
+      let hasKeys = false
+      let hasNoKeys = false
+      for (let i = 0; i < raw.length; i++) {
+        const child = raw[i]
+        if (child === null || child === undefined || typeof child === "boolean") {
+          vnodes.push(createTextVNode(""))
+          hasNoKeys = true
+          continue
+        }
+        if (typeof child === "string" || typeof child === "number") {
+          vnodes.push(createTextVNode(String(child)))
+          hasNoKeys = true
+        } else {
+          vnodes.push(child as VNode)
+          if ((child as VNode).key !== null) hasKeys = true
+          else hasNoKeys = true
+        }
+      }
+      normalizedChildren = vnodes
+      childFlags =
+        hasKeys && !hasNoKeys ? ChildFlags.HasKeyedChildren : ChildFlags.HasNonKeyedChildren
+    }
   } else {
     normalizedChildren = rawChildren as VNode
     childFlags = ChildFlags.HasSingleChild
