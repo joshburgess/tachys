@@ -12,10 +12,12 @@
  */
 
 import { mountComponent as mountComp } from "./component"
+import { pushAppend } from "./effects"
 import { ChildFlags, VNodeFlags } from "./flags"
 import { mountProps, setRootContainer } from "./patch"
 import { registerMount } from "./reconcile-bridge"
 import { setRef } from "./ref"
+import { R } from "./render-state"
 import type { DangerousInnerHTML, VNode } from "./vnode"
 
 const SVG_NS = "http://www.w3.org/2000/svg"
@@ -51,7 +53,11 @@ export function mountInternal(vnode: VNode, parentDom: Element, isSvg: boolean):
     const dom = document.createTextNode(vnode.children as string)
     vnode.dom = dom
     vnode.parentDom = parentDom
-    parentDom.appendChild(dom)
+    if (R.collecting) {
+      pushAppend(parentDom, dom)
+    } else {
+      parentDom.appendChild(dom)
+    }
   } else if ((flags & VNodeFlags.Component) !== 0) {
     mountComp(vnode, parentDom, isSvg)
   } else if ((flags & VNodeFlags.Fragment) !== 0) {
@@ -122,7 +128,11 @@ function mountElement(vnode: VNode, parentDom: Element, isSvg: boolean): void {
   }
 
   // Append to parent (after children are mounted, batching DOM insertion)
-  parentDom.appendChild(dom)
+  if (R.collecting) {
+    pushAppend(parentDom, dom)
+  } else {
+    parentDom.appendChild(dom)
+  }
 
   // Set remaining props (events, attributes, etc.)
   const props = vnode.props
@@ -160,11 +170,19 @@ function mountFragment(vnode: VNode, parentDom: Element, isSvg: boolean): void {
   } else if (childFlags === ChildFlags.HasTextChildren) {
     const dom = document.createTextNode(vnode.children as string)
     vnode.dom = dom
-    parentDom.appendChild(dom)
+    if (R.collecting) {
+      pushAppend(parentDom, dom)
+    } else {
+      parentDom.appendChild(dom)
+    }
   } else {
     // Empty fragment -- use an empty text node as placeholder
     const dom = document.createTextNode("")
     vnode.dom = dom
-    parentDom.appendChild(dom)
+    if (R.collecting) {
+      pushAppend(parentDom, dom)
+    } else {
+      parentDom.appendChild(dom)
+    }
   }
 }

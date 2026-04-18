@@ -5,11 +5,13 @@
  */
 
 import { getComponentInstance, unmountComponent as unmountComp } from "./component"
+import { pushRemove } from "./effects"
 import { cleanupEvents } from "./events"
 import { ChildFlags, VNodeFlags } from "./flags"
 import { releaseVNode } from "./pool"
 import { registerUnmount } from "./reconcile-bridge"
 import { clearRef } from "./ref"
+import { R } from "./render-state"
 import type { VNode } from "./vnode"
 
 /**
@@ -25,8 +27,13 @@ export function unmount(vnode: VNode, parentDom: Element): void {
     unmountElement(vnode, parentDom)
   } else if ((flags & VNodeFlags.Text) !== 0) {
     // Inlined text unmount -- avoids function call overhead on leaf nodes
-    if (vnode.dom !== null) {
-      parentDom.removeChild(vnode.dom)
+    const dom = vnode.dom
+    if (dom !== null) {
+      if (R.collecting) {
+        pushRemove(parentDom, dom)
+      } else {
+        parentDom.removeChild(dom)
+      }
     }
     releaseVNode(vnode)
   } else if ((flags & VNodeFlags.Component) !== 0) {
@@ -46,7 +53,11 @@ registerUnmount(unmount)
 export function removeVNodeDOM(vnode: VNode, parentDom: Element): void {
   const dom = vnode.dom
   if (dom !== null) {
-    parentDom.removeChild(dom)
+    if (R.collecting) {
+      pushRemove(parentDom, dom)
+    } else {
+      parentDom.removeChild(dom)
+    }
   }
 }
 
@@ -70,7 +81,11 @@ function unmountElement(vnode: VNode, parentDom: Element): void {
 
   // Remove from parent DOM
   if (dom !== null) {
-    parentDom.removeChild(dom)
+    if (R.collecting) {
+      pushRemove(parentDom, dom)
+    } else {
+      parentDom.removeChild(dom)
+    }
   }
 
   // Release to pool (resets all properties)
@@ -92,7 +107,11 @@ function unmountFragment(vnode: VNode, parentDom: Element): void {
     }
   } else if (vnode.dom !== null) {
     // Text or empty fragment placeholder
-    parentDom.removeChild(vnode.dom)
+    if (R.collecting) {
+      pushRemove(parentDom, vnode.dom)
+    } else {
+      parentDom.removeChild(vnode.dom)
+    }
   }
 
   releaseVNode(vnode)

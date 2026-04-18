@@ -468,6 +468,49 @@ describe("useActionState", () => {
     flushUpdates()
     expect(container.innerHTML).toBe("<span>5:false</span>")
   })
+
+  it("isPending=true is visible before async action resolves", async () => {
+    const container = document.createElement("div")
+    document.body.appendChild(container)
+    let dispatch!: (payload: number) => void
+    let resolveAction!: (val: number) => void
+    const snapshots: string[] = []
+
+    function Comp() {
+      const [state, d, isPending] = useActionState(
+        (_prev: number, n: number) => {
+          return new Promise<number>((r) => {
+            resolveAction = (v: number) => r(v)
+          })
+        },
+        0,
+      )
+      dispatch = d
+      const text = `${state}:${isPending}`
+      snapshots.push(text)
+      return h("span", null, text)
+    }
+
+    mount(h(Comp, null), container)
+    expect(container.innerHTML).toBe("<span>0:false</span>")
+
+    dispatch(5)
+    flushUpdates()
+
+    // isPending should be true immediately
+    expect(container.innerHTML).toBe("<span>0:true</span>")
+
+    // Resolve the action
+    resolveAction(42)
+    // Wait for the promise + Transition flush
+    await new Promise((r) => setTimeout(r, 20))
+    flushUpdates()
+    await new Promise((r) => setTimeout(r, 100))
+    flushUpdates()
+
+    expect(container.innerHTML).toBe("<span>42:false</span>")
+    document.body.removeChild(container)
+  })
 })
 
 // ---------------------------------------------------------------------------

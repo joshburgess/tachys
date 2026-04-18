@@ -13,7 +13,9 @@
  * performance on clean props objects.
  */
 
+import { pushThunk } from "./effects"
 import { cleanupEvents, updateEvent } from "./events"
+import { R } from "./render-state"
 
 /**
  * Map React-style prop names to their corresponding HTML attribute names.
@@ -94,6 +96,9 @@ export function getRootContainer(): Element | null {
 /**
  * Patch a single prop on a DOM element.
  *
+ * When effect collection is active (Transition lane), defers the
+ * entire operation as a thunk effect. Otherwise executes directly.
+ *
  * @param dom - The DOM element to modify
  * @param key - The prop name
  * @param oldValue - Previous value (null on initial mount)
@@ -101,6 +106,25 @@ export function getRootContainer(): Element | null {
  * @param isSvg - Whether the element is in an SVG context
  */
 export function patchProp(
+  dom: Element,
+  key: string,
+  oldValue: unknown,
+  newValue: unknown,
+  isSvg: boolean,
+): void {
+  if (R.collecting) {
+    pushThunk(() => patchPropDirect(dom, key, oldValue, newValue, isSvg))
+    return
+  }
+  patchPropDirect(dom, key, oldValue, newValue, isSvg)
+}
+
+/**
+ * Direct prop patching implementation (no effect queue check).
+ * Called by mountProps (always on detached elements) and by
+ * patchProp's thunk during commit.
+ */
+function patchPropDirect(
   dom: Element,
   key: string,
   oldValue: unknown,
@@ -137,13 +161,17 @@ export function patchProp(
  * Set all props on a DOM element during initial mount.
  * Uses for...in without hasOwnProperty for maximum V8 JIT performance.
  *
+ * Calls patchPropDirect (bypasses effect queue check) because mount
+ * targets are always detached elements -- the appendChild that inserts
+ * the element into the live DOM is what gets deferred, not the prop writes.
+ *
  * @param dom - The DOM element
  * @param props - The props object (className already extracted)
  * @param isSvg - Whether the element is in an SVG context
  */
 export function mountProps(dom: Element, props: Record<string, unknown>, isSvg: boolean): void {
   for (const key in props) {
-    patchProp(dom, key, null, props[key], isSvg)
+    patchPropDirect(dom, key, null, props[key], isSvg)
   }
 }
 

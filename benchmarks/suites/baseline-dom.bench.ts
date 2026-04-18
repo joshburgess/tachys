@@ -158,12 +158,17 @@ describe("Raw DOM Baseline", () => {
     },
   )
 
+  // Measures removeChild from the middle + appendChild at the end. The
+  // re-append keeps the pool at 1,000 rows so every iteration has a valid
+  // children[500] target. Cost is dominated by the removeChild + live list
+  // shift; the appendChild on a detached-but-populated <tr> is cheap.
   bench(
     "remove row (middle of 1,000)",
     () => {
       const tbody = container.querySelector("tbody")!
       const row = tbody.children[500]!
       tbody.removeChild(row)
+      tbody.appendChild(row)
     },
     {
       setup: () => {

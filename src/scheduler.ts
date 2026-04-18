@@ -1,5 +1,6 @@
 /**
- * Priority-based scheduler with time slicing and lane-aware rendering.
+ * Priority-based scheduler with time slicing, lane-aware rendering,
+ * and two-phase commit for Transition work.
  *
  * Updates are assigned to lanes (priority levels). Higher-priority work
  * interrupts lower-priority work. Time slicing yields to the browser
@@ -16,6 +17,21 @@
  * and a Transition-lane update (the actual deferred work) pending at the
  * same time.
  *
+ * Two-phase commit (Transition lane only):
+ *   Render phase  - Component functions run, VNode tree is diffed, but
+ *                   structural DOM mutations (appendChild, insertBefore,
+ *                   removeChild) are collected into an effect queue
+ *                   instead of applied immediately.
+ *   Commit phase  - All queued DOM effects are replayed atomically once
+ *                   the entire Transition render completes.
+ *
+ * Sync and Default lanes use direct DOM mutation (zero overhead). The
+ * effect queue is only active during Transition processing.
+ *
+ * When urgent work interrupts a Transition render, effect collection is
+ * paused so the urgent work executes DOM operations directly. Collection
+ * resumes when the Transition render continues.
+ *
  * When the auto-scheduler processes work, it defers Transition-lane work
  * to a separate frame when there was also urgent (Sync/Default) work in
  * the same flush. This creates a paint boundary so the urgent render is
@@ -25,6 +41,18 @@
  */
 
 import type { ComponentInstance } from "./component"
+import {
+  beginCollecting,
+  clearTransitionRestorers,
+  commitEffects,
+  discardEffects,
+  flushDeferredEffects,
+  pauseCollecting,
+  restoreTransitionState,
+  resumeCollecting,
+} from "./effects"
+import { R, LANE_IDLE } from "./render-state"
+import { discardPendingWork, resumePendingWork } from "./work-loop"
 
 // --- Lanes ---
 
@@ -44,11 +72,8 @@ const laneQueues: ComponentInstance[][] = [[], [], []]
 let isFlushing = false
 let isScheduled = false
 
-/** Sentinel value: no lane is active (scheduler idle). */
-const IDLE_LANE = -1 as const
-
-/** The lane currently being processed (or IDLE_LANE if idle). */
-let activeLane: Lane | typeof IDLE_LANE = IDLE_LANE
+/** The IDLE_LANE constant from render-state (re-exported for internal use). */
+const IDLE_LANE = LANE_IDLE
 
 /** Timestamp when the current time slice started. */
 let sliceStart = 0
@@ -58,6 +83,44 @@ const SLICE_BUDGET = 5
 
 /** Current transition lane context. Set by startTransition. */
 let currentLane: Lane = Lane.Default
+
+/**
+ * Transition generation counter. Incremented each time a Transition-lane
+ * update is scheduled. Used to detect when a new Transition supersedes
+ * an in-progress one (the generation advances while the old Transition
+ * is yielded across frames).
+ */
+let _transitionGen = 0
+
+/**
+ * Generation snapshot taken when Transition processing begins. If
+ * _transitionGen !== _transitionRenderGen when resuming after a yield,
+ * the in-progress Transition has been superseded.
+ */
+let _transitionRenderGen = 0
+
+/**
+ * Instances processed during the current Transition batch. On
+ * abandonment, these are re-queued so the new Transition re-renders them.
+ */
+let _processedInstances: ComponentInstance[] = []
+
+/**
+ * Whether the current Transition render was suspended by a Suspense
+ * boundary. Set by signalTransitionSuspended() when a component throws
+ * a thenable during Transition-lane processing. The scheduler checks
+ * this after the Transition loop completes -- if true, the Transition
+ * is abandoned (effects discarded, VNode state restored) instead of
+ * committed, keeping the old committed UI visible.
+ */
+let _transitionSuspended = false
+
+/**
+ * The promise that suspended the current Transition. After abandonment,
+ * the scheduler attaches a .then() to re-schedule the Transition queue
+ * when the data resolves.
+ */
+let _suspendedPromise: Promise<unknown> | null = null
 
 // --- MessageChannel for yielding ---
 
@@ -127,6 +190,9 @@ export function scheduleUpdate(instance: ComponentInstance, lane?: Lane): void {
 
   laneQueues[targetLane]!.push(instance)
 
+  // Track Transition generations for abandonment detection
+  if (targetLane === Lane.Transition) _transitionGen++
+
   if (!isScheduled) {
     isScheduled = true
     if (targetLane === Lane.Sync) {
@@ -157,7 +223,7 @@ export function getCurrentLane(): Lane {
  * Get the lane currently being processed (-1 if idle).
  */
 export function getActiveLane(): Lane | -1 {
-  return activeLane
+  return R.activeLane as Lane | -1
 }
 
 /**
@@ -165,17 +231,37 @@ export function getActiveLane(): Lane | -1 {
  * Returns true if we should yield to the browser.
  */
 export function shouldYield(): boolean {
-  if (activeLane === Lane.Sync) return false
+  if (R.activeLane === Lane.Sync) return false
   return performance.now() - sliceStart > SLICE_BUDGET
+}
+
+/**
+ * Signal that the current Transition render has been suspended by a
+ * Suspense boundary (a child threw a thenable). The scheduler will
+ * abandon the Transition (discard effects, restore VNode state) instead
+ * of committing, keeping the old committed UI visible.
+ *
+ * Called by the Suspense handler in component.ts when a thrown promise
+ * is caught during Transition-lane processing.
+ *
+ * @param promise - The thenable that caused suspension. The scheduler
+ *   attaches a .then() to re-schedule the Transition after it resolves.
+ */
+export function signalTransitionSuspended(promise: Promise<unknown>): void {
+  _transitionSuspended = true
+  _suspendedPromise = promise
 }
 
 // --- Auto-flush (from scheduler) ---
 
 /**
  * Automatic flush triggered by the scheduler. Processes Sync and Default
- * lanes, then defers Transition lane to a separate frame (paint boundary)
- * if urgent work was also processed. If only Transition work exists, it
- * processes immediately.
+ * lanes with direct DOM mutation, then processes Transition lane with
+ * two-phase commit (render + commit).
+ *
+ * Transition-lane work is deferred to a separate frame when urgent work
+ * was also processed (paint boundary). Effect collection persists across
+ * yields so all Transition DOM mutations commit atomically.
  */
 function autoFlush(): void {
   if (isFlushing) return
@@ -184,13 +270,18 @@ function autoFlush(): void {
 
   let processedUrgent = false
 
-  // Process Sync and Default lanes
+  // If resuming from a yielded Transition render, pause effect collection
+  // so Sync/Default work executes DOM operations directly.
+  const resumingTransition = R.collecting
+  if (resumingTransition) pauseCollecting()
+
+  // Process Sync and Default lanes (always direct DOM mutation)
   for (let lane = Lane.Sync; lane <= Lane.Default; lane++) {
     const queue = laneQueues[lane]!
     if (queue.length === 0) continue
 
     processedUrgent = true
-    activeLane = lane
+    R.activeLane = lane
     sliceStart = performance.now()
 
     while (queue.length > 0) {
@@ -208,23 +299,28 @@ function autoFlush(): void {
 
       // Time slice yielding
       if (lane !== Lane.Sync && shouldYield() && queue.length > 0) {
-        activeLane = IDLE_LANE
+        R.activeLane = IDLE_LANE
         isFlushing = false
         isScheduled = true
+        // Restore collection state if we paused it
+        if (resumingTransition) resumeCollecting()
         scheduleCallback(autoFlush)
         return
       }
     }
   }
 
+  // Restore collection state after urgent work
+  if (resumingTransition) resumeCollecting()
+
   // Transition lane
   const transitionQueue = laneQueues[Lane.Transition]!
   if (transitionQueue.length > 0) {
-    if (processedUrgent && isMessageChannelAvailable) {
+    if (processedUrgent && isMessageChannelAvailable && !resumingTransition) {
       // Defer transition work until after the browser paints so the
       // urgent render is visible first. scheduleAfterPaint uses
       // rAF + MessageChannel to guarantee a true paint boundary.
-      activeLane = IDLE_LANE
+      R.activeLane = IDLE_LANE
       isFlushing = false
       if (!isScheduled) {
         isScheduled = true
@@ -233,37 +329,120 @@ function autoFlush(): void {
       return
     }
 
-    // No urgent work was processed (or no MessageChannel) -- run Transition now
-    activeLane = Lane.Transition
+    // Detect superseded Transition: if we're resuming a yielded
+    // Transition and new Transition work arrived since we started,
+    // the old render is stale. Discard its effects and restart.
+    if (resumingTransition && _transitionGen !== _transitionRenderGen) {
+      abandonTransition()
+      // Fall through to start fresh below
+    }
+
+    // Begin effect collection for Transition render phase (if not already
+    // collecting from a resumed yield).
+    if (!R.collecting) {
+      beginCollecting()
+      _transitionRenderGen = _transitionGen
+      _processedInstances.length = 0
+    }
+
+    R.activeLane = Lane.Transition
     sliceStart = performance.now()
 
-    while (transitionQueue.length > 0) {
+    while (transitionQueue.length > 0 || R.pending) {
       // Check for higher-priority work that arrived
       if (hasHigherPriorityWork(Lane.Transition)) {
+        // Pause collection so urgent work executes DOM ops directly
+        pauseCollecting()
         for (let hp = Lane.Sync; hp < Lane.Transition; hp++) {
           processQueue(laneQueues[hp]!, hp)
         }
+        resumeCollecting()
         sliceStart = performance.now()
+      }
+
+      // Resume pending continuation from a previous mid-render yield
+      if (R.pending) {
+        // resumePendingWork returns true if a new yield occurred
+        const yieldedAgain = resumePendingWork()
+        if (yieldedAgain && shouldYield()) {
+          R.activeLane = IDLE_LANE
+          isFlushing = false
+          isScheduled = true
+          scheduleAfterPaint(autoFlush)
+          return
+        }
+        continue
       }
 
       const instance = transitionQueue.shift()!
       instance._queuedLanes &= ~(1 << Lane.Transition)
+      _processedInstances.push(instance)
       instance._rerender()
 
+      // After rerender, a mid-render yield may have saved a continuation.
+      // Process it before moving to the next component.
+      while (R.pending) {
+        const yieldedAgain = resumePendingWork()
+        if (yieldedAgain && shouldYield()) {
+          // Yield with continuation still pending -- it will be resumed
+          // on the next time slice.
+          R.activeLane = IDLE_LANE
+          isFlushing = false
+          isScheduled = true
+          scheduleAfterPaint(autoFlush)
+          return
+        }
+      }
+
       if (shouldYield() && transitionQueue.length > 0) {
-        // Yield transition work and schedule after paint so intermediate
-        // state is visible. This lets the browser stay responsive during
-        // long transition renders (e.g., filtering a large list).
-        activeLane = IDLE_LANE
+        // Yield transition work -- keep effects queued (don't commit yet).
+        // The effect queue persists across yields so all Transition DOM
+        // mutations commit atomically when the full render completes.
+        R.activeLane = IDLE_LANE
         isFlushing = false
         isScheduled = true
         scheduleAfterPaint(autoFlush)
         return
       }
     }
+
+    // All Transition work complete. If a Suspense boundary suspended
+    // during the render, abandon instead of committing -- the old
+    // committed UI stays visible until the suspended data resolves.
+    if (_transitionSuspended) {
+      _transitionSuspended = false
+      const promise = _suspendedPromise
+      _suspendedPromise = null
+      abandonTransition()
+      // When the suspended data resolves, schedule a new autoFlush to
+      // retry the Transition. The re-queued instances from abandonTransition
+      // are already in the Transition queue.
+      if (promise !== null) {
+        const retryFlush = () => {
+          if (!isScheduled) {
+            isScheduled = true
+            scheduleCallback(autoFlush)
+          }
+        }
+        promise.then(retryFlush, retryFlush)
+      }
+    } else {
+      // Commit DOM effects atomically, then run deferred component
+      // effects (useEffect/useLayoutEffect).
+      commitEffects()
+      flushDeferredEffects()
+      clearTransitionRestorers()
+      _processedInstances.length = 0
+    }
+  } else if (R.collecting) {
+    // Transition queue was drained externally -- commit residual effects.
+    commitEffects()
+    flushDeferredEffects()
+    clearTransitionRestorers()
+    _processedInstances.length = 0
   }
 
-  activeLane = IDLE_LANE
+  R.activeLane = IDLE_LANE
   isFlushing = false
 }
 
@@ -272,11 +451,21 @@ function autoFlush(): void {
 /**
  * Flush all pending updates synchronously.
  * Processes all lanes in priority order without deferring Transition work.
+ * Does NOT use effect collection -- all DOM mutations are applied directly.
  *
  * Exposed for testing -- normally updates are flushed via the auto-scheduler.
  */
 export function flushUpdates(): void {
   if (isFlushing) return
+
+  // If effects were being collected (e.g., called from a test mid-transition),
+  // commit them first to avoid stale queued effects, then run any deferred
+  // component effects that were queued during the Transition render.
+  if (R.collecting) {
+    commitEffects()
+    flushDeferredEffects()
+  }
+
   isFlushing = true
   isScheduled = false
 
@@ -286,16 +475,17 @@ export function flushUpdates(): void {
 }
 
 function processAllLanes(): void {
-  for (let lane = Lane.Sync; lane <= Lane.Transition; lane++) {
+  // Sync + Default lanes: no R.pending handling (only Transition renders yield).
+  // Keeping these paths free of R.pending reads shrinks the hot-path bytecode
+  // for flushUpdates-driven setState/dispatch benches.
+  for (let lane = Lane.Sync; lane <= Lane.Default; lane++) {
     const queue = laneQueues[lane]!
-
     if (queue.length === 0) continue
 
-    activeLane = lane
+    R.activeLane = lane
     sliceStart = performance.now()
 
     while (queue.length > 0) {
-      // Check for higher-priority work that arrived during this lane
       if (lane > Lane.Sync && hasHigherPriorityWork(lane)) {
         for (let hp = Lane.Sync; hp < lane; hp++) {
           processQueue(laneQueues[hp]!, hp)
@@ -307,10 +497,8 @@ function processAllLanes(): void {
       instance._queuedLanes &= ~(1 << lane)
       instance._rerender()
 
-      // Check if we should yield (not for Sync lane)
       if (lane !== Lane.Sync && shouldYield() && queue.length > 0) {
-        // Yield and reschedule
-        activeLane = IDLE_LANE
+        R.activeLane = IDLE_LANE
         isFlushing = false
         isScheduled = true
         scheduleCallback(flushUpdates)
@@ -319,12 +507,52 @@ function processAllLanes(): void {
     }
   }
 
-  activeLane = IDLE_LANE
+  // Transition lane: handle mid-render continuations via R.pending.
+  const transitionQueue = laneQueues[Lane.Transition]!
+  if (transitionQueue.length === 0 && !R.pending) {
+    R.activeLane = IDLE_LANE
+    return
+  }
+
+  R.activeLane = Lane.Transition
+  sliceStart = performance.now()
+
+  while (transitionQueue.length > 0 || R.pending) {
+    if (hasHigherPriorityWork(Lane.Transition)) {
+      for (let hp = Lane.Sync; hp < Lane.Transition; hp++) {
+        processQueue(laneQueues[hp]!, hp)
+      }
+      sliceStart = performance.now()
+    }
+
+    if (R.pending) {
+      resumePendingWork()
+      continue
+    }
+
+    const instance = transitionQueue.shift()!
+    instance._queuedLanes &= ~(1 << Lane.Transition)
+    instance._rerender()
+
+    while (R.pending) {
+      resumePendingWork()
+    }
+
+    if (shouldYield() && transitionQueue.length > 0) {
+      R.activeLane = IDLE_LANE
+      isFlushing = false
+      isScheduled = true
+      scheduleCallback(flushUpdates)
+      return
+    }
+  }
+
+  R.activeLane = IDLE_LANE
 }
 
 function processQueue(queue: ComponentInstance[], lane: Lane): void {
-  const prevActiveLane = activeLane
-  activeLane = lane
+  const prevActiveLane = R.activeLane
+  R.activeLane = lane
   sliceStart = performance.now()
 
   while (queue.length > 0) {
@@ -333,7 +561,7 @@ function processQueue(queue: ComponentInstance[], lane: Lane): void {
     instance._rerender()
   }
 
-  activeLane = prevActiveLane
+  R.activeLane = prevActiveLane
 }
 
 function hasHigherPriorityWork(currentLane: Lane): boolean {
@@ -344,15 +572,50 @@ function hasHigherPriorityWork(currentLane: Lane): boolean {
 }
 
 /**
+ * Abandon a superseded Transition render.
+ *
+ * Discards all collected DOM effects and pending continuations,
+ * restores component VNode state to pre-render values (so the VNode
+ * tree matches the live DOM), and re-queues all previously processed
+ * instances for the Transition lane so the new render includes them.
+ */
+function abandonTransition(): void {
+  restoreTransitionState()
+  discardEffects()
+  discardPendingWork()
+
+  // Re-queue instances from the abandoned batch
+  const transitionQueue = laneQueues[Lane.Transition]!
+  for (let i = 0; i < _processedInstances.length; i++) {
+    const inst = _processedInstances[i]!
+    const laneBit = 1 << Lane.Transition
+    if (!(inst._queuedLanes & laneBit)) {
+      inst._queuedLanes |= laneBit
+      transitionQueue.push(inst)
+    }
+  }
+  _processedInstances.length = 0
+}
+
+/**
  * Flush only the Sync lane. Used internally when we need synchronous
  * resolution of high-priority work without touching other lanes.
+ *
+ * If called during Transition effect collection (e.g., a Sync update
+ * triggered by a Transition render), pauses collection so the Sync
+ * work executes DOM operations directly.
  */
 export function flushSyncWork(): void {
   const queue = laneQueues[Lane.Sync]!
   if (queue.length === 0) return
 
   const prevFlushing = isFlushing
+  const wasCollecting = R.collecting
+  if (wasCollecting) pauseCollecting()
+
   isFlushing = true
   processQueue(queue, Lane.Sync)
   isFlushing = prevFlushing
+
+  if (wasCollecting) resumeCollecting()
 }
