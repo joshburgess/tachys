@@ -12,30 +12,32 @@ Numbers are **median** durations (ms) as produced by the official harness: total
 
 | Benchmark              | Inferno total | Tachys total | T/I total | Inferno script | Tachys script | T/I script | Inferno paint | Tachys paint | T/I paint |
 |------------------------|---------------|--------------|-----------|----------------|---------------|------------|---------------|--------------|-----------|
-| 01_run1k               |        39.20  |       46.30  |     1.18x |          5.00  |         6.60  |      1.32x |        33.30  |       34.10  |     1.02x |
-| 02_replace1k           |        44.50  |       49.50  |     1.11x |          8.00  |        11.40  |      1.43x |        35.20  |       36.80  |     1.05x |
-| 03_update10th1k_x16    |        29.50  |       38.60  |     1.31x |          2.30  |         6.70  |      2.91x |        22.10  |       27.00  |     1.22x |
-| 04_select1k            |        10.80  |       20.10  |     1.86x |          2.00  |         4.10  |      2.05x |         6.20  |       10.90  |     1.76x |
-| 05_swap1k              |        32.50  |       41.10  |     1.26x |          1.70  |         4.10  |      2.41x |        25.90  |       31.20  |     1.20x |
-| 06_remove-one-1k       |        22.20  |       26.90  |     1.21x |          0.50  |         2.00  |      4.00x |        19.10  |       21.30  |     1.12x |
-| 07_create10k           |       413.70  |      415.50  |     1.00x |         55.90  |        73.00  |      1.31x |       342.60  |      335.00  |     0.98x |
-| 08_create1k-after1k_x2 |        48.40  |       54.50  |     1.13x |          5.80  |         6.90  |      1.19x |        40.00  |       43.60  |     1.09x |
-| 09_clear1k_x8          |        18.00  |       30.30  |     1.68x |         13.80  |        19.10  |      1.38x |         2.20  |        8.30  |     3.77x |
+| 01_run1k               |        36.30  |       43.20  |     1.19x |          4.50  |         5.80  |      1.29x |        31.00  |       31.50  |     1.02x |
+| 02_replace1k           |        40.00  |       46.70  |     1.17x |          7.40  |        10.30  |      1.39x |        32.00  |       33.50  |     1.05x |
+| 03_update10th1k_x16    |        20.80  |       25.90  |     1.25x |          2.00  |         4.50  |      2.25x |        15.60  |       18.70  |     1.20x |
+| 04_select1k            |         7.10  |       15.90  |     2.24x |          1.60  |         3.20  |      2.00x |         4.30  |        8.20  |     1.91x |
+| 05_swap1k              |        23.90  |       45.70  |     1.91x |          1.30  |         2.80  |      2.15x |        19.40  |       23.30  |     1.20x |
+| 06_remove-one-1k       |        17.40  |       22.30  |     1.28x |          0.50  |         1.60  |      3.20x |        15.30  |       18.40  |     1.20x |
+| 07_create10k           |       382.20  |      387.70  |     1.01x |         50.90  |        69.00  |      1.36x |       318.50  |      311.20  |     0.98x |
+| 08_create1k-after1k_x2 |        43.30  |       51.30  |     1.18x |          5.40  |         6.20  |      1.15x |        36.30  |       39.20  |     1.08x |
+| 09_clear1k_x8          |        15.60  |       25.10  |     1.61x |         12.00  |        16.50  |      1.38x |         2.00  |        5.50  |     2.75x |
 
 **Geometric mean ratios (Tachys / Inferno):**
-- Total: **1.282x**
-- Script: 1.832x
-- Paint: 1.323x
+- Total: **1.382x**
+- Script: 1.701x
+- Paint: 1.294x
 
 ## Progress
 
-Starting point (prior run): 1.339x geomean total. After this round of optimization (null-children fast-path in `patchComponent` + bulk-clear in `removeOldChildren` + for-in `shallowEqual`): **1.282x**. `06_remove-one-1k` total dropped from ~1.25x to 1.21x, `04_select1k` from 1.81x to 1.86x (within noise). Core script time is still the dominant source of the gap on component-heavy paths like `03_update10th1k` and `06_remove-one-1k`.
+Prior runs: 1.339x geomean total (baseline), 1.282x after the first round of optimizations (`3047eee`). This round inlines the memo-compare read and short-circuits the context check in `patchComponent`, saving two function calls per bail on the hot memo-reuse path. Geomean script improved from ~1.81x to 1.70x; total landed at 1.382x. (Between rounds, host state changes shifted Inferno's own absolute times by up to 40%, so round-over-round ratio deltas include noise: compare script numbers for the cleanest signal.)
+
+The `04_select1k` paint (1.91x) is the largest individual paint gap and `06_remove-one-1k` script (3.20x) the largest individual script gap. `09_clear1k_x8` paint (2.75x) remains elevated despite the earlier bulk-clear optimization (single `textContent = ""` vs N `removeChild()` calls).
 
 ## Notes
 
-- These numbers diverge from the in-repo `bench:browser` harness because the official harness measures click-to-paint with CPU throttling; the in-repo harness measures tight render calls without user-interaction overhead.
-- `07_create10k` (heavy allocation / layout-bound) is at parity (1.00x) — the diff/pool path is competitive when script is not the bottleneck.
-- `09_clear1k_x8` paint (3.77x) is the largest remaining paint gap; script is only 1.38x now thanks to bulk-clear.
+- These numbers diverge from the in-repo `bench:browser` harness, which measures tight render calls without user-interaction overhead.
+- `07_create10k` paint (0.98x) is faster than Inferno when the workload is layout-bound.
+- The bench entry (`keyed/tachys/src/main.jsx`) uses a custom `memo` comparator on `Row` that only checks `label` and `selected`, mirroring Inferno's `onComponentShouldUpdate` in `keyed/inferno/src/controller.jsx`.
 
 ## Reproducing
 

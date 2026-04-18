@@ -22,7 +22,7 @@ import {
   pushTransitionRestorer,
 } from "./effects"
 import { ChildFlags, VNodeFlags } from "./flags"
-import { getMemoCompare } from "./memo"
+import type { MemoComponentFn } from "./memo"
 import {
   bridgeMount as mountInternal,
   bridgePatch as patchVNode,
@@ -471,13 +471,19 @@ export function patchComponent(oldVNode: VNode, newVNode: VNode, parentDom: Elem
       ? newVNode.props
       : EMPTY_PROPS
 
-  // shouldUpdate — prop equality (custom or shallow) + context check
-  const memoCompare = getMemoCompare(oldInstance._type)
+  // shouldUpdate — prop equality (custom or shallow) + context check.
+  // Inlined: direct _compare read + null-check on _contexts avoids two
+  // function calls per bail on the hot memo-reuse path.
+  const memoCompare = (oldInstance._type as MemoComponentFn)._compare
   const propsEqual =
-    memoCompare !== undefined
+    memoCompare != null
       ? memoCompare(oldInstance._props, newProps)
       : shallowEqual(oldInstance._props, newProps)
-  if (propsEqual && oldInstance._queuedLanes === 0 && !contextValuesChanged(oldInstance)) {
+  if (
+    propsEqual &&
+    oldInstance._queuedLanes === 0 &&
+    (oldInstance._contexts === null || !contextValuesChanged(oldInstance))
+  ) {
     // Props unchanged — skip re-render, carry forward references
     newVNode.children = oldInstance._rendered
     newVNode.dom = oldVNode.dom
