@@ -10,7 +10,7 @@
 
 import type { Event, Scheduler } from "aeon-types"
 import { accumB, readBehavior } from "aeon-core"
-import { useEffect, useMemo, useReducer } from "phasm"
+import { useEffect, useMemo, useReducer } from "tachys"
 import { runEvent } from "./internal.js"
 import { createScheduler } from "./scheduler.js"
 

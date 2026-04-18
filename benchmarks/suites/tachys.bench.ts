@@ -1,5 +1,5 @@
 /**
- * Phasm benchmarks — the same operations as baseline-dom and inferno-reference.
+ * Tachys benchmarks — the same operations as baseline-dom and inferno-reference.
  *
  * Uses the h() factory and render/patch/unmount APIs to exercise the full
  * VDOM pipeline: creation, reconciliation, event delegation, and pooling.
@@ -57,7 +57,7 @@ function Table(data: RowData[]): VNode {
 let currentTree: VNode
 let currentData: RowData[]
 
-describe("Phasm", () => {
+describe("Tachys", () => {
   let container: HTMLElement
 
   bench(

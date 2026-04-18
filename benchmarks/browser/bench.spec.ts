@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url"
 /**
  * Playwright-based browser benchmarks.
  *
- * Runs Phasm vs Inferno benchmarks in real Chrome with V8 JIT to measure
+ * Runs Tachys vs Inferno benchmarks in real Chrome with V8 JIT to measure
  * actual production-like performance.
  *
  * Usage: npx playwright test benchmarks/browser/bench.spec.ts
@@ -54,7 +54,7 @@ function startServer(): Promise<{ server: http.Server; port: number }> {
   })
 }
 
-test("Phasm vs Inferno browser benchmark", async ({ page }) => {
+test("Tachys vs Inferno browser benchmark", async ({ page }) => {
   const { server, port } = await startServer()
 
   try {
@@ -96,7 +96,7 @@ test("Phasm vs Inferno browser benchmark", async ({ page }) => {
     }
 
     interface BenchResults {
-      phasm: BenchResult[]
+      tachys: BenchResult[]
       inferno: BenchResult[]
     }
 
@@ -108,19 +108,19 @@ test("Phasm vs Inferno browser benchmark", async ({ page }) => {
 
     // Format comparison results
     const lines: string[] = [
-      "# Phasm vs Inferno Browser Benchmark",
+      "# Tachys vs Inferno Browser Benchmark",
       "",
       `Date: ${new Date().toISOString()}`,
       `User Agent: ${userAgent}`,
       "",
       "## Comparison",
       "",
-      "| Operation | Phasm Median | Inferno Median | Ratio | Phasm Mean | Inferno Mean |",
+      "| Operation | Tachys Median | Inferno Median | Ratio | Tachys Mean | Inferno Mean |",
       "|---|---|---|---|---|---|",
     ]
 
-    for (let i = 0; i < results.phasm.length; i++) {
-      const b = results.phasm[i]
+    for (let i = 0; i < results.tachys.length; i++) {
+      const b = results.tachys[i]
       const inf = results.inferno[i]
       const ratio = (b.median / inf.median).toFixed(2)
       lines.push(
@@ -129,15 +129,15 @@ test("Phasm vs Inferno browser benchmark", async ({ page }) => {
     }
 
     lines.push("")
-    lines.push("Ratio < 1.0 = Phasm faster, > 1.0 = Inferno faster")
+    lines.push("Ratio < 1.0 = Tachys faster, > 1.0 = Inferno faster")
 
     lines.push("")
-    lines.push("## Phasm Detail")
+    lines.push("## Tachys Detail")
     lines.push("")
     lines.push("| Operation | Median (ms) | Mean (ms) | Min (ms) | Max (ms) |")
     lines.push("|---|---|---|---|---|")
 
-    for (const r of results.phasm) {
+    for (const r of results.tachys) {
       lines.push(
         `| ${r.name} | ${r.median.toFixed(2)} | ${r.mean.toFixed(2)} | ${r.min.toFixed(2)} | ${r.max.toFixed(2)} |`,
       )
@@ -164,9 +164,9 @@ test("Phasm vs Inferno browser benchmark", async ({ page }) => {
     fs.writeFileSync(path.resolve(resultsDir, "browser-benchmark.md"), `${output}\n`)
 
     // Basic sanity: all results should be present
-    expect(results.phasm).toHaveLength(8)
+    expect(results.tachys).toHaveLength(8)
     expect(results.inferno).toHaveLength(8)
-    for (const r of results.phasm) {
+    for (const r of results.tachys) {
       expect(r.median).toBeGreaterThan(0)
     }
     for (const r of results.inferno) {

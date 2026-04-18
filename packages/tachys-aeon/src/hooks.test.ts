@@ -1,12 +1,12 @@
 /**
- * Tests for phasm-aeon bridge hooks.
+ * Tests for tachys-aeon bridge hooks.
  */
 
 import { describe, it, expect, beforeEach } from "vitest"
 import { createAdapter, stepper, readBehavior, constantB, map, tap } from "aeon-core"
 import { DefaultScheduler } from "aeon-scheduler"
 import type { Scheduler } from "aeon-types"
-import { h, render, flushUpdates } from "phasm"
+import { h, render, flushUpdates } from "tachys"
 
 import { useBehavior } from "./useBehavior.js"
 import { useEvent } from "./useEvent.js"
@@ -128,7 +128,7 @@ describe("useAdapter", () => {
 
     // Simulate push
     const div = container.querySelector("div")!
-    div.click() // This won't trigger pushVal because onClick goes through phasm's events
+    div.click() // This won't trigger pushVal because onClick goes through tachys's events
     // Instead, let's test the adapter directly by extracting the push fn
   })
 

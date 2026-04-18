@@ -1,5 +1,5 @@
 /**
- * JSX type definitions for Phasm.
+ * JSX type definitions for Tachys.
  *
  * Provides IntrinsicElements and Element types for TypeScript JSX support.
  */

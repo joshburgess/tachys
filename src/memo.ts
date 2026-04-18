@@ -4,7 +4,7 @@
  * Wraps a component function so that patchComponent can use a custom
  * comparison function to decide whether to skip re-render.
  *
- * Phasm already applies shallow prop equality by default, so memo()
+ * Tachys already applies shallow prop equality by default, so memo()
  * without a custom comparator is effectively a no-op (provided for React
  * API compatibility). The primary value is supporting custom comparators
  * for fine-grained control over re-render skipping.
@@ -30,7 +30,7 @@ export interface MemoComponentFn {
  *
  * Returns a new component that skips re-rendering when its props have not
  * changed. By default, props are compared with shallow equality (which
- * Phasm already does for all components). Pass a custom `compare`
+ * Tachys already does for all components). Pass a custom `compare`
  * function for fine-grained control.
  *
  * Must be called at module level, not inside a render function, to ensure

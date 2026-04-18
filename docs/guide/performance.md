@@ -1,6 +1,6 @@
 # Performance
 
-Phasm is designed for V8-optimized performance from the ground up.
+Tachys is designed for V8-optimized performance from the ground up.
 
 ## Architecture
 
@@ -18,7 +18,7 @@ if ((flags & VNodeFlags.Element) !== 0) { /* element path */ }
 
 ### Event Delegation
 
-All event handlers are delegated to a single root listener rather than individual DOM elements. Handler references are stored on DOM nodes via a lightweight `__phasm` property, avoiding closure allocation per element.
+All event handlers are delegated to a single root listener rather than individual DOM elements. Handler references are stored on DOM nodes via a lightweight `__tachys` property, avoiding closure allocation per element.
 
 ### Keyed Diff Algorithm
 
@@ -26,7 +26,7 @@ The keyed children reconciliation uses an Inferno-style LIS (Longest Increasing 
 
 ### Priority-Based Scheduler
 
-Phasm's scheduler uses three priority lanes (Sync, Default, Transition) to process updates in the right order. `useSyncExternalStore` uses the Sync lane for tearing prevention, normal state updates use Default, and `startTransition`/`useDeferredValue` use the Transition lane so they don't block urgent work.
+Tachys's scheduler uses three priority lanes (Sync, Default, Transition) to process updates in the right order. `useSyncExternalStore` uses the Sync lane for tearing prevention, normal state updates use Default, and `startTransition`/`useDeferredValue` use the Transition lane so they don't block urgent work.
 
 ### Two-Phase Commit for Transitions
 

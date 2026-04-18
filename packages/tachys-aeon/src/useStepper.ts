@@ -4,14 +4,14 @@
  * Creates a Behavior that tracks the latest event value (via Aeon's
  * `stepper`), and re-renders the component each time a new value arrives.
  *
- * This is the most common pattern for connecting Aeon Events to Phasm
+ * This is the most common pattern for connecting Aeon Events to Tachys
  * components: it combines Behavior creation, Event subscription, and
  * component re-rendering into a single hook.
  */
 
 import type { Event, Scheduler } from "aeon-types"
 import { readBehavior, stepper } from "aeon-core"
-import { useEffect, useMemo, useReducer } from "phasm"
+import { useEffect, useMemo, useReducer } from "tachys"
 import { runEvent } from "./internal.js"
 import { createScheduler } from "./scheduler.js"
 

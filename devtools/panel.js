@@ -1,5 +1,5 @@
 /**
- * Phasm DevTools Panel
+ * Tachys DevTools Panel
  *
  * Renders the component tree, handles selection, and displays
  * props/hooks/effects for the selected node.
@@ -25,7 +25,7 @@ const btnCollapse = document.getElementById("btn-collapse")
 
 function sendToPage(msg) {
   chrome.devtools.inspectedWindow.eval(
-    `window.postMessage(${JSON.stringify({ ...msg, source: "phasm-devtools-panel" })}, "*")`,
+    `window.postMessage(${JSON.stringify({ ...msg, source: "tachys-devtools-panel" })}, "*")`,
   )
 }
 
@@ -37,7 +37,7 @@ function requestTree() {
 function pollForUpdates() {
   chrome.devtools.inspectedWindow.eval(
     `(function() {
-      var hook = window.__PHASM_DEVTOOLS_HOOK__;
+      var hook = window.__TACHYS_DEVTOOLS_HOOK__;
       if (!hook) return null;
       var result = [];
       for (var root of hook.roots) {
@@ -200,7 +200,7 @@ function renderTreeNode(node, depth) {
       // Use a simple approach: eval to find and highlight
       chrome.devtools.inspectedWindow.eval(
         `(function() {
-          var hook = window.__PHASM_DEVTOOLS_HOOK__;
+          var hook = window.__TACHYS_DEVTOOLS_HOOK__;
           if (hook) hook.highlight(null);
         })()`,
       )
@@ -374,7 +374,7 @@ window.addEventListener("unload", () => {
   // Remove highlight
   chrome.devtools.inspectedWindow.eval(
     `(function() {
-      var hook = window.__PHASM_DEVTOOLS_HOOK__;
+      var hook = window.__TACHYS_DEVTOOLS_HOOK__;
       if (hook) hook.highlight(null);
     })()`,
   )

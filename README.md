@@ -1,4 +1,4 @@
-# Phasm
+# Tachys
 
 A high-performance virtual DOM library optimized for V8. Designed to match or exceed [Inferno](https://github.com/infernojs/inferno) on reconciliation speed while providing a modern React-like hooks API with concurrent rendering.
 
@@ -25,7 +25,7 @@ A high-performance virtual DOM library optimized for V8. Designed to match or ex
 - React 19 form hooks: `useOptimistic`, `useActionState`, `useFormStatus`
 - `StrictMode` and `Profiler` compatibility stubs
 - `act()` testing utility for synchronous flush
-- React compatibility layer (`phasm/compat`) for library interop
+- React compatibility layer (`tachys/compat`) for library interop
 - Chrome DevTools extension for component tree inspection
 - Dual ESM/CJS output with full TypeScript declarations
 - Development-mode warnings (duplicate keys, hook order violations) stripped in production
@@ -33,7 +33,7 @@ A high-performance virtual DOM library optimized for V8. Designed to match or ex
 ## Install
 
 ```bash
-npm install phasm
+npm install tachys
 ```
 
 ## Quick Start
@@ -41,7 +41,7 @@ npm install phasm
 ### Classic pragma (`h`)
 
 ```tsx
-import { h, mount, useState } from "phasm"
+import { h, mount, useState } from "tachys"
 
 function Counter() {
   const [count, setCount] = useState(0)
@@ -59,7 +59,7 @@ Configure your `tsconfig.json`:
 {
   "compilerOptions": {
     "jsx": "react-jsx",
-    "jsxImportSource": "phasm"
+    "jsxImportSource": "tachys"
   }
 }
 ```
@@ -67,7 +67,7 @@ Configure your `tsconfig.json`:
 Then write JSX as usual:
 
 ```tsx
-import { mount, useState } from "phasm"
+import { mount, useState } from "tachys"
 
 function Counter() {
   const [count, setCount] = useState(0)
@@ -86,7 +86,7 @@ mount(<Counter />, document.getElementById("app")!)
 Render a VNode tree into a DOM container. Handles initial mount and subsequent patches automatically. Pass `null` to unmount.
 
 ```ts
-import { h, render } from "phasm"
+import { h, render } from "tachys"
 
 render(h("div", null, "Hello"), document.getElementById("app")!)
 render(null, document.getElementById("app")!) // unmount
@@ -97,7 +97,7 @@ render(null, document.getElementById("app")!) // unmount
 Create a concurrent root. Returns a `Root` object with `render(children)` and `unmount()` methods. This is the React 18+ root API.
 
 ```ts
-import { createRoot, h } from "phasm"
+import { createRoot, h } from "tachys"
 
 const root = createRoot(document.getElementById("app")!)
 root.render(h(App, null))
@@ -109,7 +109,7 @@ root.unmount()
 Hydrate server-rendered HTML and return a `Root` for subsequent updates.
 
 ```ts
-import { hydrateRoot, h } from "phasm"
+import { hydrateRoot, h } from "tachys"
 
 const root = hydrateRoot(document.getElementById("app")!, h(App, null))
 ```
@@ -183,11 +183,11 @@ useEffect(() => {
 
 #### `useLayoutEffect(callback, deps?)`
 
-Identical to `useEffect` in Phasm (all effects run synchronously). Provided for React API compatibility.
+Identical to `useEffect` in Tachys (all effects run synchronously). Provided for React API compatibility.
 
 #### `useInsertionEffect(callback, deps?)`
 
-Identical to `useEffect` in Phasm. In React, this fires before DOM mutations for CSS-in-JS libraries. Exported for compatibility with styled-components, Emotion, and similar libraries.
+Identical to `useEffect` in Tachys. In React, this fires before DOM mutations for CSS-in-JS libraries. Exported for compatibility with styled-components, Emotion, and similar libraries.
 
 #### `useMemo(factory, deps)`
 
@@ -292,7 +292,7 @@ const FancyInput = forwardRef((props, ref) => {
 
 #### `useDebugValue(value, format?)`
 
-Label custom hooks in dev tools. No-op in Phasm, provided for React API compatibility.
+Label custom hooks in dev tools. No-op in Tachys, provided for React API compatibility.
 
 ```ts
 function useOnlineStatus() {
@@ -439,12 +439,12 @@ import {
   hasSingleChild,
   hasArrayChildren,
   hasTextChildren,
-} from "phasm"
+} from "tachys"
 ```
 
 ### Scheduler
 
-Phasm uses a priority-based scheduler with three lanes:
+Tachys uses a priority-based scheduler with three lanes:
 
 | Lane | Value | Description |
 |------|-------|-------------|
@@ -484,10 +484,10 @@ Returns `true` if the current time slice (~5ms) has expired. Used internally by 
 
 ## Server-Side Rendering
 
-Phasm supports server-side rendering (SSR) and client-side hydration via the `phasm/server` entry point. It runs in any JavaScript runtime (Node.js, Deno, Bun, Cloudflare Workers, etc.) with zero DOM dependency on the server.
+Tachys supports server-side rendering (SSR) and client-side hydration via the `tachys/server` entry point. It runs in any JavaScript runtime (Node.js, Deno, Bun, Cloudflare Workers, etc.) with zero DOM dependency on the server.
 
 ```ts
-import { renderToString, renderToStringAsync, renderToReadableStream, hydrate } from "phasm/server"
+import { renderToString, renderToStringAsync, renderToReadableStream, hydrate } from "tachys/server"
 ```
 
 ### `renderToString(vnode)`
@@ -495,8 +495,8 @@ import { renderToString, renderToStringAsync, renderToReadableStream, hydrate } 
 Synchronous render to an HTML string. Suspense boundaries render their fallback content (lazy components are not awaited).
 
 ```ts
-import { h } from "phasm"
-import { renderToString } from "phasm/server"
+import { h } from "tachys"
+import { renderToString } from "tachys/server"
 
 function App() {
   return h("div", { className: "app" }, h("h1", null, "Hello from the server"))
@@ -532,8 +532,8 @@ The streaming protocol works as follows:
 3. On the client, hydration cleans up any remaining streaming artifacts (scripts, hidden divs, `<!--$ph:N-->` comments)
 
 ```ts
-import { h } from "phasm"
-import { renderToReadableStream } from "phasm/server"
+import { h } from "tachys"
+import { renderToReadableStream } from "tachys/server"
 
 export default {
   fetch() {
@@ -550,8 +550,8 @@ export default {
 Hydrate server-rendered HTML on the client. Walks existing DOM and attaches event listeners, component instances, and refs without re-creating DOM elements.
 
 ```ts
-import { h } from "phasm"
-import { hydrate } from "phasm/server"
+import { h } from "tachys"
+import { hydrate } from "tachys/server"
 
 hydrate(h(App, null), document.getElementById("app")!)
 ```
@@ -568,8 +568,8 @@ After hydration, the VNode tree is fully live and subsequent state updates use t
 
 ```ts
 import express from "express"
-import { h } from "phasm"
-import { renderToString } from "phasm/server"
+import { h } from "tachys"
+import { renderToString } from "tachys/server"
 import { App } from "./App"
 
 const app = express()
@@ -589,9 +589,9 @@ app.get("/", (req, res) => {
 ### Example: Streaming with Web Streams
 
 ```ts
-import { h } from "phasm"
-import { renderToReadableStream, hydrate } from "phasm/server"
-import { Suspense, lazy } from "phasm"
+import { h } from "tachys"
+import { renderToReadableStream, hydrate } from "tachys/server"
+import { Suspense, lazy } from "tachys"
 
 const LazyContent = lazy(() => import("./HeavyContent"))
 
@@ -613,7 +613,7 @@ hydrate(h(App, null), document.getElementById("root")!)
 
 ## React Compatibility
 
-Phasm provides a compatibility layer at `phasm/compat` that maps React's API surface to Phasm equivalents. This lets you use existing React component libraries with Phasm by aliasing `react` and `react-dom` in your bundler config.
+Tachys provides a compatibility layer at `tachys/compat` that maps React's API surface to Tachys equivalents. This lets you use existing React component libraries with Tachys by aliasing `react` and `react-dom` in your bundler config.
 
 ### Bundler setup
 
@@ -623,10 +623,10 @@ Phasm provides a compatibility layer at `phasm/compat` that maps React's API sur
 export default {
   resolve: {
     alias: {
-      react: "phasm/compat",
-      "react-dom": "phasm/compat",
-      "react-dom/client": "phasm/client",
-      "react-dom/server": "phasm/server",
+      react: "tachys/compat",
+      "react-dom": "tachys/compat",
+      "react-dom/client": "tachys/client",
+      "react-dom/server": "tachys/server",
     },
   },
 }
@@ -638,20 +638,20 @@ export default {
 module.exports = {
   resolve: {
     alias: {
-      react: "phasm/compat",
-      "react-dom": "phasm/compat",
-      "react-dom/client": "phasm/client",
-      "react-dom/server": "phasm/server",
+      react: "tachys/compat",
+      "react-dom": "tachys/compat",
+      "react-dom/client": "tachys/client",
+      "react-dom/server": "tachys/server",
     },
   },
 }
 ```
 
-> **Note:** Modern React code often imports `createRoot` and `hydrateRoot` from `react-dom/client`. The `phasm/client` export points to the same compat module, so both import paths work.
+> **Note:** Modern React code often imports `createRoot` and `hydrateRoot` from `react-dom/client`. The `tachys/client` export points to the same compat module, so both import paths work.
 
 ### What's included
 
-| React API | Phasm equivalent |
+| React API | Tachys equivalent |
 |---|---|
 | `createElement` | `h` |
 | `Fragment` | `null` |
@@ -687,9 +687,9 @@ module.exports = {
 
 ## Benchmarks
 
-Phasm vs Inferno, Chromium headless (median of 50 runs):
+Tachys vs Inferno, Chromium headless (median of 50 runs):
 
-| Operation | Phasm | Inferno | Ratio |
+| Operation | Tachys | Inferno | Ratio |
 |---|---|---|---|
 | Create 1,000 rows | 2.00ms | 2.10ms | 0.95x |
 | Create 10,000 rows | 21.70ms | 23.40ms | 0.93x |
@@ -700,7 +700,7 @@ Phasm vs Inferno, Chromium headless (median of 50 runs):
 | Select row | 0.40ms | 2.20ms | 0.18x |
 | Append 1,000 rows | 2.10ms | 2.50ms | 0.84x |
 
-Ratio < 1.0 = Phasm faster.
+Ratio < 1.0 = Tachys faster.
 
 Bundle: **~36KB min / ~10.6KB gzip**.
 
@@ -708,11 +708,11 @@ Bundle: **~36KB min / ~10.6KB gzip**.
 
 | Import path | Description |
 |---|---|
-| `phasm` | Core client-side library |
-| `phasm/server` | SSR: `renderToString`, `renderToStringAsync`, `renderToReadableStream`, `hydrate` |
-| `phasm/jsx-runtime` | Automatic JSX transform (`jsx`, `jsxs`, `Fragment`) |
-| `phasm/jsx-dev-runtime` | Dev-mode JSX transform (`jsxDEV`, `Fragment`) |
-| `phasm/compat` | React API surface for bundler aliasing |
+| `tachys` | Core client-side library |
+| `tachys/server` | SSR: `renderToString`, `renderToStringAsync`, `renderToReadableStream`, `hydrate` |
+| `tachys/jsx-runtime` | Automatic JSX transform (`jsx`, `jsxs`, `Fragment`) |
+| `tachys/jsx-dev-runtime` | Dev-mode JSX transform (`jsxDEV`, `Fragment`) |
+| `tachys/compat` | React API surface for bundler aliasing |
 
 All entry points ship as both ESM and CJS with TypeScript declarations.
 
@@ -731,7 +731,7 @@ pnpm run lint:fix       # Lint and auto-fix
 
 ## DevTools
 
-Phasm includes a Chrome DevTools extension in the `devtools/` directory. It provides:
+Tachys includes a Chrome DevTools extension in the `devtools/` directory. It provides:
 
 - Component tree inspection
 - Render event tracking

@@ -7,7 +7,7 @@ After adding: Suspense-aware hydration, streaming SSR, selective hydration,
 ErrorBoundary+Suspense integration, use() hook, useSyncExternalStore tearing
 prevention, and priority-based scheduler with lanes.
 
-## Phasm
+## Tachys
 
 | Operation                          | hz      | mean (ms) | p75 (ms) | p99 (ms) |
 |------------------------------------|---------|-----------|----------|----------|
@@ -44,18 +44,18 @@ prevention, and priority-based scheduler with lanes.
 | useState: 1,000 same-value bailouts (no re-render)  | 18,440.94 | 0.054ms   |
 | 5 useStates + 2 useCallbacks: 1,000 update cycles   | 48.14     | 20.77ms   |
 
-## Comparison: Phasm vs Inferno (JSDOM - Reconciliation Operations)
+## Comparison: Tachys vs Inferno (JSDOM - Reconciliation Operations)
 
-| Operation                        | Phasm hz | Inferno hz | Ratio  | Winner  |
+| Operation                        | Tachys hz | Inferno hz | Ratio  | Winner  |
 |----------------------------------|----------|------------|--------|---------|
-| replace all 1,000 rows           | 294.33   | 115.88     | 2.54x  | Phasm   |
-| update every 10th row            | 346.72   | 135.34     | 2.56x  | Phasm   |
-| swap rows                        | 367.72   | 163.71     | 2.25x  | Phasm   |
-| remove row                       | 356.71   | 128.55     | 2.77x  | Phasm   |
-| select row                       | 313.03   | 165.55     | 1.89x  | Phasm   |
-| append 1,000 rows                | 120.97   | 48.88      | 2.47x  | Phasm   |
+| replace all 1,000 rows           | 294.33   | 115.88     | 2.54x  | Tachys   |
+| update every 10th row            | 346.72   | 135.34     | 2.56x  | Tachys   |
+| swap rows                        | 367.72   | 163.71     | 2.25x  | Tachys   |
+| remove row                       | 356.71   | 128.55     | 2.77x  | Tachys   |
+| select row                       | 313.03   | 165.55     | 1.89x  | Tachys   |
+| append 1,000 rows                | 120.97   | 48.88      | 2.47x  | Tachys   |
 
-Phasm is 1.9x-2.8x faster than Inferno on all reconciliation operations in JSDOM.
+Tachys is 1.9x-2.8x faster than Inferno on all reconciliation operations in JSDOM.
 
 Note: Initial creation benchmarks (create N rows) are dominated by DOM element
 allocation cost in JSDOM, not VDOM overhead. Real browser benchmarks (Playwright)

@@ -147,7 +147,7 @@ describe("event delegation", () => {
       // The button is removed from DOM — clicking it won't fire through delegation
       // But we can verify the handler storage was cleaned up
       expect(
-        (button as Element & { __phasm?: Record<string, unknown> }).__phasm?.["click"],
+        (button as Element & { __tachys?: Record<string, unknown> }).__tachys?.["click"],
       ).toBeUndefined()
       teardown(container)
     })
@@ -415,10 +415,10 @@ describe("bubbling and non-bubbling handlers on the same element", () => {
     // Clicking the detached element won't bubble through the container,
     // but we can verify the handler storage was cleared
     expect(
-      (input as Element & { __phasm?: Record<string, unknown> }).__phasm?.["click"],
+      (input as Element & { __tachys?: Record<string, unknown> }).__tachys?.["click"],
     ).toBeUndefined()
     expect(
-      (input as Element & { __phasm?: Record<string, unknown> }).__phasm?.["focus"],
+      (input as Element & { __tachys?: Record<string, unknown> }).__tachys?.["focus"],
     ).toBeUndefined()
     teardown(container)
   })

@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Phasm vs Inferno Browser Benchmark</title>
+  <title>Tachys vs Inferno Browser Benchmark</title>
   <style>
     body { font-family: monospace; margin: 20px; }
     #app { display: none; }
@@ -10,7 +10,7 @@
   </style>
 </head>
 <body>
-  <h1>Phasm vs Inferno Browser Benchmark</h1>
+  <h1>Tachys vs Inferno Browser Benchmark</h1>
   <div id="app"></div>
   <pre id="results">Loading...</pre>
 
@@ -67,10 +67,10 @@
 
     const container = document.getElementById('app');
 
-    // ──── Phasm Benchmarks ────
-    const phasmResults = [];
+    // ──── Tachys Benchmarks ────
+    const tachysResults = [];
 
-    phasmResults.push(benchmark(
+    tachysResults.push(benchmark(
       'create 1,000 rows',
       () => { container.textContent = ''; clearPool(); return {}; },
       () => {
@@ -82,7 +82,7 @@
       50
     ));
 
-    phasmResults.push(benchmark(
+    tachysResults.push(benchmark(
       'create 10,000 rows',
       () => { container.textContent = ''; clearPool(); return {}; },
       () => {
@@ -94,7 +94,7 @@
       10
     ));
 
-    phasmResults.push(benchmark(
+    tachysResults.push(benchmark(
       'replace all 1,000 rows',
       () => {
         container.textContent = '';
@@ -111,7 +111,7 @@
       50
     ));
 
-    phasmResults.push(benchmark(
+    tachysResults.push(benchmark(
       'update every 10th row (of 1,000)',
       () => {
         container.textContent = '';
@@ -133,7 +133,7 @@
       50
     ));
 
-    phasmResults.push(benchmark(
+    tachysResults.push(benchmark(
       'swap rows (2nd and 999th)',
       () => {
         container.textContent = '';
@@ -155,7 +155,7 @@
       50
     ));
 
-    phasmResults.push(benchmark(
+    tachysResults.push(benchmark(
       'remove row (middle of 1,000)',
       () => {
         container.textContent = '';
@@ -175,7 +175,7 @@
       50
     ));
 
-    phasmResults.push(benchmark(
+    tachysResults.push(benchmark(
       'select row (highlight one)',
       () => {
         container.textContent = '';
@@ -202,7 +202,7 @@
       50
     ));
 
-    phasmResults.push(benchmark(
+    tachysResults.push(benchmark(
       'append 1,000 rows to 1,000',
       () => {
         container.textContent = '';
@@ -227,23 +227,23 @@
 
     // ──── Format Comparison Output ────
     const lines = [
-      'Phasm vs Inferno Browser Benchmark',
+      'Tachys vs Inferno Browser Benchmark',
       '='.repeat(90),
       ''
     ];
 
     const header =
       'Operation'.padEnd(35) +
-      'Phasm Med'.padStart(11) +
+      'Tachys Med'.padStart(11) +
       'Inf Med'.padStart(11) +
       'Ratio'.padStart(8) +
-      'Phasm Mean'.padStart(12) +
+      'Tachys Mean'.padStart(12) +
       'Inf Mean'.padStart(12);
     lines.push(header);
     lines.push('-'.repeat(90));
 
-    for (let i = 0; i < phasmResults.length; i++) {
-      const b = phasmResults[i];
+    for (let i = 0; i < tachysResults.length; i++) {
+      const b = tachysResults[i];
       const inf = infernoResults[i];
       const ratio = (b.median / inf.median).toFixed(2);
       lines.push(
@@ -257,13 +257,13 @@
     }
 
     lines.push('');
-    lines.push('Ratio < 1.0 = Phasm faster, > 1.0 = Inferno faster');
+    lines.push('Ratio < 1.0 = Tachys faster, > 1.0 = Inferno faster');
 
     const output = lines.join('\n');
     document.getElementById('results').textContent = output;
 
     // Expose results for Playwright to read
-    window.__benchmarkResults = { phasm: phasmResults, inferno: infernoResults };
+    window.__benchmarkResults = { tachys: tachysResults, inferno: infernoResults };
     window.__benchmarkDone = true;
   </script>
 </body>

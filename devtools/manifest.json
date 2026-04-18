@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Phasm DevTools",
+  "name": "Tachys DevTools",
   "version": "0.0.1",
-  "description": "Chrome DevTools extension for inspecting Phasm component trees, hooks state, and re-render highlighting.",
+  "description": "Chrome DevTools extension for inspecting Tachys component trees, hooks state, and re-render highlighting.",
   "devtools_page": "devtools.html",
   "permissions": [],
   "content_scripts": [

@@ -57,7 +57,7 @@ importers:
         specifier: ^3.2.4
         version: 3.2.4(jsdom@26.1.0)(terser@5.46.1)
 
-  packages/phasm-aeon:
+  packages/tachys-aeon:
     devDependencies:
       '@rollup/plugin-node-resolve':
         specifier: ^16.0.0
@@ -74,15 +74,15 @@ importers:
       jsdom:
         specifier: ^26.0.0
         version: 26.1.0
-      phasm:
-        specifier: workspace:*
-        version: link:../..
       rollup:
         specifier: ^4.28.0
         version: 4.60.1
       rollup-plugin-swc3:
         specifier: ^0.12.1
         version: 0.12.1(@swc/core@1.15.26)(rollup@4.60.1)
+      tachys:
+        specifier: workspace:*
+        version: link:../..
       typescript:
         specifier: ^5.7.2
         version: 5.9.3

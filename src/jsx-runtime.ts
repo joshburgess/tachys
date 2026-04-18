@@ -1,5 +1,5 @@
 /**
- * JSX automatic runtime for Phasm.
+ * JSX automatic runtime for Tachys.
  *
  * Used by TypeScript/Babel's automatic JSX transform (jsx-runtime).
  * Supports both `jsx` (single child) and `jsxs` (multiple children).

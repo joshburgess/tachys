@@ -781,7 +781,7 @@ export function useEffect(callback: () => EffectCleanup, deps?: readonly unknown
 /**
  * Hook: register a synchronous side effect that runs before browser paint.
  *
- * In Phasm, all effects run synchronously after render (unlike React where
+ * In Tachys, all effects run synchronously after render (unlike React where
  * useEffect is deferred). This makes useLayoutEffect identical to useEffect
  * in behavior, but the separate API is provided for React compatibility.
  *
@@ -795,7 +795,7 @@ export const useLayoutEffect: (callback: () => EffectCleanup, deps?: readonly un
  * Hook: register an effect that fires before any DOM mutations.
  *
  * In React, useInsertionEffect runs before useLayoutEffect and is intended
- * for CSS-in-JS libraries to inject <style> rules. In Phasm, all effects
+ * for CSS-in-JS libraries to inject <style> rules. In Tachys, all effects
  * run synchronously after render, so this is identical to useEffect.
  *
  * Exported for React API compatibility -- CSS-in-JS libraries like
@@ -1062,7 +1062,7 @@ export function useImperativeHandle<T>(
 /**
  * Hook: display a label for custom hooks in dev tools.
  *
- * This is a no-op in Phasm. It exists purely for React API compatibility
+ * This is a no-op in Tachys. It exists purely for React API compatibility
  * so that custom hooks can call useDebugValue without errors.
  *
  * @param _value - The debug value to display (ignored)

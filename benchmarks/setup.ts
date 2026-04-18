@@ -1,5 +1,5 @@
 /**
- * Benchmark harness for Phasm.
+ * Benchmark harness for Tachys.
  *
  * Measures execution time over multiple runs, discards warmup iterations,
  * and reports median, mean, p95, and standard deviation.

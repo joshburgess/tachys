@@ -1,15 +1,15 @@
 import { describe, expect, it, beforeEach } from "vitest"
 import { h, mount, render, useEffect, useState } from "../../src/index"
-import type { PhasmDevToolsHook, SerializedNode } from "../../src/devtools-hook"
+import type { TachysDevToolsHook, SerializedNode } from "../../src/devtools-hook"
 import {
   __devtools_notifyRender,
   __devtools_setRootTrees,
   installDevToolsHook,
 } from "../../src/devtools-hook"
 
-function getHook(): PhasmDevToolsHook | undefined {
-  return (window as unknown as { __PHASM_DEVTOOLS_HOOK__?: PhasmDevToolsHook })
-    .__PHASM_DEVTOOLS_HOOK__
+function getHook(): TachysDevToolsHook | undefined {
+  return (window as unknown as { __TACHYS_DEVTOOLS_HOOK__?: TachysDevToolsHook })
+    .__TACHYS_DEVTOOLS_HOOK__
 }
 
 describe("DevTools Hook", () => {
@@ -18,7 +18,7 @@ describe("DevTools Hook", () => {
     installDevToolsHook()
   })
 
-  it("installs __PHASM_DEVTOOLS_HOOK__ on window", () => {
+  it("installs __TACHYS_DEVTOOLS_HOOK__ on window", () => {
     const hook = getHook()
     expect(hook).toBeDefined()
     expect(hook!.version).toBe("0.0.1")

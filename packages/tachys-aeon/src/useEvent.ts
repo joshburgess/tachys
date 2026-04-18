@@ -10,7 +10,7 @@
  */
 
 import type { Event, Scheduler } from "aeon-types"
-import { useEffect, useRef } from "phasm"
+import { useEffect, useRef } from "tachys"
 import { runEvent } from "./internal.js"
 import { createScheduler } from "./scheduler.js"
 

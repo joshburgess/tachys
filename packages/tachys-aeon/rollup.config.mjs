@@ -11,7 +11,7 @@ const swcPlugin = swc({
 })
 
 const external = [
-  "phasm",
+  "tachys",
   "aeon-core",
   "aeon-types",
   "aeon-scheduler",

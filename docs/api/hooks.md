@@ -41,7 +41,7 @@ function useLayoutEffect(
 ): void
 ```
 
-Identical to `useEffect` in Phasm. Provided for React API compatibility.
+Identical to `useEffect` in Tachys. Provided for React API compatibility.
 
 ## useInsertionEffect
 
@@ -52,7 +52,7 @@ function useInsertionEffect(
 ): void
 ```
 
-Identical to `useEffect` in Phasm. In React, `useInsertionEffect` fires before any DOM mutations and is intended for CSS-in-JS libraries to inject `<style>` rules. Exported for compatibility with styled-components, Emotion, and similar libraries.
+Identical to `useEffect` in Tachys. In React, `useInsertionEffect` fires before any DOM mutations and is intended for CSS-in-JS libraries to inject `<style>` rules. Exported for compatibility with styled-components, Emotion, and similar libraries.
 
 ## useMemo
 
@@ -156,7 +156,7 @@ The optional `initialValue` (React 19) is returned on the first render before th
 function useDebugValue(value: unknown, format?: (v: unknown) => unknown): void
 ```
 
-No-op in Phasm. Exists for React API compatibility.
+No-op in Tachys. Exists for React API compatibility.
 
 ## use
 
@@ -174,10 +174,10 @@ React 19-compatible hook that reads a context value or a promise. Unlike other h
 
 ## React 19 Form Hooks
 
-The following hooks are imported from `phasm/compat`, not the core `phasm` package.
+The following hooks are imported from `tachys/compat`, not the core `tachys` package.
 
 ```ts
-import { useOptimistic, useActionState, useFormStatus } from "phasm/compat"
+import { useOptimistic, useActionState, useFormStatus } from "tachys/compat"
 ```
 
 ## useOptimistic
@@ -214,4 +214,4 @@ function useFormStatus(): {
 }
 ```
 
-Returns the status of a parent form action. Always returns a not-pending status (`pending: false`, all other fields `null`) because Phasm does not include a built-in form action runtime. Exported for compatibility with third-party components that call this hook.
+Returns the status of a parent form action. Always returns a not-pending status (`pending: false`, all other fields `null`) because Tachys does not include a built-in form action runtime. Exported for compatibility with third-party components that call this hook.

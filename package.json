@@ -1,16 +1,16 @@
 {
-  "name": "phasm",
+  "name": "tachys",
   "version": "0.0.1",
   "description": "A high-performance virtual DOM library optimized for V8",
   "license": "MIT",
   "author": "Josh Burgess",
   "repository": {
     "type": "git",
-    "url": "https://github.com/joshburgess/phasm.git"
+    "url": "https://github.com/joshburgess/tachys.git"
   },
-  "homepage": "https://github.com/joshburgess/phasm",
+  "homepage": "https://github.com/joshburgess/tachys",
   "bugs": {
-    "url": "https://github.com/joshburgess/phasm/issues"
+    "url": "https://github.com/joshburgess/tachys/issues"
   },
   "keywords": [
     "virtual-dom",

@@ -24,7 +24,7 @@ const warnedMessages = new Set<string>()
 export function warnOnce(message: string): void {
   if (!warnedMessages.has(message)) {
     warnedMessages.add(message)
-    console.warn(`[Phasm] ${message}`)
+    console.warn(`[Tachys] ${message}`)
   }
 }
 
@@ -33,7 +33,7 @@ export function warnOnce(message: string): void {
  * prints every time it is called (useful for per-instance warnings).
  */
 export function warn(message: string): void {
-  console.warn(`[Phasm] ${message}`)
+  console.warn(`[Tachys] ${message}`)
 }
 
 /**

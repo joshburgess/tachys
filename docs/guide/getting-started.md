@@ -3,18 +3,18 @@
 ## Installation
 
 ```bash
-npm install phasm
+npm install tachys
 ```
 
 ## Quick Start
 
-Phasm provides a `render` function to mount your app into the DOM:
+Tachys provides a `render` function to mount your app into the DOM:
 
 ```tsx
-import { render } from "phasm"
+import { render } from "tachys"
 
 function App() {
-  return <h1>Hello, Phasm!</h1>
+  return <h1>Hello, Tachys!</h1>
 }
 
 render(<App />, document.getElementById("app")!)
@@ -25,10 +25,10 @@ render(<App />, document.getElementById("app")!)
 If you prefer the hyperscript style:
 
 ```ts
-import { h, render } from "phasm"
+import { h, render } from "tachys"
 
 function App() {
-  return h("h1", null, "Hello, Phasm!")
+  return h("h1", null, "Hello, Tachys!")
 }
 
 render(h(App, null), document.getElementById("app")!)

@@ -16,7 +16,7 @@
 
 import type { Behavior, Disposable, Scheduler } from "aeon-types"
 import { readBehavior } from "aeon-core"
-import { h, useEffect, useRef, type VNode } from "phasm"
+import { h, useEffect, useRef, type VNode } from "tachys"
 import { runEvent } from "./internal.js"
 import { createScheduler } from "./scheduler.js"
 
@@ -32,7 +32,7 @@ import { createScheduler } from "./scheduler.js"
  *
  * @example
  * ```tsx
- * import { Reactive } from "phasm-aeon"
+ * import { Reactive } from "tachys-aeon"
  *
  * function Timer({ elapsed }: { elapsed: Behavior<number> }) {
  *   return <div>Time: <Reactive value={elapsed} trigger={ticks} /></div>

@@ -70,9 +70,9 @@ function unmountElement(vnode: VNode, parentDom: Element): void {
     clearRef(props["ref"])
   }
 
-  // Clean up delegated event handlers -- skip if no __phasm (avoids function call for
+  // Clean up delegated event handlers -- skip if no __tachys (avoids function call for
   // elements that never had events, which is the common case for <td>, <a>, etc.)
-  if (dom !== null && (dom as Element).__phasm != null) {
+  if (dom !== null && (dom as Element).__tachys != null) {
     cleanupEvents(dom as Element)
   }
 
@@ -146,7 +146,7 @@ function clearVNodeTree(vnode: VNode): void {
   const flags = vnode.flags
 
   if ((flags & VNodeFlags.Element) !== 0) {
-    if (vnode.dom !== null && (vnode.dom as Element).__phasm != null) {
+    if (vnode.dom !== null && (vnode.dom as Element).__tachys != null) {
       cleanupEvents(vnode.dom as Element)
     }
     unmountChildren(vnode)

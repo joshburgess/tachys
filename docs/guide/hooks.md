@@ -1,13 +1,13 @@
 # Hooks
 
-Phasm implements all standard React hooks with the same API.
+Tachys implements all standard React hooks with the same API.
 
 ## useState
 
 Declare a state variable:
 
 ```tsx
-import { useState } from "phasm"
+import { useState } from "tachys"
 
 function Counter() {
   const [count, setCount] = useState(0)
@@ -32,7 +32,7 @@ setCount((prev) => prev + 1)
 For complex state logic, use a reducer:
 
 ```tsx
-import { useReducer } from "phasm"
+import { useReducer } from "tachys"
 
 type Action = { type: "increment" } | { type: "decrement" }
 
@@ -60,7 +60,7 @@ function Counter() {
 Run side effects after render:
 
 ```tsx
-import { useState, useEffect } from "phasm"
+import { useState, useEffect } from "tachys"
 
 function Timer() {
   const [seconds, setSeconds] = useState(0)
@@ -75,7 +75,7 @@ function Timer() {
 ```
 
 ::: info
-In Phasm, `useEffect` and `useLayoutEffect` are identical -- both run synchronously after the render commits to the DOM.
+In Tachys, `useEffect` and `useLayoutEffect` are identical -- both run synchronously after the render commits to the DOM.
 :::
 
 ## useMemo
@@ -83,7 +83,7 @@ In Phasm, `useEffect` and `useLayoutEffect` are identical -- both run synchronou
 Memoize expensive computations:
 
 ```tsx
-import { useMemo } from "phasm"
+import { useMemo } from "tachys"
 
 function FilteredList(props: { items: string[]; query: string }) {
   const filtered = useMemo(
@@ -100,7 +100,7 @@ function FilteredList(props: { items: string[]; query: string }) {
 Memoize a callback reference (shorthand for `useMemo(() => fn, deps)`):
 
 ```tsx
-import { useCallback } from "phasm"
+import { useCallback } from "tachys"
 
 function SearchBox(props: { onSearch: (q: string) => void }) {
   const handleInput = useCallback(
@@ -117,7 +117,7 @@ function SearchBox(props: { onSearch: (q: string) => void }) {
 Create a mutable ref that persists across renders:
 
 ```tsx
-import { useRef, useEffect } from "phasm"
+import { useRef, useEffect } from "tachys"
 
 function AutoFocus() {
   const inputRef = useRef<HTMLInputElement>(null)
@@ -135,7 +135,7 @@ function AutoFocus() {
 Generate a unique ID stable across server and client:
 
 ```tsx
-import { useId } from "phasm"
+import { useId } from "tachys"
 
 function LabeledInput(props: { label: string }) {
   const id = useId()
@@ -157,7 +157,7 @@ See the [Context guide](/guide/context).
 Customize the value exposed to parent refs:
 
 ```tsx
-import { forwardRef, useImperativeHandle, useRef } from "phasm"
+import { forwardRef, useImperativeHandle, useRef } from "tachys"
 
 const FancyInput = forwardRef(function FancyInput(props, ref) {
   const inputRef = useRef<HTMLInputElement>(null)
@@ -176,7 +176,7 @@ const FancyInput = forwardRef(function FancyInput(props, ref) {
 Subscribe to an external store with tearing prevention. Updates are scheduled at `Lane.Sync` priority:
 
 ```tsx
-import { useSyncExternalStore } from "phasm"
+import { useSyncExternalStore } from "tachys"
 
 function WindowWidth() {
   const width = useSyncExternalStore(
@@ -202,7 +202,7 @@ const width = useSyncExternalStore(subscribe, getSnapshot, () => 1024)
 Mark state updates as non-urgent. Updates inside `startTransition` are scheduled at `Lane.Transition` priority, so higher-priority updates (Sync, Default) process first:
 
 ```tsx
-import { useState, useTransition } from "phasm"
+import { useState, useTransition } from "tachys"
 
 function Search() {
   const [query, setQuery] = useState("")
@@ -237,14 +237,14 @@ If a higher-priority update (Sync or Default) arrives while a Transition is stil
 
 ### Suspense + Transition
 
-If a component throws a promise during a Transition render (for example, `use(somePromise)` or a `lazy()` load), Phasm does not commit the Suspense fallback. Instead, the scheduler suspends the Transition and retries when the promise resolves. Users do not see intermediate loading states for work that was already showing valid content.
+If a component throws a promise during a Transition render (for example, `use(somePromise)` or a `lazy()` load), Tachys does not commit the Suspense fallback. Instead, the scheduler suspends the Transition and retries when the promise resolves. Users do not see intermediate loading states for work that was already showing valid content.
 
 ## useDeferredValue
 
 Defer a value so urgent renders are not blocked:
 
 ```tsx
-import { useState, useDeferredValue } from "phasm"
+import { useState, useDeferredValue } from "tachys"
 
 function SearchResults(props: { query: string }) {
   const deferredQuery = useDeferredValue(props.query)
@@ -265,7 +265,7 @@ const deferredQuery = useDeferredValue(props.query, "")
 The `use()` hook reads Promises or Context values. Unlike other hooks, it can be called conditionally:
 
 ```tsx
-import { use, Suspense } from "phasm"
+import { use, Suspense } from "tachys"
 
 // With context (can be inside conditionals)
 function ThemedButton(props: { useTheme: boolean }) {

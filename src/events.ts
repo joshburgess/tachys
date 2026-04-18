@@ -5,7 +5,7 @@
  * When an event fires, walks from event.target up through the DOM tree,
  * checking each node for a stored handler.
  *
- * Handlers are stored on a single __phasm object on each DOM node (one stable
+ * Handlers are stored on a single __tachys object on each DOM node (one stable
  * hidden class shape) rather than per-event properties that would cause
  * hidden class transitions.
  *
@@ -15,14 +15,14 @@
 /**
  * Handler storage on DOM nodes. A single object with known event-name keys.
  */
-interface PhasmHandlers {
+interface TachysHandlers {
   [eventName: string]: EventListener | undefined
 }
 
 // Augment Element to include our handler storage
 declare global {
   interface Element {
-    __phasm?: PhasmHandlers
+    __tachys?: TachysHandlers
   }
 }
 
@@ -59,16 +59,16 @@ const NON_BUBBLING_EVENTS: ReadonlySet<string> = new Set<NonBubblingEvent>([
 ])
 
 /**
- * Pre-define __phasm on Node.prototype so all DOM nodes share the same
+ * Pre-define __tachys on Node.prototype so all DOM nodes share the same
  * hidden class shape for this property. Without this, the first write of
- * dom.__phasm = {...} causes a hidden class transition that makes subsequent
+ * dom.__tachys = {...} causes a hidden class transition that makes subsequent
  * reads polymorphic/megamorphic across element types.
  *
  * This is the same technique Inferno uses with $EV/$V on Node.prototype.
  */
 if (typeof Node !== "undefined") {
   // biome-ignore lint/suspicious/noExplicitAny: patching prototype for V8 optimization
-  ;(Node.prototype as any).__phasm = null
+  ;(Node.prototype as any).__tachys = null
 }
 
 /**
@@ -117,7 +117,7 @@ export function detachEvent(dom: Element, eventName: string, handler: EventListe
     dom.removeEventListener(eventName, handler)
   }
 
-  const handlers = dom.__phasm
+  const handlers = dom.__tachys
   if (handlers != null) {
     handlers[eventName] = undefined
   }
@@ -167,7 +167,7 @@ export function updateEvent(
  * @param dom - The DOM element to clean up
  */
 export function cleanupEvents(dom: Element): void {
-  const handlers = dom.__phasm
+  const handlers = dom.__tachys
   if (handlers == null) return
 
   // Remove direct listeners for non-bubbling events
@@ -184,16 +184,16 @@ export function cleanupEvents(dom: Element): void {
 // --- Internal helpers ---
 
 function storeHandler(dom: Element, eventName: string, handler: EventListener): void {
-  let handlers = dom.__phasm
+  let handlers = dom.__tachys
   if (handlers == null) {
     handlers = {}
-    dom.__phasm = handlers
+    dom.__tachys = handlers
   }
   handlers[eventName] = handler
 }
 
 function clearHandler(dom: Element, eventName: string): void {
-  const handlers = dom.__phasm
+  const handlers = dom.__tachys
   if (handlers != null) {
     handlers[eventName] = undefined
   }
@@ -218,7 +218,7 @@ function delegatedEventHandler(event: Event, eventName: string, rootContainer: E
   let target = event.target as Element | null
 
   while (target !== null && target !== rootContainer) {
-    const handlers = target.__phasm
+    const handlers = target.__tachys
     if (handlers != null) {
       const handler = handlers[eventName]
       if (handler !== undefined) {
@@ -234,7 +234,7 @@ function delegatedEventHandler(event: Event, eventName: string, rootContainer: E
 
   // Also check the root container itself
   if (target === rootContainer) {
-    const handlers = rootContainer.__phasm
+    const handlers = rootContainer.__tachys
     if (handlers != null) {
       const handler = handlers[eventName]
       if (handler !== undefined) {

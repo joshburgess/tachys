@@ -1,6 +1,6 @@
 # Events
 
-Phasm uses delegated event handling for performance.
+Tachys uses delegated event handling for performance.
 
 ## Event Handlers
 
@@ -21,7 +21,7 @@ function Button() {
 
 ## Event Delegation
 
-Events are automatically delegated to the root container element. Instead of attaching a listener to every DOM node, Phasm registers a single listener at the root and dispatches events by walking the target's ancestor chain. This reduces memory usage and speeds up mount/unmount.
+Events are automatically delegated to the root container element. Instead of attaching a listener to every DOM node, Tachys registers a single listener at the root and dispatches events by walking the target's ancestor chain. This reduces memory usage and speeds up mount/unmount.
 
 ## Supported Events
 

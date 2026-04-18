@@ -1,5 +1,5 @@
 /**
- * JSX dev runtime for Phasm.
+ * JSX dev runtime for Tachys.
  *
  * In development mode, bundlers like Vite resolve `jsx-dev-runtime` instead of
  * `jsx-runtime`. The dev transform calls `jsxDEV` for ALL elements (both single

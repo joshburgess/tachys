@@ -1,7 +1,7 @@
 /**
  * forwardRef wrapper for passing ref as a second argument.
  *
- * In Phasm, ref is already passed through props to components.
+ * In Tachys, ref is already passed through props to components.
  * forwardRef provides React API compatibility by splitting ref out
  * of props and passing it as a separate argument to the render function.
  */

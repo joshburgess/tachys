@@ -1,5 +1,5 @@
 /**
- * Internal utilities for phasm-aeon.
+ * Internal utilities for tachys-aeon.
  *
  * Bridges the Aeon type-level branding with runtime access.
  * At runtime, an Aeon Event IS its Source -- the brand is purely

@@ -384,7 +384,7 @@ describe("useLayoutEffect", () => {
   })
 
   it("useLayoutEffect is the same function reference as useEffect", () => {
-    // In Phasm, useLayoutEffect is literally defined as useEffect.
+    // In Tachys, useLayoutEffect is literally defined as useEffect.
     // This verifies the === identity guarantee.
     expect(useLayoutEffect).toBe(useEffect)
   })

@@ -8,7 +8,7 @@
 const devtoolsPorts = new Map()
 
 chrome.runtime.onConnect.addListener((port) => {
-  if (port.name === "phasm-devtools-panel") {
+  if (port.name === "tachys-devtools-panel") {
     const tabId = port.sender?.tab?.id ?? port.name
 
     port.onMessage.addListener((msg) => {
@@ -21,7 +21,7 @@ chrome.runtime.onConnect.addListener((port) => {
     })
   }
 
-  if (port.name === "phasm-devtools-content") {
+  if (port.name === "tachys-devtools-content") {
     const tabId = port.sender?.tab?.id
     if (!tabId) return
 

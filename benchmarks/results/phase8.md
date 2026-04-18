@@ -2,7 +2,7 @@
 
 Environment: jsdom (vitest bench), Node.js, macOS
 
-## Phasm
+## Tachys
 
 | Operation                          | hz      | mean (ms) | p75 (ms) | p99 (ms) |
 |------------------------------------|---------|-----------|----------|----------|
@@ -43,16 +43,16 @@ Environment: jsdom (vitest bench), Node.js, macOS
 
 ## Comparison Summary (Reconciliation Operations)
 
-Phasm vs Inferno on update/patch operations (the primary measure of VDOM performance):
+Tachys vs Inferno on update/patch operations (the primary measure of VDOM performance):
 
 | Operation                        | Winner   | Margin  |
 |----------------------------------|----------|---------|
-| replace all 1,000 rows           | Phasm    | 1.16x   |
+| replace all 1,000 rows           | Tachys    | 1.16x   |
 | update every 10th row            | Parity   | ~1.0x   |
 | swap rows                        | Parity   | ~1.0x   |
-| remove row                       | Phasm    | 1.45x   |
+| remove row                       | Tachys    | 1.45x   |
 | select row                       | Inferno  | 1.31x   |
-| append 1,000 rows                | Phasm    | 1.22x   |
+| append 1,000 rows                | Tachys    | 1.22x   |
 
 ## Bundle Size
 

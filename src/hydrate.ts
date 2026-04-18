@@ -1,5 +1,5 @@
 /**
- * Client-side hydration for Phasm.
+ * Client-side hydration for Tachys.
  *
  * hydrate(vnode, container) walks server-rendered DOM and attaches
  * event listeners, component instances, and refs without re-creating
@@ -16,7 +16,7 @@
  *     at Sync priority.
  *
  * Usage:
- *   import { hydrate } from "phasm/server"
+ *   import { hydrate } from "tachys/server"
  *   hydrate(h(App, null), document.getElementById("app")!)
  */
 

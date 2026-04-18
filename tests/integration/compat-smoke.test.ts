@@ -1,9 +1,9 @@
 /**
- * Smoke tests for the Phasm React compatibility layer.
+ * Smoke tests for the Tachys React compatibility layer.
  *
  * Simulates how a third-party React component library would consume the compat
  * API when bundled with an alias like:
- *   { "react": "phasm/compat", "react-dom": "phasm/compat" }
+ *   { "react": "tachys/compat", "react-dom": "tachys/compat" }
  *
  * Each suite mounts into a real jsdom container and verifies the rendered HTML.
  */
@@ -97,7 +97,7 @@ describe("createElement (React alias)", () => {
 // ---------------------------------------------------------------------------
 
 describe("Fragment", () => {
-  it("is the null sentinel used by Phasm for fragments", () => {
+  it("is the null sentinel used by Tachys for fragments", () => {
     expect(Fragment).toBe(null)
   })
 

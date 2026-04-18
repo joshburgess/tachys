@@ -64,7 +64,7 @@ describe("warn", () => {
   it("emits a prefixed console warning", () => {
     const spy = vi.spyOn(console, "warn").mockImplementation(() => {})
     warn("test message")
-    expect(spy).toHaveBeenCalledWith("[Phasm] test message")
+    expect(spy).toHaveBeenCalledWith("[Tachys] test message")
     spy.mockRestore()
   })
 
@@ -86,7 +86,7 @@ describe("warnOnce", () => {
   it("emits a prefixed console warning", () => {
     const spy = vi.spyOn(console, "warn").mockImplementation(() => {})
     warnOnce("unique message")
-    expect(spy).toHaveBeenCalledWith("[Phasm] unique message")
+    expect(spy).toHaveBeenCalledWith("[Tachys] unique message")
     spy.mockRestore()
   })
 

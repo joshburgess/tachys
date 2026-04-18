@@ -1,6 +1,6 @@
 # JSX Setup
 
-Phasm supports both the **automatic** JSX transform (recommended) and the **classic** pragma style.
+Tachys supports both the **automatic** JSX transform (recommended) and the **classic** pragma style.
 
 ## Automatic Transform (Recommended)
 
@@ -12,7 +12,7 @@ import { defineConfig } from "vite"
 
 export default defineConfig({
   esbuild: {
-    jsxImportSource: "phasm",
+    jsxImportSource: "tachys",
   },
 })
 ```
@@ -24,7 +24,7 @@ export default defineConfig({
 {
   "compilerOptions": {
     "jsx": "react-jsx",
-    "jsxImportSource": "phasm"
+    "jsxImportSource": "tachys"
   }
 }
 ```
@@ -37,7 +37,7 @@ export default defineConfig({
     "transform": {
       "react": {
         "runtime": "automatic",
-        "importSource": "phasm"
+        "importSource": "tachys"
       }
     }
   }
@@ -62,7 +62,7 @@ If you prefer the classic transform:
 Then import `h` in every file that uses JSX:
 
 ```tsx
-import { h } from "phasm"
+import { h } from "tachys"
 
 function App() {
   return <div>Hello</div>

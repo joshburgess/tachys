@@ -19,7 +19,7 @@ const hAny = h as (
 ) => VNode
 
 /**
- * Check whether a value is a valid Phasm element (VNode).
+ * Check whether a value is a valid Tachys element (VNode).
  */
 export function isValidElement(value: unknown): value is VNode {
   return value !== null && typeof value === "object" && "flags" in value && "dom" in value

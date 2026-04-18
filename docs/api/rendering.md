@@ -9,7 +9,7 @@ function render(vnode: VNode | null, container: Element): void
 Render a VNode tree into a DOM container. On first call, mounts the tree. On subsequent calls, diffs against the previous tree and applies minimal DOM mutations. Pass `null` to unmount.
 
 ```ts
-import { render, h } from "phasm"
+import { render, h } from "tachys"
 
 render(h("div", null, "Hello"), document.getElementById("app")!)
 
@@ -34,7 +34,7 @@ function createRoot(container: Element): Root
 Creates a concurrent root for the given DOM container and returns a `Root` object. This is the React 18+ root API. Call `root.render()` to mount or update the tree, and `root.unmount()` to tear it down.
 
 ```ts
-import { createRoot, h } from "phasm"
+import { createRoot, h } from "tachys"
 
 const root = createRoot(document.getElementById("app")!)
 root.render(h("div", null, "Hello"))
@@ -55,7 +55,7 @@ function hydrateRoot(container: Element, initialChildren: VNode): Root
 Hydrates server-rendered HTML in `container` using `initialChildren` as the expected VNode tree, then returns a `Root` for subsequent updates. Reuses existing DOM nodes where possible instead of replacing them.
 
 ```ts
-import { hydrateRoot, h } from "phasm"
+import { hydrateRoot, h } from "tachys"
 
 const root = hydrateRoot(document.getElementById("app")!, h(App, null))
 root.render(h(App, null))
@@ -140,7 +140,7 @@ Priority lanes for the scheduler:
 
 Transition-lane renders run in two phases. The render phase walks the VNode tree and collects DOM mutations into a typed effect queue instead of mutating the DOM directly. The commit phase flushes the queue atomically after the render completes.
 
-The effect queue lets Phasm:
+The effect queue lets Tachys:
 
 - Abandon an in-progress Transition when a higher-priority update arrives (discarding the queue costs nothing, no DOM rollback needed). Hook state and ref callbacks from the abandoned render are also rolled back.
 - Suspend cleanly when a component throws a promise during a Transition. The scheduler retries when the promise resolves instead of committing a Suspense fallback.
@@ -181,12 +181,12 @@ async function act(callback: () => void | Promise<void>): Promise<void>
 Testing utility that wraps a callback triggering state updates and synchronously flushes all pending work, including microtasks and async effects. Compatible with React Testing Library's `act()` usage.
 
 ::: info
-`act` is imported from `phasm/compat`, not the core `phasm` package.
+`act` is imported from `tachys/compat`, not the core `tachys` package.
 :::
 
 ```ts
-import { act } from "phasm/compat"
-import { render, h } from "phasm"
+import { act } from "tachys/compat"
+import { render, h } from "tachys"
 
 await act(async () => {
   render(h(MyComponent, null), container)

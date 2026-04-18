@@ -86,7 +86,7 @@ Initial release.
 - `createRoot()` / `hydrateRoot()` (React 18 root API)
 - `act()` testing utility (flushes sync and async updates)
 
-**Server-Side Rendering (`phasm/server`)**
+**Server-Side Rendering (`tachys/server`)**
 
 - `renderToString` for synchronous HTML string rendering
 - `renderToStringAsync` for Suspense-aware async rendering
@@ -95,7 +95,7 @@ Initial release.
 - Selective hydration with event-driven prioritization
 - Full hook support during SSR (effects are no-ops)
 
-**React Compatibility (`phasm/compat`)**
+**React Compatibility (`tachys/compat`)**
 
 - Drop-in alias for `react`, `react-dom`, and `react-dom/client` in bundler config
 - `createElement`, `Fragment`, `Children`, `cloneElement`, `isValidElement`

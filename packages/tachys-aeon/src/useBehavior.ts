@@ -14,7 +14,7 @@
 
 import type { Behavior, Event, Scheduler } from "aeon-types"
 import { readBehavior } from "aeon-core"
-import { useEffect, useReducer, useRef } from "phasm"
+import { useEffect, useReducer, useRef } from "tachys"
 import { runEvent } from "./internal.js"
 import { createScheduler } from "./scheduler.js"
 

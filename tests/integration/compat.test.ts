@@ -75,7 +75,7 @@ describe("createElement", () => {
 // ---------------------------------------------------------------------------
 
 describe("Fragment", () => {
-  it("is null (Phasm fragment sentinel)", () => {
+  it("is null (Tachys fragment sentinel)", () => {
     expect(Fragment).toBe(null)
   })
 })

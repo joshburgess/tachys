@@ -1,5 +1,5 @@
 /**
- * Phasm — A high-performance virtual DOM library.
+ * Tachys — A high-performance virtual DOM library.
  *
  * Public API exports.
  */
@@ -27,7 +27,7 @@ export {
 export type { EffectCleanup } from "./component"
 export { createContext, useContext } from "./context"
 export { __DEV__, getComponentName } from "./dev"
-export type { PhasmDevToolsHook, SerializedNode } from "./devtools-hook"
+export type { TachysDevToolsHook, SerializedNode } from "./devtools-hook"
 export type { Context } from "./context"
 export { forwardRef } from "./forward-ref"
 export { memo } from "./memo"

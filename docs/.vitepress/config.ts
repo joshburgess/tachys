@@ -1,15 +1,15 @@
 import { defineConfig } from "vitepress"
 
 export default defineConfig({
-  title: "Phasm",
+  title: "Tachys",
   description: "A high-performance virtual DOM library optimized for V8",
-  base: "/phasm/",
-  head: [["link", { rel: "icon", type: "image/svg+xml", href: "/phasm/logo.svg" }]],
+  base: "/tachys/",
+  head: [["link", { rel: "icon", type: "image/svg+xml", href: "/tachys/logo.svg" }]],
   themeConfig: {
     nav: [
       { text: "Guide", link: "/guide/getting-started" },
       { text: "API", link: "/api/rendering" },
-      { text: "GitHub", link: "https://github.com/joshburgess/phasm" },
+      { text: "GitHub", link: "https://github.com/joshburgess/tachys" },
     ],
     sidebar: {
       "/guide/": [
@@ -52,7 +52,7 @@ export default defineConfig({
         },
       ],
     },
-    socialLinks: [{ icon: "github", link: "https://github.com/joshburgess/phasm" }],
+    socialLinks: [{ icon: "github", link: "https://github.com/joshburgess/tachys" }],
     search: {
       provider: "local",
     },

@@ -90,7 +90,7 @@ Suspense works with:
 function createPortal(children: VNode, container: Element): VNode
 ```
 
-Renders children into a DOM node outside the component's parent hierarchy. Events still bubble through the Phasm tree (not the DOM tree).
+Renders children into a DOM node outside the component's parent hierarchy. Events still bubble through the Tachys tree (not the DOM tree).
 
 ## createRef
 
@@ -108,7 +108,7 @@ Creates a `{ current: null }` ref object. Prefer `useRef` inside components.
 </StrictMode>
 ```
 
-No-op passthrough in Phasm. In React, `StrictMode` double-invokes render functions and enables additional development warnings. Exported so that `<StrictMode>` usage in third-party code does not break when aliased to `phasm/compat`.
+No-op passthrough in Tachys. In React, `StrictMode` double-invokes render functions and enables additional development warnings. Exported so that `<StrictMode>` usage in third-party code does not break when aliased to `tachys/compat`.
 
 ## Profiler
 
@@ -122,4 +122,4 @@ No-op passthrough in Phasm. In React, `StrictMode` double-invokes render functio
 - `id` - Identifies the part of the tree being profiled
 - `onRender` - Callback invoked after the profiled subtree commits
 
-No-op passthrough in Phasm. In React, `Profiler` measures rendering performance and calls `onRender` with timing data. Exported so that `<Profiler>` usage in third-party code does not break when aliased to `phasm/compat`.
+No-op passthrough in Tachys. In React, `Profiler` measures rendering performance and calls `onRender` with timing data. Exported so that `<Profiler>` usage in third-party code does not break when aliased to `tachys/compat`.

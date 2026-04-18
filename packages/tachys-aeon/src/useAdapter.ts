@@ -12,7 +12,7 @@
 
 import type { Event } from "aeon-types"
 import { createAdapter } from "aeon-core"
-import { useMemo } from "phasm"
+import { useMemo } from "tachys"
 
 /**
  * Create a stable push/event adapter pair.

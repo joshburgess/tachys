@@ -1,7 +1,7 @@
 {
-  "name": "phasm-aeon",
+  "name": "tachys-aeon",
   "version": "0.0.1",
-  "description": "Aeon FRP integration for Phasm - reactive Behaviors and Events as first-class UI primitives",
+  "description": "Aeon FRP integration for Tachys - reactive Behaviors and Events as first-class UI primitives",
   "license": "MIT",
   "author": "Josh Burgess",
   "type": "module",
@@ -31,13 +31,13 @@
     "test:watch": "vitest"
   },
   "peerDependencies": {
-    "phasm": ">=0.0.1",
+    "tachys": ">=0.0.1",
     "aeon-core": ">=0.0.1",
     "aeon-types": ">=0.0.1",
     "aeon-scheduler": ">=0.0.1"
   },
   "devDependencies": {
-    "phasm": "workspace:*",
+    "tachys": "workspace:*",
     "aeon-core": "latest",
     "aeon-types": "latest",
     "aeon-scheduler": "latest",

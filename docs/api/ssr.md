@@ -1,6 +1,6 @@
 # SSR API
 
-Import from `phasm/server`.
+Import from `tachys/server`.
 
 ## renderToString
 

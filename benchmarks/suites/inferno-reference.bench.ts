@@ -1,7 +1,7 @@
 /**
  * Inferno.js reference benchmarks.
  *
- * These establish the primary comparison target. Phasm aims to match
+ * These establish the primary comparison target. Tachys aims to match
  * or exceed these numbers on all operations.
  */
 import { render } from "inferno"

@@ -5,7 +5,7 @@ Context lets you pass data through the component tree without prop drilling.
 ## Creating a Context
 
 ```tsx
-import { createContext } from "phasm"
+import { createContext } from "tachys"
 
 interface Theme {
   primary: string
@@ -39,7 +39,7 @@ function App() {
 Use `useContext` to read the current value:
 
 ```tsx
-import { useContext } from "phasm"
+import { useContext } from "tachys"
 
 function ThemedButton() {
   const theme = useContext(ThemeContext)
@@ -55,7 +55,7 @@ function ThemedButton() {
 Or use the `use()` hook:
 
 ```tsx
-import { use } from "phasm"
+import { use } from "tachys"
 
 function ThemedButton() {
   const theme = use(ThemeContext)

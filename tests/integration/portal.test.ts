@@ -156,10 +156,10 @@ describe("createPortal", () => {
     expect(portalTarget.querySelector("h1")!.textContent).toBe("Hello, World!")
     expect(parent.querySelector("h1")).toBeNull()
 
-    setter!("Phasm")
+    setter!("Tachys")
     flushUpdates()
 
-    expect(portalTarget.querySelector("h1")!.textContent).toBe("Hello, Phasm!")
+    expect(portalTarget.querySelector("h1")!.textContent).toBe("Hello, Tachys!")
     expect(parent.querySelector("h1")).toBeNull()
   })
 

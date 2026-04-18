@@ -1,11 +1,11 @@
 # Server-Side Rendering
 
-Phasm supports SSR with `renderToString`, async rendering with `renderToStringAsync`, streaming with `renderToReadableStream`, and Suspense-aware client-side hydration.
+Tachys supports SSR with `renderToString`, async rendering with `renderToStringAsync`, streaming with `renderToReadableStream`, and Suspense-aware client-side hydration.
 
-All SSR functions are imported from `phasm/server`:
+All SSR functions are imported from `tachys/server`:
 
 ```ts
-import { renderToString, renderToStringAsync, renderToReadableStream, hydrate } from "phasm/server"
+import { renderToString, renderToStringAsync, renderToReadableStream, hydrate } from "tachys/server"
 ```
 
 ## renderToString
@@ -13,8 +13,8 @@ import { renderToString, renderToStringAsync, renderToReadableStream, hydrate } 
 Synchronous render to an HTML string:
 
 ```ts
-import { renderToString } from "phasm/server"
-import { h } from "phasm"
+import { renderToString } from "tachys/server"
+import { h } from "tachys"
 
 const html = renderToString(h(App, null))
 ```
@@ -26,8 +26,8 @@ Hooks work during SSR (effects are no-ops). `useId` generates deterministic IDs.
 Async render that waits for all Suspense boundaries to resolve before returning. Use this when you need the complete page content including lazy-loaded components:
 
 ```ts
-import { renderToStringAsync } from "phasm/server"
-import { h } from "phasm"
+import { renderToStringAsync } from "tachys/server"
+import { h } from "tachys"
 
 const html = await renderToStringAsync(h(App, null))
 ```
@@ -37,8 +37,8 @@ const html = await renderToStringAsync(h(App, null))
 Streaming SSR for fast time-to-first-byte. Compatible with Node 18+, Deno, Bun, and Cloudflare Workers:
 
 ```ts
-import { renderToReadableStream } from "phasm/server"
-import { h } from "phasm"
+import { renderToReadableStream } from "tachys/server"
+import { h } from "tachys"
 
 export default {
   fetch() {
@@ -66,8 +66,8 @@ This means users see the page shell immediately while async content loads in the
 On the client, use `hydrate` instead of `render` to attach to server-rendered HTML:
 
 ```ts
-import { hydrate } from "phasm/server"
-import { h } from "phasm"
+import { hydrate } from "tachys/server"
+import { h } from "tachys"
 
 hydrate(h(App, null), document.getElementById("app")!)
 ```
@@ -85,11 +85,11 @@ Hydration handles Suspense boundaries in several scenarios:
 
 ### Selective hydration
 
-Phasm prioritizes hydrating Suspense boundaries that the user interacts with. When a user clicks, types, or focuses inside a pending Suspense boundary, that boundary is hydrated ahead of others. This provides faster time-to-interactive for the parts of the page the user cares about.
+Tachys prioritizes hydrating Suspense boundaries that the user interacts with. When a user clicks, types, or focuses inside a pending Suspense boundary, that boundary is hydrated ahead of others. This provides faster time-to-interactive for the parts of the page the user cares about.
 
 ### Streaming artifact cleanup
 
-During hydration, Phasm automatically removes streaming SSR artifacts:
+During hydration, Tachys automatically removes streaming SSR artifacts:
 - Inline `<script>` elements (the swap function and its invocations)
 - `<div hidden id="phr:N">` containers for resolved content
 - `<!--$ph:N-->` comment nodes used as boundary markers
@@ -100,8 +100,8 @@ During hydration, Phasm automatically removes streaming SSR artifacts:
 
 **server.ts**
 ```ts
-import { renderToString } from "phasm/server"
-import { h } from "phasm"
+import { renderToString } from "tachys/server"
+import { h } from "tachys"
 import { App } from "./App"
 
 const appHtml = renderToString(h(App, null))
@@ -118,8 +118,8 @@ const html = `<!DOCTYPE html>
 
 **client.ts**
 ```ts
-import { hydrate } from "phasm/server"
-import { h } from "phasm"
+import { hydrate } from "tachys/server"
+import { h } from "tachys"
 import { App } from "./App"
 
 hydrate(h(App, null), document.getElementById("app")!)
@@ -129,7 +129,7 @@ hydrate(h(App, null), document.getElementById("app")!)
 
 **App.tsx**
 ```tsx
-import { h, Suspense, lazy } from "phasm"
+import { h, Suspense, lazy } from "tachys"
 
 const HeavyContent = lazy(() => import("./HeavyContent"))
 
@@ -145,8 +145,8 @@ function App() {
 
 **server.ts**
 ```ts
-import { renderToReadableStream } from "phasm/server"
-import { h } from "phasm"
+import { renderToReadableStream } from "tachys/server"
+import { h } from "tachys"
 import { App } from "./App"
 
 export default {

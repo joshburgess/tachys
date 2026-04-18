@@ -1,8 +1,8 @@
 /**
  * DevTools integration hook.
  *
- * Installs a global `__PHASM_DEVTOOLS_HOOK__` object on the window that the
- * Phasm DevTools Chrome extension reads from. The hook provides methods
+ * Installs a global `__TACHYS_DEVTOOLS_HOOK__` object on the window that the
+ * Tachys DevTools Chrome extension reads from. The hook provides methods
  * to walk the VNode tree, inspect component instances, and subscribe to
  * render events.
  *
@@ -45,7 +45,7 @@ interface SerializedEffect {
 
 type RenderListener = (rootContainer: Element, serializedTree: SerializedNode) => void
 
-export interface PhasmDevToolsHook {
+export interface TachysDevToolsHook {
   /** Library version */
   version: string
   /** All tracked root containers */
@@ -202,7 +202,7 @@ let highlightOverlay: HTMLDivElement | null = null
 function highlight(domNode: Element | null): void {
   if (!highlightOverlay) {
     highlightOverlay = document.createElement("div")
-    highlightOverlay.id = "__phasm-devtools-highlight"
+    highlightOverlay.id = "__tachys-devtools-highlight"
     highlightOverlay.style.cssText =
       "position:fixed;pointer-events:none;z-index:2147483647;border:2px solid #61dafb;background:rgba(97,218,251,0.15);transition:all 0.1s ease;"
   }
@@ -226,7 +226,7 @@ function highlight(domNode: Element | null): void {
 // --- Events inspection ---
 
 function getEvents(domNode: Element): Record<string, boolean> {
-  const handlers = (domNode as unknown as { __phasm?: Record<string, unknown> }).__phasm
+  const handlers = (domNode as unknown as { __tachys?: Record<string, unknown> }).__tachys
   if (!handlers) return {}
   const result: Record<string, boolean> = {}
   for (const key of Object.keys(handlers)) {
@@ -278,7 +278,7 @@ function onRender(listener: RenderListener): () => void {
 export function installDevToolsHook(): void {
   if (typeof window === "undefined") return
 
-  const hook: PhasmDevToolsHook = {
+  const hook: TachysDevToolsHook = {
     version: "0.0.1",
     roots: trackedRoots,
     onRender,
@@ -287,11 +287,11 @@ export function installDevToolsHook(): void {
     getEvents,
   }
 
-  ;(window as unknown as { __PHASM_DEVTOOLS_HOOK__: PhasmDevToolsHook }).__PHASM_DEVTOOLS_HOOK__ =
+  ;(window as unknown as { __TACHYS_DEVTOOLS_HOOK__: TachysDevToolsHook }).__TACHYS_DEVTOOLS_HOOK__ =
     hook
 
   // Dispatch event to notify extension that the hook is ready
-  window.dispatchEvent(new CustomEvent("__PHASM_DEVTOOLS_HOOK_READY__"))
+  window.dispatchEvent(new CustomEvent("__TACHYS_DEVTOOLS_HOOK_READY__"))
 }
 
 if (__DEV__) {

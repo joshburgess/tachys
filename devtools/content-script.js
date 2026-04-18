@@ -1,14 +1,14 @@
 /**
  * Content script - bridge between the page and the DevTools extension.
  *
- * Injects a small script into the page that listens for the Phasm
+ * Injects a small script into the page that listens for the Tachys
  * devtools hook and relays tree data back through window.postMessage.
  */
 
 // Listen for messages from the injected page script
 window.addEventListener("message", (event) => {
   if (event.source !== window) return
-  if (!event.data || event.data.source !== "phasm-devtools-page") return
+  if (!event.data || event.data.source !== "tachys-devtools-page") return
 
   // Forward to background
   try {
@@ -20,7 +20,7 @@ window.addEventListener("message", (event) => {
 
 // Listen for messages from the DevTools panel (via background)
 chrome.runtime.onMessage.addListener((msg) => {
-  if (msg.source === "phasm-devtools-panel") {
+  if (msg.source === "tachys-devtools-panel") {
     window.postMessage(msg, "*")
   }
 })
@@ -36,12 +36,12 @@ function pageScript() {
   let unsubscribe = null
 
   function connect() {
-    hook = window.__PHASM_DEVTOOLS_HOOK__
+    hook = window.__TACHYS_DEVTOOLS_HOOK__
     if (!hook) return false
 
-    // Notify extension that Phasm is detected
+    // Notify extension that Tachys is detected
     window.postMessage(
-      { source: "phasm-devtools-page", type: "phasm-detected", version: hook.version },
+      { source: "tachys-devtools-page", type: "tachys-detected", version: hook.version },
       "*",
     )
 
@@ -49,8 +49,8 @@ function pageScript() {
     unsubscribe = hook.onRender((container, tree) => {
       window.postMessage(
         {
-          source: "phasm-devtools-page",
-          type: "phasm-render",
+          source: "tachys-devtools-page",
+          type: "tachys-render",
           containerId: container.id || container.tagName,
           tree,
         },
@@ -64,13 +64,13 @@ function pageScript() {
   // Try immediately
   if (!connect()) {
     // Wait for the hook to become available
-    window.addEventListener("__PHASM_DEVTOOLS_HOOK_READY__", () => connect(), { once: true })
+    window.addEventListener("__TACHYS_DEVTOOLS_HOOK_READY__", () => connect(), { once: true })
   }
 
   // Handle commands from the DevTools panel
   window.addEventListener("message", (event) => {
     if (event.source !== window) return
-    if (!event.data || event.data.source !== "phasm-devtools-panel") return
+    if (!event.data || event.data.source !== "tachys-devtools-panel") return
 
     if (!hook) return
 
@@ -80,8 +80,8 @@ function pageScript() {
         if (tree) {
           window.postMessage(
             {
-              source: "phasm-devtools-page",
-              type: "phasm-render",
+              source: "tachys-devtools-page",
+              type: "tachys-render",
               containerId: root.id || root.tagName,
               tree,
             },
@@ -106,7 +106,7 @@ function pageScript() {
         if (el) {
           const events = hook.getEvents(el)
           window.postMessage(
-            { source: "phasm-devtools-page", type: "phasm-events", events },
+            { source: "tachys-devtools-page", type: "tachys-events", events },
             "*",
           )
         }

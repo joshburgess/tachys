@@ -1,5 +1,5 @@
 {
-  "name": "todomvc-phasm",
+  "name": "todomvc-tachys",
   "private": true,
   "type": "module",
   "scripts": {
@@ -8,7 +8,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "phasm": "link:../../"
+    "tachys": "link:../../"
   },
   "devDependencies": {
     "vite": "^6.0.0",

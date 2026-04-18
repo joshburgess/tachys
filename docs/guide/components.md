@@ -1,6 +1,6 @@
 # Components
 
-Phasm uses functional components exclusively. There are no class components.
+Tachys uses functional components exclusively. There are no class components.
 
 ## Basic Component
 
@@ -20,7 +20,7 @@ function Greeting(props: { name: string }) {
 Components receive children through the `children` prop:
 
 ```tsx
-import type { VNode } from "phasm"
+import type { VNode } from "tachys"
 
 function Card(props: { title: string; children?: VNode }) {
   return (
@@ -41,7 +41,7 @@ function Card(props: { title: string; children?: VNode }) {
 Wrap a component with `memo` to skip re-renders when props haven't changed:
 
 ```tsx
-import { memo } from "phasm"
+import { memo } from "tachys"
 
 const ExpensiveList = memo(function ExpensiveList(props: { items: string[] }) {
   return (
@@ -68,7 +68,7 @@ const Item = memo(
 Use `forwardRef` to pass a ref through to a child DOM element:
 
 ```tsx
-import { forwardRef } from "phasm"
+import { forwardRef } from "tachys"
 
 const FancyInput = forwardRef(function FancyInput(
   props: { placeholder?: string },
@@ -83,7 +83,7 @@ const FancyInput = forwardRef(function FancyInput(
 Catch rendering errors with `ErrorBoundary`. The `fallback` prop is a function that receives the error and a `reset` function:
 
 ```tsx
-import { ErrorBoundary } from "phasm"
+import { ErrorBoundary } from "tachys"
 
 <ErrorBoundary
   fallback={(error, reset) => (
@@ -102,7 +102,7 @@ import { ErrorBoundary } from "phasm"
 Load components dynamically with `lazy` and `Suspense`:
 
 ```tsx
-import { lazy, Suspense } from "phasm"
+import { lazy, Suspense } from "tachys"
 
 const HeavyChart = lazy(() => import("./HeavyChart"))
 
@@ -120,7 +120,7 @@ function Dashboard() {
 Place an `ErrorBoundary` inside a `Suspense` boundary to catch errors from lazy-loaded components or rejected promises from `use()`:
 
 ```tsx
-import { lazy, Suspense, ErrorBoundary } from "phasm"
+import { lazy, Suspense, ErrorBoundary } from "tachys"
 
 const HeavyChart = lazy(() => import("./HeavyChart"))
 
@@ -146,7 +146,7 @@ The `ErrorBoundary` must be *inside* the `Suspense` boundary, not wrapping it. T
 Render children into a different DOM node:
 
 ```tsx
-import { createPortal } from "phasm"
+import { createPortal } from "tachys"
 
 function Modal(props: { children?: VNode }) {
   return createPortal(

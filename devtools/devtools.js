@@ -1,21 +1,21 @@
 /**
  * DevTools page script.
  *
- * Creates the "Phasm" panel in Chrome DevTools.
+ * Creates the "Tachys" panel in Chrome DevTools.
  * This runs when the DevTools are opened for a page.
  */
 
-// Check if the page has Phasm before creating the panel
+// Check if the page has Tachys before creating the panel
 chrome.devtools.inspectedWindow.eval(
-  "!!(window.__PHASM_DEVTOOLS_HOOK__)",
-  (hasPhasm) => {
-    if (hasPhasm) {
+  "!!(window.__TACHYS_DEVTOOLS_HOOK__)",
+  (hasTachys) => {
+    if (hasTachys) {
       createPanel()
     } else {
       // Listen for it to appear (the page may not have loaded yet)
       const check = setInterval(() => {
         chrome.devtools.inspectedWindow.eval(
-          "!!(window.__PHASM_DEVTOOLS_HOOK__)",
+          "!!(window.__TACHYS_DEVTOOLS_HOOK__)",
           (found) => {
             if (found) {
               clearInterval(check)
@@ -32,5 +32,5 @@ chrome.devtools.inspectedWindow.eval(
 )
 
 function createPanel() {
-  chrome.devtools.panels.create("Phasm", "", "panel.html")
+  chrome.devtools.panels.create("Tachys", "", "panel.html")
 }

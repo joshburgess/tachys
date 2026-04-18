@@ -1,7 +1,7 @@
 ---
 layout: home
 hero:
-  name: Phasm
+  name: Tachys
   text: High-Performance Virtual DOM
   tagline: A lightweight virtual DOM library optimized for V8, with a React-compatible API.
   actions:

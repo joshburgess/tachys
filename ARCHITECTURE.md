@@ -1,10 +1,10 @@
-# Phasm Architecture
+# Tachys Architecture
 
 Reference for the current implementation. Describes the major subsystems and the invariants they rely on.
 
 ## Design goals
 
-1. **Match or exceed Inferno on reconciliation speed.** Inferno is the fastest VDOM library on `js-framework-benchmark`. Phasm targets the same operations.
+1. **Match or exceed Inferno on reconciliation speed.** Inferno is the fastest VDOM library on `js-framework-benchmark`. Tachys targets the same operations.
 2. **Stay monomorphic.** Every hot-path function receives the same object shape at every call site so V8 can install inline caches and inline the callee.
 3. **Ship a React-compatible API.** Hooks, Suspense, lazy, Error boundaries, concurrent rendering, SSR, hydration.
 4. **Bundle small.** ~36KB min / ~10.6KB gzip for the core runtime. Zero dependencies.
@@ -35,7 +35,7 @@ src/
   portal.ts           createPortal()
   error-boundary.ts   ErrorBoundary
   suspense.ts         Suspense + lazy
-  hydrate.ts          Client hydration (used by phasm/server)
+  hydrate.ts          Client hydration (used by tachys/server)
   server.ts           SSR entry (renderToString + streaming)
   compat.ts           React API surface
   reconcile-bridge.ts Cycle-breaking bridge for mount/unmount/patch
@@ -134,7 +134,7 @@ Pairwise patch by index. Mount excess or unmount excess. Separate code path so t
 
 ## Event delegation
 
-One root-level listener per event type. Handlers are stored directly on DOM nodes under fixed-name properties (`__phasm_click`, etc.). On dispatch, the event walks up `target.parentNode` and invokes the first handler it finds.
+One root-level listener per event type. Handlers are stored directly on DOM nodes under fixed-name properties (`__tachys_click`, etc.). On dispatch, the event walks up `target.parentNode` and invokes the first handler it finds.
 
 Fixed property names avoid dynamic key lookups (which go megamorphic). Non-bubbling events (`focus`, `blur`, media events) bypass delegation and use direct `addEventListener`.
 
@@ -196,7 +196,7 @@ Writes happen once per scheduler transition, reads happen per VNode. The asymmet
 All hooks follow React calling conventions (fixed order, top-level only). State is stored on the component instance's hook list, indexed by call order.
 
 - `useState`, `useReducer` — value + pending updates list. Setters queue updates to the component's current lane and call `scheduleComponent`.
-- `useEffect`, `useLayoutEffect`, `useInsertionEffect` — identical in Phasm. Fire after commit, cleanup runs on re-run or unmount.
+- `useEffect`, `useLayoutEffect`, `useInsertionEffect` — identical in Tachys. Fire after commit, cleanup runs on re-run or unmount.
 - `useMemo`, `useCallback` — cached by shallow dep comparison.
 - `useRef` — stable mutable box.
 - `useContext` — reads from the render-time Provider stack.
@@ -224,7 +224,7 @@ The pattern "ErrorBoundary inside Suspense" works. "ErrorBoundary wrapping Suspe
 
 Under a Transition, throwing a promise does not mount the fallback. The scheduler suspends the Transition and resumes when the promise resolves.
 
-## SSR (`phasm/server`)
+## SSR (`tachys/server`)
 
 - `renderToString` — synchronous HTML string. Suspense renders its fallback.
 - `renderToStringAsync` — awaits all Suspense boundaries. Full content.
@@ -241,9 +241,9 @@ Hooks during SSR:
 - `useId` generates deterministic IDs.
 - `useEffect` / `useLayoutEffect` are no-ops.
 
-## Compat layer (`phasm/compat`)
+## Compat layer (`tachys/compat`)
 
-Bundler aliases `react` / `react-dom` / `react-dom/client` to Phasm equivalents. `createElement` → `h`, `Fragment` → `null`, `flushSync` → `flushUpdates`, hooks / memo / forwardRef / Suspense / createPortal are direct re-exports. `Component` / `PureComponent` exist as stubs for `instanceof` checks only.
+Bundler aliases `react` / `react-dom` / `react-dom/client` to Tachys equivalents. `createElement` → `h`, `Fragment` → `null`, `flushSync` → `flushUpdates`, hooks / memo / forwardRef / Suspense / createPortal are direct re-exports. `Component` / `PureComponent` exist as stubs for `instanceof` checks only.
 
 React 19 additions: `useOptimistic` (lane-aware — passthrough during Transition renders), `useActionState` (async resolution wraps updates in `startTransition`), `useFormStatus`.
 

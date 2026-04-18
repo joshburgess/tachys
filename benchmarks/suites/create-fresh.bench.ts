@@ -1,7 +1,7 @@
 /**
  * Fresh-creation benchmarks — force real DOM creation every iteration.
  *
- * The standard create benches in phasm.bench.ts and inferno-reference.bench.ts
+ * The standard create benches in tachys.bench.ts and inferno-reference.bench.ts
  * reuse the same container across iterations, so after the warmup pass the
  * render() call only diffs against an identical existing tree (a no-op). That
  * measures the diff fast-path, not DOM creation.
@@ -41,9 +41,9 @@ function buildRowData(count: number): RowData[] {
   return data
 }
 
-// --- Phasm tree factory ---
+// --- Tachys tree factory ---
 
-function PhasmRow(id: number, label: string, key: number): VNode {
+function TachysRow(id: number, label: string, key: number): VNode {
   return h(
     "tr",
     { key },
@@ -53,11 +53,11 @@ function PhasmRow(id: number, label: string, key: number): VNode {
   )
 }
 
-function PhasmTable(data: RowData[]): VNode {
+function TachysTable(data: RowData[]): VNode {
   return h(
     "table",
     { className: "table table-hover" },
-    h("tbody", null, ...data.map((row) => PhasmRow(row.id, row.label, row.id))),
+    h("tbody", null, ...data.map((row) => TachysRow(row.id, row.label, row.id))),
   )
 }
 
@@ -92,9 +92,9 @@ function InfernoTable({ data }: { data: RowData[] }) {
 describe("Fresh DOM creation (no-op diff eliminated)", () => {
   // 1,000 rows
 
-  bench("Phasm: create 1,000 rows (fresh container each iteration)", () => {
+  bench("Tachys: create 1,000 rows (fresh container each iteration)", () => {
     const container = document.createElement("div")
-    render(PhasmTable(buildRowData(1000)), container as Element)
+    render(TachysTable(buildRowData(1000)), container as Element)
   })
 
   bench("Inferno: create 1,000 rows (fresh container each iteration)", () => {
@@ -104,9 +104,9 @@ describe("Fresh DOM creation (no-op diff eliminated)", () => {
 
   // 10,000 rows
 
-  bench("Phasm: create 10,000 rows (fresh container each iteration)", () => {
+  bench("Tachys: create 10,000 rows (fresh container each iteration)", () => {
     const container = document.createElement("div")
-    render(PhasmTable(buildRowData(10000)), container as Element)
+    render(TachysTable(buildRowData(10000)), container as Element)
   })
 
   bench("Inferno: create 10,000 rows (fresh container each iteration)", () => {

@@ -8,8 +8,8 @@ import {
   useEffect,
   useId,
   memo,
-} from "phasm"
-import type { VNode } from "phasm"
+} from "tachys"
+import type { VNode } from "tachys"
 
 // --- Types ---
 

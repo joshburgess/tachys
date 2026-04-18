@@ -1,11 +1,11 @@
-# Phasm vs Inferno Browser Benchmark
+# Tachys vs Inferno Browser Benchmark
 
 Date: 2026-04-17T00:55:28.644Z
 User Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/147.0.7727.15 Safari/537.36
 
 ## Comparison
 
-| Operation | Phasm Median | Inferno Median | Ratio | Phasm Mean | Inferno Mean |
+| Operation | Tachys Median | Inferno Median | Ratio | Tachys Mean | Inferno Mean |
 |---|---|---|---|---|---|
 | create 1,000 rows | 2.00ms | 2.10ms | 0.95x | 2.58ms | 2.22ms |
 | create 10,000 rows | 21.70ms | 23.40ms | 0.93x | 22.25ms | 23.63ms |
@@ -16,9 +16,9 @@ User Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (
 | select row (highlight one) | 0.40ms | 2.20ms | 0.18x | 0.42ms | 2.26ms |
 | append 1,000 rows to 1,000 | 2.10ms | 2.50ms | 0.84x | 2.29ms | 2.66ms |
 
-Ratio < 1.0 = Phasm faster, > 1.0 = Inferno faster
+Ratio < 1.0 = Tachys faster, > 1.0 = Inferno faster
 
-## Phasm Detail
+## Tachys Detail
 
 | Operation | Median (ms) | Mean (ms) | Min (ms) | Max (ms) |
 |---|---|---|---|---|

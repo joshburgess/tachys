@@ -1,5 +1,5 @@
 /**
- * Server-side rendering for Phasm.
+ * Server-side rendering for Tachys.
  *
  * Provides renderToString(vnode) which serializes a VNode tree to an HTML
  * string. Runs in any JavaScript environment (Node.js, Deno, Bun, edge
@@ -16,7 +16,7 @@
  *     immediately, then streams resolved content with inline swap scripts
  *
  * Usage:
- *   import { renderToString, renderToStringAsync, renderToReadableStream } from "phasm/server"
+ *   import { renderToString, renderToStringAsync, renderToReadableStream } from "tachys/server"
  *   const html = renderToString(h(App, null))
  *   const asyncHtml = await renderToStringAsync(h(App, null))
  *   const stream = renderToReadableStream(h(App, null))
@@ -422,7 +422,7 @@ const SWAP_SCRIPT = `function $ph(id){` +
  * the placeholder with the real content (out-of-order streaming).
  *
  * Usage:
- *   import { renderToReadableStream } from "phasm/server"
+ *   import { renderToReadableStream } from "tachys/server"
  *   const stream = renderToReadableStream(h(App, null))
  *   return new Response(stream, { headers: { "Content-Type": "text/html" } })
  *

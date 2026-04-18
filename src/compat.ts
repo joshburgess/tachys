@@ -2,8 +2,8 @@
  * React/ReactDOM compatibility layer.
  *
  * Provides a React-compatible API surface so that bundler aliases like
- *   { "react": "phasm/compat", "react-dom": "phasm/compat" }
- * allow existing React component libraries to work with Phasm.
+ *   { "react": "tachys/compat", "react-dom": "tachys/compat" }
+ * allow existing React component libraries to work with Tachys.
  *
  * Covers the functional React API. Class components (Component,
  * PureComponent) are not supported -- a warning is thrown if they
@@ -68,7 +68,7 @@ export { Children, cloneElement, isValidElement } from "./compat-util"
 // --- Fragment sentinel ---
 
 /**
- * Fragment type. In Phasm, fragments use `null` as the type.
+ * Fragment type. In Tachys, fragments use `null` as the type.
  * This matches React's Fragment export for JSX compatibility.
  */
 export const Fragment = null
@@ -76,7 +76,7 @@ export const Fragment = null
 // --- Stubs for class component detection ---
 
 /**
- * Stub base class. Phasm does not support class components.
+ * Stub base class. Tachys does not support class components.
  * This export exists so that `instanceof Component` checks in
  * third-party libraries don't crash. Attempting to use it as an
  * actual class component will throw.
@@ -84,7 +84,7 @@ export const Fragment = null
 export class Component {
   constructor() {
     throw new Error(
-      "Phasm does not support class components. Use function components with hooks instead.",
+      "Tachys does not support class components. Use function components with hooks instead.",
     )
   }
 }
@@ -95,7 +95,7 @@ export class PureComponent extends Component {}
 
 /**
  * No-op StrictMode component. In React, StrictMode enables additional
- * development warnings and double-invokes render functions. Phasm does
+ * development warnings and double-invokes render functions. Tachys does
  * not implement double-invocation but exports this so that libraries
  * using <StrictMode> don't break.
  */
@@ -107,7 +107,7 @@ export function StrictMode(props: Record<string, unknown>): import("./vnode").VN
 
 /**
  * No-op Profiler component. In React, Profiler measures rendering
- * performance. Phasm exports this as a passthrough so that code
+ * performance. Tachys exports this as a passthrough so that code
  * using <Profiler> doesn't break.
  */
 export function Profiler(props: Record<string, unknown>): import("./vnode").VNode {
@@ -223,7 +223,7 @@ export function useActionState<S, P>(
 /**
  * useFormStatus returns the status of the parent form action.
  *
- * Since Phasm does not have a built-in form action runtime, this
+ * Since Tachys does not have a built-in form action runtime, this
  * always returns a "not pending" status. Libraries that check for
  * useFormStatus will get a stable, non-pending response.
  */
