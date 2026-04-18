@@ -383,9 +383,21 @@ describe("useLayoutEffect", () => {
     expect(effectFn).toHaveBeenCalledTimes(2)
   })
 
-  it("useLayoutEffect is the same function reference as useEffect", () => {
-    // In Tachys, useLayoutEffect is literally defined as useEffect.
-    // This verifies the === identity guarantee.
-    expect(useLayoutEffect).toBe(useEffect)
+  it("useLayoutEffect fires before useEffect in the same commit", () => {
+    const order: string[] = []
+
+    function App(): VNode {
+      useEffect(() => {
+        order.push("passive")
+      }, [])
+      useLayoutEffect(() => {
+        order.push("layout")
+      }, [])
+      return h("div")
+    }
+
+    const container = document.createElement("div")
+    mount(h(App, null), container)
+    expect(order).toEqual(["layout", "passive"])
   })
 })

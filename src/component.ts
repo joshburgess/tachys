@@ -125,6 +125,12 @@ interface EffectEntry {
   deps: readonly unknown[] | null
   cleanup: (() => void) | null
   pendingRun: boolean
+  /**
+   * True for useLayoutEffect/useInsertionEffect, false for useEffect. Layout
+   * effects fire synchronously before passive effects, matching React's
+   * "layout before passive" ordering within a commit.
+   */
+  isLayout: boolean
 }
 
 // --- Current component context (set during render) ---
@@ -843,17 +849,16 @@ export function useReducer<S, A>(
   return [value, dispatch]
 }
 
-/**
- * Hook: register a side effect.
- *
- * @param callback - The effect function (may return a cleanup function)
- * @param deps - Dependency array (undefined = run every render, [] = run once)
- */
-export function useEffect(callback: () => EffectCleanup, deps?: readonly unknown[]): void {
+function registerEffect(
+  callback: () => EffectCleanup,
+  deps: readonly unknown[] | undefined,
+  isLayout: boolean,
+  hookName: string,
+): void {
   const instance = currentInstance
   if (instance === null) {
     throw new Error(
-      "useEffect must be called inside a component render. " +
+      `${hookName} must be called inside a component render. ` +
         "Make sure you are not calling hooks outside of a component function.",
     )
   }
@@ -871,6 +876,7 @@ export function useEffect(callback: () => EffectCleanup, deps?: readonly unknown
       deps: resolvedDeps,
       cleanup: null,
       pendingRun: true,
+      isLayout,
     })
   } else {
     const effect = instance._effects[effectIdx]!
@@ -888,24 +894,42 @@ export function useEffect(callback: () => EffectCleanup, deps?: readonly unknown
 }
 
 /**
- * Hook: register a synchronous side effect that runs before browser paint.
+ * Hook: register a side effect that runs after DOM commit.
  *
- * In Tachys, all effects run synchronously after render (unlike React where
- * useEffect is deferred). This makes useLayoutEffect identical to useEffect
- * in behavior, but the separate API is provided for React compatibility.
+ * Passive effect: fires after all layout effects in the same commit.
  *
  * @param callback - The effect function (may return a cleanup function)
  * @param deps - Dependency array (undefined = run every render, [] = run once)
  */
-export const useLayoutEffect: (callback: () => EffectCleanup, deps?: readonly unknown[]) => void =
-  useEffect
+export function useEffect(callback: () => EffectCleanup, deps?: readonly unknown[]): void {
+  registerEffect(callback, deps, false, "useEffect")
+}
+
+/**
+ * Hook: register a synchronous side effect that runs before browser paint.
+ *
+ * Layout effects run synchronously after DOM commit and before any passive
+ * effects (useEffect), matching React's ordering. Use for DOM measurements
+ * or imperative mutations that must happen before paint.
+ *
+ * @param callback - The effect function (may return a cleanup function)
+ * @param deps - Dependency array (undefined = run every render, [] = run once)
+ */
+export function useLayoutEffect(
+  callback: () => EffectCleanup,
+  deps?: readonly unknown[],
+): void {
+  registerEffect(callback, deps, true, "useLayoutEffect")
+}
 
 /**
  * Hook: register an effect that fires before any DOM mutations.
  *
  * In React, useInsertionEffect runs before useLayoutEffect and is intended
- * for CSS-in-JS libraries to inject <style> rules. In Tachys, all effects
- * run synchronously after render, so this is identical to useEffect.
+ * for CSS-in-JS libraries to inject <style> rules. Tachys treats this as
+ * a layout effect -- it runs synchronously before useEffect, which is
+ * sufficient for the CSS-in-JS case where ordering vs. useEffect is what
+ * matters.
  *
  * Exported for React API compatibility -- CSS-in-JS libraries like
  * styled-components and Emotion call this hook.
@@ -913,8 +937,12 @@ export const useLayoutEffect: (callback: () => EffectCleanup, deps?: readonly un
  * @param callback - The effect function (may return a cleanup function)
  * @param deps - Dependency array (undefined = run every render, [] = run once)
  */
-export const useInsertionEffect: (callback: () => EffectCleanup, deps?: readonly unknown[]) => void =
-  useEffect
+export function useInsertionEffect(
+  callback: () => EffectCleanup,
+  deps?: readonly unknown[],
+): void {
+  registerEffect(callback, deps, true, "useInsertionEffect")
+}
 
 /**
  * Hook: memoize a computed value, recomputing only when deps change.
@@ -1829,14 +1857,25 @@ function runEffects(instance: ComponentInstance): void {
 }
 
 function runEffectsImmediate(instance: ComponentInstance): void {
-  for (let i = 0; i < instance._effects.length; i++) {
-    const effect = instance._effects[i]!
-    if (effect.pendingRun) {
+  const effects = instance._effects
+  // React's ordering: all useLayoutEffect/useInsertionEffect in a commit run
+  // synchronously before any useEffect. Tachys runs passive effects in the
+  // same synchronous flush (no post-paint defer), but the two-pass ordering
+  // matches what apps written for React expect.
+  for (let i = 0; i < effects.length; i++) {
+    const effect = effects[i]!
+    if (effect.isLayout && effect.pendingRun) {
       effect.pendingRun = false
-      // Run cleanup from previous effect
-      if (effect.cleanup !== null) {
-        effect.cleanup()
-      }
+      if (effect.cleanup !== null) effect.cleanup()
+      const result = effect.callback()
+      effect.cleanup = typeof result === "function" ? result : null
+    }
+  }
+  for (let i = 0; i < effects.length; i++) {
+    const effect = effects[i]!
+    if (!effect.isLayout && effect.pendingRun) {
+      effect.pendingRun = false
+      if (effect.cleanup !== null) effect.cleanup()
       const result = effect.callback()
       effect.cleanup = typeof result === "function" ? result : null
     }
