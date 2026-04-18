@@ -124,7 +124,7 @@ Create a text VNode directly.
 ### Lane
 
 ```ts
-const Lane = { Sync: 0, Default: 1, Transition: 2 } as const
+const Lane = { Sync: 0, Default: 1, Transition: 2, Idle: -1 } as const
 ```
 
 Priority lanes for the scheduler:
@@ -134,6 +134,19 @@ Priority lanes for the scheduler:
 | `Sync` | `0` | Highest priority. Used by `useSyncExternalStore` for tearing prevention. |
 | `Default` | `1` | Normal state updates from `useState`, `useReducer`. |
 | `Transition` | `2` | Low priority. Used by `startTransition`, `useTransition`, `useDeferredValue`. |
+| `Idle` | `-1` | Sentinel for "no lane active". Never scheduled explicitly. |
+
+### Two-phase commit
+
+Transition-lane renders run in two phases. The render phase walks the VNode tree and collects DOM mutations into a typed effect queue instead of mutating the DOM directly. The commit phase flushes the queue atomically after the render completes.
+
+The effect queue lets Phasm:
+
+- Abandon an in-progress Transition when a higher-priority update arrives (discarding the queue costs nothing, no DOM rollback needed). Hook state and ref callbacks from the abandoned render are also rolled back.
+- Suspend cleanly when a component throws a promise during a Transition. The scheduler retries when the promise resolves instead of committing a Suspense fallback.
+- Yield mid-render (keyed and non-keyed children diffing check a ~5ms time slice) and resume on the next tick.
+
+Sync and Default renders skip the effect queue and mutate the DOM directly. The `R.collecting` flag read is branch-predicted-false on the hot path and folded away by the JIT.
 
 ### flushUpdates
 

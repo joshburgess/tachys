@@ -4,6 +4,36 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## Unreleased
+
+### Added
+
+**Concurrent rendering**
+
+- Two-phase commit for the Transition lane: render phase collects DOM mutations into a typed effect queue (`pushAppend`/`pushInsert`/`pushRemove`/`pushThunk`), commit phase flushes them in order after the render completes successfully.
+- Fiber-style mid-render yield inside keyed and non-keyed child diffing. Transition-lane renders yield when the ~5ms time slice expires and resume from where they left off on the next scheduler tick.
+- Transition abandonment: a higher-priority update arriving mid-Transition discards the collected effect queue without touching the DOM. Hook state (value + pending updates) and ref callbacks are rolled back so the next render sees the pre-Transition state.
+- Suspense + Transition interaction: components that throw a promise during a Transition-lane render signal suspension to the scheduler instead of committing a fallback. The Transition retries when the promise resolves.
+- `Lane.Idle` sentinel (`-1`) for "no lane active".
+- `useDeferredValue(value, initialValue?)` second-argument overload (React 19).
+- `useOptimistic` is now lane-aware: reverts to passthrough during Transition renders so optimistic values don't persist across abandoned transitions.
+- `useActionState` async resolution now wraps state updates in `startTransition`.
+
+**Shared render state**
+
+- New `R` singleton (`src/render-state.ts`) holding `collecting`, `activeLane`, and `pending` flags. Hot-path callers read these as property loads instead of cross-module function calls so V8 can inline the concurrent-mode guards.
+
+### Changed
+
+- Scheduler `processAllLanes` is split into a dedicated Sync+Default loop and a Transition loop. Sync/Default flushes no longer pay the `R.pending` check that only matters for resumable Transition work.
+- Diff, mount, and unmount inline the `R.collecting` branch at each DOM mutation site rather than going through `domAppendChild`/`domRemoveChild`/`domInsertBefore` wrappers.
+- `patchKeyedChildren` and `patchNonKeyedChildren` have separate Sync fast paths and resumable Transition paths.
+- VNode pool releases are guarded by `R.collecting` so that abandoning a Transition render cannot corrupt pooled VNodes.
+
+### Fixed
+
+- Suspense + Transition retry now preserves transition restorers across `discardEffects` and reorders `abandonTransition` to restore state before discarding effects.
+
 ## [0.0.1] - 2025-04-16
 
 Initial release.

@@ -130,6 +130,8 @@ function useTransition(): readonly [boolean, (callback: () => void) => void]
 
 Returns `[isPending, startTransition]`. State updates inside `startTransition` are scheduled at `Lane.Transition` priority, allowing higher-priority Sync and Default updates to process first.
 
+Transition renders use a two-phase commit. If a higher-priority update arrives mid-Transition, the in-flight render is abandoned: collected DOM effects are discarded and hook state / ref callbacks are rolled back to pre-Transition values. If a component throws a promise during a Transition, the scheduler retries when the promise resolves instead of committing a Suspense fallback.
+
 ## startTransition
 
 ```ts
@@ -141,10 +143,12 @@ Standalone version of the transition API. Marks state updates inside the callbac
 ## useDeferredValue
 
 ```ts
-function useDeferredValue<T>(value: T): T
+function useDeferredValue<T>(value: T, initialValue?: T): T
 ```
 
 Defers a value to allow more urgent updates to render first. The deferred update is scheduled at `Lane.Transition` priority.
+
+The optional `initialValue` (React 19) is returned on the first render before the deferred update catches up.
 
 ## useDebugValue
 

@@ -28,12 +28,26 @@ The keyed children reconciliation uses an Inferno-style LIS (Longest Increasing 
 
 Phasm's scheduler uses three priority lanes (Sync, Default, Transition) to process updates in the right order. `useSyncExternalStore` uses the Sync lane for tearing prevention, normal state updates use Default, and `startTransition`/`useDeferredValue` use the Transition lane so they don't block urgent work.
 
+### Two-Phase Commit for Transitions
+
+Transition-lane renders use a two-phase commit. The render phase walks the VNode tree and, instead of mutating the DOM directly, pushes mutations (`appendChild`, `insertBefore`, `removeChild`, property sets) onto a typed effect queue. The commit phase flushes the queue atomically after the render completes successfully.
+
+The effect queue unlocks two guarantees:
+
+- **Abandonment is free.** If a higher-priority update arrives mid-render, the queue is thrown away. No DOM mutation has happened yet, so no rollback is needed. Hook state and ref callbacks are also rolled back to their pre-Transition values.
+- **Suspense during Transition never flashes the fallback.** If a component throws a promise during a Transition render, the scheduler retries when the promise resolves instead of committing the fallback.
+
+On the Sync and Default lanes the `R.collecting` flag is `false`, so the effect queue is bypassed entirely. These lanes pay only a single branch-predicted-false load per DOM operation, which V8 folds away in the optimized code.
+
+### Fiber-Style Mid-Render Yield
+
+Keyed and non-keyed children diffing on the Transition lane check a ~5ms time slice budget between children. When the budget is exhausted the render yields by setting `R.pending` and returns. The scheduler picks up the continuation on the next tick. Sync and Default renders always run to completion for predictable latency.
+
 ## Bundle Size
 
 | Build | Size | Gzipped |
 |-------|------|---------|
-| `index.js` (ESM) | 117 KB | ~27 KB |
-| `index.min.js` (ESM, minified) | 28 KB | **~8.6 KB** |
+| `index.min.js` (ESM, minified) | 36 KB | **~10.6 KB** |
 | `jsx-runtime.min.js` | 1.5 KB | ~0.7 KB |
 
 ## Tips

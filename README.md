@@ -1,14 +1,15 @@
 # Phasm
 
-A high-performance virtual DOM library optimized for V8. Designed to match or exceed [Inferno](https://github.com/infernojs/inferno) on reconciliation speed while providing a modern React-like hooks API.
+A high-performance virtual DOM library optimized for V8. Designed to match or exceed [Inferno](https://github.com/infernojs/inferno) on reconciliation speed while providing a modern React-like hooks API with concurrent rendering.
 
-**~32KB min / ~9.9KB gzip** for the core runtime. Zero dependencies.
+**~36KB min / ~10.6KB gzip** for the core runtime. Zero dependencies.
 
 ## Features
 
 - Inferno-style LIS keyed diffing algorithm
 - V8-optimized: monomorphic call sites, stable hidden classes, SMI-friendly flags, object pooling
-- Priority-based scheduler with three lanes (Sync, Default, Transition)
+- Priority-based scheduler with three lanes (Sync, Default, Transition) and fiber-style mid-render yield
+- Two-phase commit for the Transition lane with effect queue, abandonment rollback, and Suspense retry
 - Full hooks API: `useState`, `useReducer`, `useEffect`, `useLayoutEffect`, `useMemo`, `useCallback`, `useRef`, `useSyncExternalStore`, `useId`, `useTransition`, `useDeferredValue`, `use`
 - `memo()`, `forwardRef()`, `createPortal()`, `ErrorBoundary`, `Suspense`
 - `Suspense` + `lazy()` for code splitting
@@ -450,6 +451,9 @@ Phasm uses a priority-based scheduler with three lanes:
 | `Lane.Sync` | `0` | Highest priority. Used by `useSyncExternalStore` for tearing prevention. |
 | `Lane.Default` | `1` | Normal state updates from `useState`, `useReducer`. |
 | `Lane.Transition` | `2` | Low priority. Used by `startTransition`, `useTransition`, `useDeferredValue`. |
+| `Lane.Idle` | `-1` | Sentinel for "no lane active". |
+
+Transition-lane renders use a two-phase commit. The render phase collects DOM mutations into an effect queue; the commit phase flushes them atomically. If a higher-priority update preempts the Transition, the queue is discarded and hook state / ref callbacks are rolled back. Keyed and non-keyed children diffing also yields mid-render when the ~5ms time slice expires and resumes on the next scheduler tick.
 
 #### `flushUpdates()`
 
@@ -698,7 +702,7 @@ Phasm vs Inferno, Chromium headless (median of 50 runs):
 
 Ratio < 1.0 = Phasm faster.
 
-Bundle: **~32KB min / ~9.9KB gzip**.
+Bundle: **~36KB min / ~10.6KB gzip**.
 
 ## Entry Points
 

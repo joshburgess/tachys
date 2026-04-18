@@ -227,6 +227,18 @@ function Search() {
 }
 ```
 
+### Two-phase commit
+
+Transition-lane renders use a two-phase commit: the render phase collects DOM mutations into a queue, then the commit phase flushes them atomically. This means large Transition work is interruptible without leaving the DOM in a half-updated state.
+
+### Abandonment
+
+If a higher-priority update (Sync or Default) arrives while a Transition is still rendering, the Transition is abandoned. The collected DOM effects are discarded, and any hook state or ref callbacks that ran during the abandoned render are rolled back to their pre-Transition values. The higher-priority update then runs against the original state.
+
+### Suspense + Transition
+
+If a component throws a promise during a Transition render (for example, `use(somePromise)` or a `lazy()` load), Phasm does not commit the Suspense fallback. Instead, the scheduler suspends the Transition and retries when the promise resolves. Users do not see intermediate loading states for work that was already showing valid content.
+
 ## useDeferredValue
 
 Defer a value so urgent renders are not blocked:
@@ -240,6 +252,12 @@ function SearchResults(props: { query: string }) {
 
   return <ul>{results.map((r) => <li key={r}>{r}</li>)}</ul>
 }
+```
+
+You can pass an optional `initialValue` (React 19) for the first render, before the deferred value has caught up:
+
+```tsx
+const deferredQuery = useDeferredValue(props.query, "")
 ```
 
 ## use
