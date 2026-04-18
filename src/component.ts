@@ -459,7 +459,17 @@ export function patchComponent(oldVNode: VNode, newVNode: VNode, parentDom: Elem
     return
   }
 
-  const newProps = buildComponentProps(newVNode)
+  // Fast path: when neither old nor new vnode carries JSX children, we can skip
+  // the buildComponentProps allocation entirely. buildComponentProps exists
+  // purely to splice vnode.children into the props object; with no children,
+  // we can compare old instance props directly against the fresh vnode props
+  // and reuse the vnode's props object as-is for rendering.
+  const hasChildren = newVNode.children !== null || oldVNode.children !== null
+  const newProps = hasChildren
+    ? buildComponentProps(newVNode)
+    : newVNode.props !== null
+      ? newVNode.props
+      : EMPTY_PROPS
 
   // shouldUpdate — prop equality (custom or shallow) + context check
   const memoCompare = getMemoCompare(oldInstance._type)
@@ -1730,6 +1740,10 @@ function runEffectsImmediate(instance: ComponentInstance): void {
   }
 }
 
+// Sentinel props object used when a component has no props at all. Frozen to
+// guard against accidental mutation and shared across all such components.
+const EMPTY_PROPS: Record<string, unknown> = Object.freeze({}) as Record<string, unknown>
+
 function buildComponentProps(vnode: VNode): Record<string, unknown> {
   const props = vnode.props !== null ? { ...vnode.props } : {}
   const children = vnode.children
@@ -1754,17 +1768,19 @@ function buildComponentProps(vnode: VNode): Record<string, unknown> {
 }
 
 function shallowEqual(a: Record<string, unknown>, b: Record<string, unknown>): boolean {
-  const keysA = Object.keys(a)
-  const keysB = Object.keys(b)
-
-  if (keysA.length !== keysB.length) return false
-
-  for (let i = 0; i < keysA.length; i++) {
-    const key = keysA[i]!
+  if (a === b) return true
+  // for...in avoids the two Array allocations that Object.keys() creates on
+  // each call. V8 caches for...in iteration for monomorphic prop-object
+  // shapes, which is the common case here: JSX builds props via the same
+  // literal every call site, so both sides have the same hidden class.
+  let aCount = 0
+  for (const key in a) {
     if (a[key] !== b[key]) return false
+    aCount++
   }
-
-  return true
+  let bCount = 0
+  for (const _key in b) bCount++
+  return aCount === bCount
 }
 
 function depsEqual(a: readonly unknown[], b: readonly unknown[]): boolean {

@@ -453,6 +453,16 @@ function mountNewChildren(vnode: VNode, dom: Element, isSvg: boolean): void {
   }
 }
 
+function bulkClearChildren(dom: Element): void {
+  if (R.collecting) {
+    pushThunk(() => {
+      dom.textContent = ""
+    })
+  } else {
+    dom.textContent = ""
+  }
+}
+
 function removeOldChildren(vnode: VNode, dom: Element): void {
   const childFlags = vnode.childFlags
 
@@ -461,10 +471,11 @@ function removeOldChildren(vnode: VNode, dom: Element): void {
   } else if (childFlags === ChildFlags.HasSingleChild) {
     unmount(vnode.children as VNode, dom)
   } else {
-    const children = vnode.children as VNode[]
-    for (let i = 0; i < children.length; i++) {
-      unmount(children[i]!, dom)
-    }
+    // Bulk clear: walk VNodes to run effect cleanups / release pool entries
+    // without touching the DOM, then drop all DOM children in one shot.
+    // Replaces N removeChild calls with a single textContent assignment.
+    unmountChildren(vnode)
+    bulkClearChildren(dom)
   }
 }
 
@@ -472,10 +483,8 @@ function removeOldChildVNodes(vnode: VNode, childFlags: ChildFlag, dom: Element)
   if (childFlags === ChildFlags.HasSingleChild) {
     unmount(vnode.children as VNode, dom)
   } else {
-    const children = vnode.children as VNode[]
-    for (let i = 0; i < children.length; i++) {
-      unmount(children[i]!, dom)
-    }
+    unmountChildren(vnode)
+    bulkClearChildren(dom)
   }
 }
 

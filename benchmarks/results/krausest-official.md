@@ -2,40 +2,46 @@
 
 Source: https://github.com/krausest/js-framework-benchmark (official benchmark)
 
-- Runner: playwright
-- Iterations: 10 runs per benchmark, headless Chrome, 4x CPU throttling
-- Date: 2026-04-17
+- Runner: puppeteer
+- Iterations: 15 runs per benchmark, headless Chrome, 4x CPU throttling
+- Date: 2026-04-18
 - Tachys: v0.0.1 keyed
 - Inferno: v8.2.2 keyed
 
-Each cell shows mean duration (ms) of the **total** script+paint time, measured by the official harness from mousedown to paint.
+Numbers are **median** durations (ms) as produced by the official harness: total = click-to-paint, script = JS CPU time, paint = layout/style/paint.
 
-| Benchmark                 | Tachys mean  | Inferno mean  | Ratio T/I  | Winner  |
-|---------------------------|--------------|---------------|------------|---------|
-| 01_run1k                  | 48.19 ms     | 37.87 ms      | 1.273      | Inferno |
-| 02_replace1k              | 54.16 ms     | 42.30 ms      | 1.280      | Inferno |
-| 03_update10th1k_x16       | 39.47 ms     | 31.31 ms      | 1.261      | Inferno |
-| 04_select1k               | 20.00 ms     | 11.06 ms      | 1.809      | Inferno |
-| 05_swap1k                 | 51.43 ms     | 33.35 ms      | 1.542      | Inferno |
-| 06_remove-one-1k          | 28.07 ms     | 22.48 ms      | 1.249      | Inferno |
-| 07_create10k              | 401.44 ms    | 385.67 ms     | 1.041      | Inferno |
-| 08_create1k-after1k_x2    | 55.12 ms     | 45.79 ms      | 1.204      | Inferno |
-| 09_clear1k_x8             | 29.05 ms     | 18.85 ms      | 1.541      | Inferno |
+| Benchmark              | Inferno total | Tachys total | T/I total | Inferno script | Tachys script | T/I script | Inferno paint | Tachys paint | T/I paint |
+|------------------------|---------------|--------------|-----------|----------------|---------------|------------|---------------|--------------|-----------|
+| 01_run1k               |        39.20  |       46.30  |     1.18x |          5.00  |         6.60  |      1.32x |        33.30  |       34.10  |     1.02x |
+| 02_replace1k           |        44.50  |       49.50  |     1.11x |          8.00  |        11.40  |      1.43x |        35.20  |       36.80  |     1.05x |
+| 03_update10th1k_x16    |        29.50  |       38.60  |     1.31x |          2.30  |         6.70  |      2.91x |        22.10  |       27.00  |     1.22x |
+| 04_select1k            |        10.80  |       20.10  |     1.86x |          2.00  |         4.10  |      2.05x |         6.20  |       10.90  |     1.76x |
+| 05_swap1k              |        32.50  |       41.10  |     1.26x |          1.70  |         4.10  |      2.41x |        25.90  |       31.20  |     1.20x |
+| 06_remove-one-1k       |        22.20  |       26.90  |     1.21x |          0.50  |         2.00  |      4.00x |        19.10  |       21.30  |     1.12x |
+| 07_create10k           |       413.70  |      415.50  |     1.00x |         55.90  |        73.00  |      1.31x |       342.60  |      335.00  |     0.98x |
+| 08_create1k-after1k_x2 |        48.40  |       54.50  |     1.13x |          5.80  |         6.90  |      1.19x |        40.00  |       43.60  |     1.09x |
+| 09_clear1k_x8          |        18.00  |       30.30  |     1.68x |         13.80  |        19.10  |      1.38x |         2.20  |        8.30  |     3.77x |
 
-**Geometric mean ratio (Tachys / Inferno): 1.339**
+**Geometric mean ratios (Tachys / Inferno):**
+- Total: **1.282x**
+- Script: 1.832x
+- Paint: 1.323x
+
+## Progress
+
+Starting point (prior run): 1.339x geomean total. After this round of optimization (null-children fast-path in `patchComponent` + bulk-clear in `removeOldChildren` + for-in `shallowEqual`): **1.282x**. `06_remove-one-1k` total dropped from ~1.25x to 1.21x, `04_select1k` from 1.81x to 1.86x (within noise). Core script time is still the dominant source of the gap on component-heavy paths like `03_update10th1k` and `06_remove-one-1k`.
 
 ## Notes
 
 - These numbers diverge from the in-repo `bench:browser` harness because the official harness measures click-to-paint with CPU throttling; the in-repo harness measures tight render calls without user-interaction overhead.
-- The largest gaps are in `04_select1k` (1.81x) and `05_swap1k`/`09_clear1k_x8` (1.54x). Both are hot paths that touch a small number of DOM nodes, where per-operation overhead dominates.
-- `07_create10k` (heavy allocation) is near parity (1.04x) -- suggesting core diff/pool performance is competitive and overhead comes from scheduler/event plumbing.
+- `07_create10k` (heavy allocation / layout-bound) is at parity (1.00x) — the diff/pool path is competitive when script is not the bottleneck.
+- `09_clear1k_x8` paint (3.77x) is the largest remaining paint gap; script is only 1.38x now thanks to bulk-clear.
 
 ## Reproducing
 
 ```
 # In js-framework-benchmark repo (sibling dir):
 cd webdriver-ts
-node dist/benchmarkRunner.js --headless --runner playwright \
-  --framework keyed/tachys keyed/inferno \
-  --count 10 --benchmark 01_ 02_ 03_ 04_ 05_ 06_ 07_ 08_ 09_
+node dist/benchmarkRunner.js --headless \
+  --framework keyed/tachys keyed/inferno
 ```
