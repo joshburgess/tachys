@@ -58,15 +58,22 @@ export function acquireVNode(
  * lets the old VNodes be garbage collected normally on commit (when they
  * are no longer referenced) or remain intact on abandonment.
  *
+ * Idempotent: flags=0 is the "released" sentinel (no valid VNode uses 0
+ * as its flags value). Calling releaseVNode twice on the same vnode is
+ * safe -- the second call early-returns. This lets diff-side call sites
+ * release matched-and-patched oldVNodes without worrying about whether
+ * patchInner's replace branch already released via unmount.
+ *
  * @param vnode - The VNode to release
  */
 export function releaseVNode(vnode: VNode): void {
   if (R.collecting) return
-  if (pool.length >= MAX_POOL_SIZE) return
+  if (vnode.flags === 0) return
 
   // Null out reference-holding properties to prevent memory leaks.
-  // Non-reference properties (flags, childFlags) and key/className (primitives)
+  // Non-reference properties (childFlags) and key/className (primitives)
   // don't need clearing -- acquireVNode will overwrite them.
+  vnode.flags = 0 as VNodeFlag
   vnode.type = null
   vnode.props = null
   vnode.children = null
@@ -74,6 +81,7 @@ export function releaseVNode(vnode: VNode): void {
   vnode.parentDom = null
   vnode.instance = null
 
+  if (pool.length >= MAX_POOL_SIZE) return
   pool.push(vnode)
 }
 
