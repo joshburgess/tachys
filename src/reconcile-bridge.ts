@@ -21,10 +21,13 @@ import type { VNode } from "./vnode"
 type PatchFn = (oldVNode: VNode, newVNode: VNode, parentDom: Element) => void
 type MountFn = (vnode: VNode, parentDom: Element, isSvg: boolean) => void
 type UnmountFn = (vnode: VNode, parentDom: Element) => void
+// biome-ignore lint/suspicious/noExplicitAny: ComponentInstance type lives in component.ts; bridge stays type-agnostic to avoid cycle.
+type RerenderFn = (instance: any) => void
 
 let _patch: PatchFn
 let _mount: MountFn
 let _unmount: UnmountFn
+let _rerender: RerenderFn
 
 /** Called by diff.ts at module init to register the patch function. */
 export function registerPatch(fn: PatchFn): void {
@@ -41,6 +44,11 @@ export function registerUnmount(fn: UnmountFn): void {
   _unmount = fn
 }
 
+/** Called by component.ts at module init to register the rerender function. */
+export function registerRerender(fn: RerenderFn): void {
+  _rerender = fn
+}
+
 /** Patch two VNodes. Used by component.ts for re-rendering. */
 export function bridgePatch(oldVNode: VNode, newVNode: VNode, parentDom: Element): void {
   _patch(oldVNode, newVNode, parentDom)
@@ -54,4 +62,21 @@ export function bridgeMount(vnode: VNode, parentDom: Element, isSvg: boolean): v
 /** Unmount a VNode. Used by component.ts for unmounting rendered trees. */
 export function bridgeUnmount(vnode: VNode, parentDom: Element): void {
   _unmount(vnode, parentDom)
+}
+
+/**
+ * Re-render a component instance. Called by scheduler.ts when flushing lane
+ * queues -- avoids per-instance `_rerender` closure allocation at mount time.
+ *
+ * Honours a `_rerender` callback on the instance when present, so tests can
+ * still pass a spy/mock via the standard ComponentInstance literal.
+ */
+// biome-ignore lint/suspicious/noExplicitAny: scheduler only has opaque instance handles here.
+export function bridgeRerender(instance: any): void {
+  const override = instance._rerender as (() => void) | undefined
+  if (override !== undefined) {
+    override()
+  } else {
+    _rerender(instance)
+  }
 }

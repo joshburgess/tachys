@@ -27,6 +27,7 @@ import {
   bridgeMount as mountInternal,
   bridgePatch as patchVNode,
   bridgeUnmount as unmount,
+  registerRerender,
 } from "./reconcile-bridge"
 import { acquireVNode, releaseVNode } from "./pool"
 import { getPortalContainer } from "./portal"
@@ -68,8 +69,13 @@ export interface ComponentInstance {
   _effects: EffectEntry[]
   /** Whether this is the initial mount */
   _mounted: boolean
-  /** Re-render function */
-  _rerender: () => void
+  /**
+   * Optional per-instance re-render callback. Production mounts do NOT set
+   * this -- the scheduler calls the bridge-registered `rerenderComponent`
+   * directly, which avoids the closure allocation (10k rows ≈ 10k fewer
+   * closures at mount). Tests may set it to intercept scheduler dispatch.
+   */
+  _rerender?: () => void
   /** Contexts used by this component (set by useContext) */
   _contexts: ContextDep[] | null
   /** Expected hook count (set on first render, checked on re-renders in dev) */
@@ -187,6 +193,11 @@ export function getComponentInstance(vnode: VNode): ComponentInstance | undefine
 
 const instanceMap = new WeakMap<VNode, ComponentInstance>()
 
+// Register rerenderComponent with the bridge so scheduler.ts/hydrate.ts can
+// re-enter without each ComponentInstance allocating a closure at mount time.
+// `rerenderComponent` is a hoisted function declaration, so this call sees it.
+registerRerender(rerenderComponent as (instance: unknown) => void)
+
 /**
  * Mount a functional component — called by mount.ts.
  * Creates a ComponentInstance and renders for the first time.
@@ -212,9 +223,6 @@ export function mountComponent(vnode: VNode, parentDom: Element, isSvg: boolean)
     _hooks: [],
     _effects: [],
     _mounted: false,
-    _rerender: () => {
-      rerenderComponent(instance)
-    },
     _contexts: null,
     _hookCount: -1,
   }
@@ -342,9 +350,6 @@ export function hydrateComponentInstance(
     _hooks: [],
     _effects: [],
     _mounted: false,
-    _rerender: () => {
-      rerenderComponent(instance)
-    },
     _contexts: null,
     _hookCount: -1,
   }
@@ -403,9 +408,6 @@ export function hydrateSuspenseInstance(
     _hooks: [],
     _effects: [],
     _mounted: false,
-    _rerender: () => {
-      rerenderComponent(instance)
-    },
     _contexts: null,
     _hookCount: -1,
   }
@@ -1328,7 +1330,6 @@ export function renderComponentSSR(type: ComponentFn, props: Record<string, unkn
     _hooks: [],
     _effects: [],
     _mounted: false,
-    _rerender: () => {},
     _contexts: null,
     _hookCount: -1,
   }

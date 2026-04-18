@@ -32,6 +32,7 @@ import type { ComponentInstance } from "./component"
 import { ChildFlags, VNodeFlags } from "./flags"
 import { mountInternal } from "./mount"
 import { mountProps, setRootContainer } from "./patch"
+import { bridgeRerender } from "./reconcile-bridge"
 import { setRef } from "./ref"
 import { scheduleUpdate } from "./scheduler"
 import { isSuspenseFn, isThenable, pushSuspendHandler, popSuspendHandler } from "./suspense"
@@ -357,7 +358,7 @@ function handleSuspenseDuringHydration(
   if (domNode !== null) {
     pendingBoundaries.set(domNode, () => {
       instance._hooks[0]!.value = false
-      instance._rerender()
+      bridgeRerender(instance)
     })
   }
 

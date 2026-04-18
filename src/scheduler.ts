@@ -51,6 +51,7 @@ import {
   restoreTransitionState,
   resumeCollecting,
 } from "./effects"
+import { bridgeRerender } from "./reconcile-bridge"
 import { R, LANE_IDLE } from "./render-state"
 import { discardPendingWork, resumePendingWork } from "./work-loop"
 
@@ -295,7 +296,7 @@ function autoFlush(): void {
 
       const instance = queue.shift()!
       instance._queuedLanes &= ~(1 << lane)
-      instance._rerender()
+      bridgeRerender(instance)
 
       // Time slice yielding
       if (lane !== Lane.Sync && shouldYield() && queue.length > 0) {
@@ -377,7 +378,7 @@ function autoFlush(): void {
       const instance = transitionQueue.shift()!
       instance._queuedLanes &= ~(1 << Lane.Transition)
       _processedInstances.push(instance)
-      instance._rerender()
+      bridgeRerender(instance)
 
       // After rerender, a mid-render yield may have saved a continuation.
       // Process it before moving to the next component.
@@ -495,7 +496,7 @@ function processAllLanes(): void {
 
       const instance = queue.shift()!
       instance._queuedLanes &= ~(1 << lane)
-      instance._rerender()
+      bridgeRerender(instance)
 
       if (lane !== Lane.Sync && shouldYield() && queue.length > 0) {
         R.activeLane = IDLE_LANE
@@ -532,7 +533,7 @@ function processAllLanes(): void {
 
     const instance = transitionQueue.shift()!
     instance._queuedLanes &= ~(1 << Lane.Transition)
-    instance._rerender()
+    bridgeRerender(instance)
 
     while (R.pending) {
       resumePendingWork()
@@ -558,7 +559,7 @@ function processQueue(queue: ComponentInstance[], lane: Lane): void {
   while (queue.length > 0) {
     const instance = queue.shift()!
     instance._queuedLanes &= ~(1 << lane)
-    instance._rerender()
+    bridgeRerender(instance)
   }
 
   R.activeLane = prevActiveLane
