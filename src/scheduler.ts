@@ -86,6 +86,14 @@ const SLICE_BUDGET = 5
 let currentLane: Lane = Lane.Sync
 
 /**
+ * Depth of nested batchedUpdates scopes. While > 0, scheduleUpdate queues
+ * components without posting a microtask/task; the batch scope flushes
+ * synchronously when it exits. This collapses handler+render into one
+ * FunctionCall (matches Inferno's linkEvent dispatch).
+ */
+let batchDepth = 0
+
+/**
  * Transition generation counter. Incremented each time a Transition-lane
  * update is scheduled. Used to detect when a new Transition supersedes
  * an in-progress one (the generation advances while the old Transition
@@ -196,12 +204,36 @@ export function scheduleUpdate(instance: ComponentInstance, lane?: Lane): void {
 
   if (!isScheduled) {
     isScheduled = true
+    // Inside a batched scope, the batch exit flushes synchronously. Skip
+    // microtask/task dispatch so we stay in one EventDispatch FunctionCall.
+    if (batchDepth > 0) return
     if (targetLane === Lane.Sync) {
       // Sync lane: flush immediately via microtask (no yielding)
       queueMicrotask(autoFlush)
     } else {
       // Default/Transition: use MessageChannel for time slicing
       scheduleCallback(autoFlush)
+    }
+  }
+}
+
+/**
+ * Run a function with batched update semantics. setStates inside `fn`
+ * enqueue without scheduling a separate microtask; at scope exit we
+ * autoFlush synchronously. Nested calls increment a depth counter so
+ * only the outermost scope triggers the flush.
+ *
+ * Used by the event delegation layer to eliminate the handler -> microtask
+ * -> render boundary: click and render happen in one FunctionCall.
+ */
+export function batchedUpdates<T>(fn: () => T): T {
+  batchDepth++
+  try {
+    return fn()
+  } finally {
+    batchDepth--
+    if (batchDepth === 0 && isScheduled && !isFlushing) {
+      autoFlush()
     }
   }
 }

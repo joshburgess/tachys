@@ -26,6 +26,8 @@ declare global {
   }
 }
 
+import { batchedUpdates } from "./scheduler"
+
 /**
  * Events that do not bubble and must use direct addEventListener.
  * Typed as a string literal union to make the set self-documenting and
@@ -215,31 +217,35 @@ function ensureDelegated(rootContainer: Element, eventName: string): void {
 }
 
 function delegatedEventHandler(event: Event, eventName: string, rootContainer: Element): void {
-  let target = event.target as Element | null
+  // Batch all setStates triggered by this event so the handler and render
+  // run in a single EventDispatch FunctionCall (matches Inferno's behavior).
+  batchedUpdates(() => {
+    let target = event.target as Element | null
 
-  while (target !== null && target !== rootContainer) {
-    const handlers = target.__tachys
-    if (handlers != null) {
-      const handler = handlers[eventName]
-      if (handler !== undefined) {
-        handler.call(target, event)
+    while (target !== null && target !== rootContainer) {
+      const handlers = target.__tachys
+      if (handlers != null) {
+        const handler = handlers[eventName]
+        if (handler !== undefined) {
+          handler.call(target, event)
 
-        // Check if propagation was stopped
-        if (event.cancelBubble) return
+          // Check if propagation was stopped
+          if (event.cancelBubble) return
+        }
       }
+
+      target = target.parentElement
     }
 
-    target = target.parentElement
-  }
-
-  // Also check the root container itself
-  if (target === rootContainer) {
-    const handlers = rootContainer.__tachys
-    if (handlers != null) {
-      const handler = handlers[eventName]
-      if (handler !== undefined) {
-        handler.call(rootContainer, event)
+    // Also check the root container itself
+    if (target === rootContainer) {
+      const handlers = rootContainer.__tachys
+      if (handlers != null) {
+        const handler = handlers[eventName]
+        if (handler !== undefined) {
+          handler.call(rootContainer, event)
+        }
       }
     }
-  }
+  })
 }
