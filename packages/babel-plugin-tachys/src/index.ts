@@ -1,20 +1,23 @@
 /**
  * babel-plugin-tachys
  *
- * Compiles Tachys function components that return static JSX into
- * markCompiled + _template form, skipping the VDOM entirely at runtime.
+ * Compiles Tachys function components into markCompiled + _template form,
+ * skipping the VDOM entirely at runtime.
  *
- * v0.0.1 scope: static JSX only.
- *   - Function component whose body is a single `return <jsx/>`
- *   - JSX tree uses only lowercase tag names (host elements)
- *   - All attribute values are string literals
- *   - All children are JSXText or nested JSXElement matching the rules above
+ * v0.1 scope:
+ *   - Function component, zero or one param (identifier `props` or
+ *     object-pattern destructuring of shorthand identifiers).
+ *   - Body is a single `return <jsx/>`.
+ *   - JSX tree uses only lowercase host tags.
+ *   - String-literal attribute values.
+ *   - Children may be JSXText, static JSXElement, or JSXExpressionContainer
+ *     whose expression is a destructured name or `props.x` (text slot).
  *
  * Anything outside this grammar falls through unchanged; the existing
  * jsx-runtime path handles it.
  *
- * Future iterations add text slots, attribute slots, event handlers, and
- * conditional rendering.
+ * Future iterations add attribute slots, event handlers, and conditional
+ * rendering.
  */
 
 import type { PluginObj, PluginPass } from "@babel/core"
@@ -23,7 +26,7 @@ import { declare } from "@babel/helper-plugin-utils"
 import syntaxJsxRaw from "@babel/plugin-syntax-jsx"
 import type * as BabelCore from "@babel/core"
 
-import { compileStaticJsx } from "./compile"
+import { compileComponent, type Slot } from "./compile"
 
 const syntaxJsx =
   (syntaxJsxRaw as { default?: unknown }).default ?? syntaxJsxRaw
@@ -87,7 +90,7 @@ const plugin = declareT<PluginState>((api) => {
         const name = id.name
         if (!isPascalCase(name)) return
 
-        const compiled = compileStaticJsx(path.node, t)
+        const compiled = compileComponent(path.node, t)
         if (compiled === null) return
 
         const tplId = `_tpl$${name}_${state.templateCounter++}`
@@ -95,30 +98,8 @@ const plugin = declareT<PluginState>((api) => {
 
         const markCompiledName = reserveImport(state, "markCompiled")
 
-        const mountFn = t.arrowFunctionExpression(
-          [],
-          t.objectExpression([
-            t.objectProperty(
-              t.identifier("dom"),
-              t.callExpression(
-                t.memberExpression(
-                  t.identifier(tplId),
-                  t.identifier("cloneNode"),
-                ),
-                [t.booleanLiteral(true)],
-              ),
-            ),
-            t.objectProperty(
-              t.identifier("state"),
-              t.objectExpression([]),
-            ),
-          ]),
-        )
-
-        const patchFn = t.arrowFunctionExpression(
-          [],
-          t.blockStatement([]),
-        )
+        const mountFn = buildMount(t, tplId, compiled.slots, compiled.propsParamName)
+        const patchFn = buildPatch(t, compiled.slots, compiled.propsParamName)
 
         const replacement = t.variableDeclaration("const", [
           t.variableDeclarator(
@@ -141,6 +122,267 @@ export default plugin
 function isPascalCase(name: string): boolean {
   const first = name.charCodeAt(0)
   return first >= 65 && first <= 90
+}
+
+function slotRefName(index: number): string {
+  return `_t${index}`
+}
+
+/**
+ * Build an expression that navigates from `_root` to the node at `path`
+ * using firstChild / nextSibling chains. This is O(path length) per slot
+ * and avoids the cost of creating a TreeWalker per instance.
+ */
+function buildPathExpr(
+  t: typeof BabelCore.types,
+  rootName: string,
+  path: number[],
+): BabelCore.types.Expression {
+  let expr: BabelCore.types.Expression = t.identifier(rootName)
+  for (const index of path) {
+    expr = t.memberExpression(expr, t.identifier("firstChild"))
+    for (let i = 0; i < index; i++) {
+      expr = t.memberExpression(expr, t.identifier("nextSibling"))
+    }
+  }
+  return expr
+}
+
+function buildMount(
+  t: typeof BabelCore.types,
+  tplId: string,
+  slots: Slot[],
+  propsName: string,
+): BabelCore.types.ArrowFunctionExpression {
+  const stmts: BabelCore.types.Statement[] = []
+
+  // const _root = _tpl$X.cloneNode(true);
+  stmts.push(
+    t.variableDeclaration("const", [
+      t.variableDeclarator(
+        t.identifier("_root"),
+        t.callExpression(
+          t.memberExpression(
+            t.identifier(tplId),
+            t.identifier("cloneNode"),
+          ),
+          [t.booleanLiteral(true)],
+        ),
+      ),
+    ]),
+  )
+
+  const stateProps: BabelCore.types.ObjectProperty[] = []
+  const seenPropNames = new Set<string>()
+
+  for (let i = 0; i < slots.length; i++) {
+    const slot = slots[i]!
+    const refName = slotRefName(i)
+
+    if (slot.kind === "text") {
+      // const _marker = <path>;
+      const markerName = `_m${i}`
+      stmts.push(
+        t.variableDeclaration("const", [
+          t.variableDeclarator(
+            t.identifier(markerName),
+            buildPathExpr(t, "_root", slot.path),
+          ),
+        ]),
+      )
+      // const _tN = document.createTextNode(String(props.x));
+      stmts.push(
+        t.variableDeclaration("const", [
+          t.variableDeclarator(
+            t.identifier(refName),
+            t.callExpression(
+              t.memberExpression(
+                t.identifier("document"),
+                t.identifier("createTextNode"),
+              ),
+              [
+                t.callExpression(t.identifier("String"), [
+                  t.memberExpression(
+                    t.identifier(propsName),
+                    t.identifier(slot.propName),
+                  ),
+                ]),
+              ],
+            ),
+          ),
+        ]),
+      )
+      // _marker.parentNode.replaceChild(_tN, _marker);
+      stmts.push(
+        t.expressionStatement(
+          t.callExpression(
+            t.memberExpression(
+              t.memberExpression(
+                t.identifier(markerName),
+                t.identifier("parentNode"),
+              ),
+              t.identifier("replaceChild"),
+            ),
+            [t.identifier(refName), t.identifier(markerName)],
+          ),
+        ),
+      )
+
+      stateProps.push(
+        t.objectProperty(t.identifier(refName), t.identifier(refName)),
+      )
+      if (!seenPropNames.has(slot.propName)) {
+        seenPropNames.add(slot.propName)
+        stateProps.push(
+          t.objectProperty(
+            t.identifier(slot.propName),
+            t.memberExpression(
+              t.identifier(propsName),
+              t.identifier(slot.propName),
+            ),
+          ),
+        )
+      }
+    }
+  }
+
+  // return { dom: _root, state: {...} };
+  stmts.push(
+    t.returnStatement(
+      t.objectExpression([
+        t.objectProperty(t.identifier("dom"), t.identifier("_root")),
+        t.objectProperty(
+          t.identifier("state"),
+          t.objectExpression(stateProps),
+        ),
+      ]),
+    ),
+  )
+
+  const params =
+    slots.length > 0 ? [t.identifier(propsName)] : []
+
+  return t.arrowFunctionExpression(params, t.blockStatement(stmts))
+}
+
+function buildPatch(
+  t: typeof BabelCore.types,
+  slots: Slot[],
+  propsName: string,
+): BabelCore.types.ArrowFunctionExpression {
+  if (slots.length === 0) {
+    return t.arrowFunctionExpression([], t.blockStatement([]))
+  }
+
+  const stmts: BabelCore.types.Statement[] = []
+  const seenPropNames = new Set<string>()
+
+  for (let i = 0; i < slots.length; i++) {
+    const slot = slots[i]!
+    const refName = slotRefName(i)
+
+    if (slot.kind === "text") {
+      if (seenPropNames.has(slot.propName)) {
+        // Another slot reads the same prop — emit an isolated write
+        // that still depends on the already-guarded comparison.
+        stmts.push(
+          t.ifStatement(
+            t.binaryExpression(
+              "!==",
+              t.memberExpression(
+                t.identifier("state"),
+                t.identifier(slot.propName),
+              ),
+              t.memberExpression(
+                t.identifier(propsName),
+                t.identifier(slot.propName),
+              ),
+            ),
+            t.blockStatement([
+              t.expressionStatement(
+                t.assignmentExpression(
+                  "=",
+                  t.memberExpression(
+                    t.memberExpression(
+                      t.identifier("state"),
+                      t.identifier(refName),
+                    ),
+                    t.identifier("data"),
+                  ),
+                  t.callExpression(t.identifier("String"), [
+                    t.memberExpression(
+                      t.identifier(propsName),
+                      t.identifier(slot.propName),
+                    ),
+                  ]),
+                ),
+              ),
+            ]),
+          ),
+        )
+        continue
+      }
+      seenPropNames.add(slot.propName)
+
+      // if (state.x !== props.x) {
+      //   state._tN.data = String(props.x);
+      //   state.x = props.x;
+      // }
+      stmts.push(
+        t.ifStatement(
+          t.binaryExpression(
+            "!==",
+            t.memberExpression(
+              t.identifier("state"),
+              t.identifier(slot.propName),
+            ),
+            t.memberExpression(
+              t.identifier(propsName),
+              t.identifier(slot.propName),
+            ),
+          ),
+          t.blockStatement([
+            t.expressionStatement(
+              t.assignmentExpression(
+                "=",
+                t.memberExpression(
+                  t.memberExpression(
+                    t.identifier("state"),
+                    t.identifier(refName),
+                  ),
+                  t.identifier("data"),
+                ),
+                t.callExpression(t.identifier("String"), [
+                  t.memberExpression(
+                    t.identifier(propsName),
+                    t.identifier(slot.propName),
+                  ),
+                ]),
+              ),
+            ),
+            t.expressionStatement(
+              t.assignmentExpression(
+                "=",
+                t.memberExpression(
+                  t.identifier("state"),
+                  t.identifier(slot.propName),
+                ),
+                t.memberExpression(
+                  t.identifier(propsName),
+                  t.identifier(slot.propName),
+                ),
+              ),
+            ),
+          ]),
+        ),
+      )
+    }
+  }
+
+  return t.arrowFunctionExpression(
+    [t.identifier("state"), t.identifier(propsName)],
+    t.blockStatement(stmts),
+  )
 }
 
 function reserveImport(

@@ -1,8 +1,20 @@
 /**
- * Compile a static JSX function component body into an HTML template string.
+ * Compile a JSX function component body into an HTML template plus a list
+ * of dynamic slots. Returns null if the component falls outside the
+ * supported grammar; the caller then leaves the function unchanged so the
+ * existing JSX runtime handles it.
  *
- * Returns null if the component contains anything the v0.0.1 plugin can't
- * handle, signalling that the caller should leave the function unchanged.
+ * Supported grammar (v0.1):
+ *   - Function with zero params, or one identifier param (e.g. `props`),
+ *     or one ObjectPattern param with only shorthand identifier props.
+ *   - Body is a single `return <JSXElement/>`.
+ *   - Host tags only (lowercase element names).
+ *   - String-literal attribute values.
+ *   - Children are JSXText, static JSXElement, or JSXExpressionContainer
+ *     whose expression is a bare identifier (matched against destructured
+ *     names) or `props.<name>` member access.
+ *
+ * Anything outside this grammar produces null.
  */
 
 import type * as BabelCore from "@babel/core"
@@ -26,16 +38,61 @@ const VOID_ELEMENTS = new Set([
   "wbr",
 ])
 
-export interface CompiledResult {
-  html: string
+/**
+ * A dynamic insertion point in the compiled template. `path` is a chain of
+ * DOM child indices from the root element; the mount code walks this path
+ * at instance creation to locate the placeholder node.
+ */
+export interface TextSlot {
+  kind: "text"
+  /** DOM child-index path from the template root. */
+  path: number[]
+  /** Name on `props` to read (post-normalization of destructured params). */
+  propName: string
 }
 
-export function compileStaticJsx(
+export type Slot = TextSlot
+
+export interface CompiledResult {
+  html: string
+  slots: Slot[]
+  /** Name used for the props parameter in the emitted mount/patch. */
+  propsParamName: string
+}
+
+interface CompileContext {
+  t: T
+  /** Names declared via destructured props, if any. */
+  destructuredNames: Set<string> | null
+  slots: Slot[]
+}
+
+export function compileComponent(
   fn: BabelCore.types.FunctionDeclaration,
   t: T,
 ): CompiledResult | null {
-  if (fn.params.length > 0) return null
   if (fn.async || fn.generator) return null
+  if (fn.params.length > 1) return null
+
+  let destructured: Set<string> | null = null
+  if (fn.params.length === 1) {
+    const p = fn.params[0]!
+    if (t.isIdentifier(p)) {
+      if (p.name !== "props") return null
+    } else if (t.isObjectPattern(p)) {
+      const names = new Set<string>()
+      for (const prop of p.properties) {
+        if (!t.isObjectProperty(prop)) return null
+        if (!prop.shorthand) return null
+        const key = prop.key
+        if (!t.isIdentifier(key)) return null
+        names.add(key.name)
+      }
+      destructured = names
+    } else {
+      return null
+    }
+  }
 
   const body = fn.body.body
   if (body.length !== 1) return null
@@ -45,16 +102,28 @@ export function compileStaticJsx(
   if (arg === null || arg === undefined) return null
   if (!t.isJSXElement(arg)) return null
 
-  const html = renderElement(arg, t)
+  const ctx: CompileContext = {
+    t,
+    destructuredNames: destructured,
+    slots: [],
+  }
+
+  const html = renderElement(arg, ctx, [])
   if (html === null) return null
 
-  return { html }
+  return {
+    html,
+    slots: ctx.slots,
+    propsParamName: "props",
+  }
 }
 
 function renderElement(
   el: BabelCore.types.JSXElement,
-  t: T,
+  ctx: CompileContext,
+  parentPath: number[],
 ): string | null {
+  const t = ctx.t
   const name = getTagName(el.openingElement.name, t)
   if (name === null) return null
   if (!isHostTag(name)) return null
@@ -67,7 +136,7 @@ function renderElement(
     return `<${name}${attrs}>`
   }
 
-  const children = renderChildren(el.children, t)
+  const children = renderChildren(el.children, ctx, parentPath)
   if (children === null) return null
 
   return `<${name}${attrs}>${children}</${name}>`
@@ -133,25 +202,71 @@ function renderChildren(
     | BabelCore.types.JSXElement
     | BabelCore.types.JSXFragment
   >,
-  t: T,
+  ctx: CompileContext,
+  parentPath: number[],
 ): string | null {
+  const t = ctx.t
   let out = ""
+  let domIndex = 0
   for (const child of children) {
     if (t.isJSXText(child)) {
       const text = normalizeJsxText(child.value)
       if (text === "") continue
       out += escapeText(text)
+      domIndex++
       continue
     }
     if (t.isJSXElement(child)) {
-      const nested = renderElement(child, t)
+      const nested = renderElement(child, ctx, [...parentPath, domIndex])
       if (nested === null) return null
       out += nested
+      domIndex++
+      continue
+    }
+    if (t.isJSXExpressionContainer(child)) {
+      const propName = resolvePropExpr(child.expression, ctx)
+      if (propName === null) return null
+      ctx.slots.push({
+        kind: "text",
+        path: [...parentPath, domIndex],
+        propName,
+      })
+      // Emit a comment marker that the mount code swaps for a real text node.
+      out += "<!>"
+      domIndex++
       continue
     }
     return null
   }
   return out
+}
+
+function resolvePropExpr(
+  expr:
+    | BabelCore.types.Expression
+    | BabelCore.types.JSXEmptyExpression,
+  ctx: CompileContext,
+): string | null {
+  const t = ctx.t
+  if (t.isJSXEmptyExpression(expr)) return null
+
+  if (t.isIdentifier(expr)) {
+    if (ctx.destructuredNames === null) return null
+    if (!ctx.destructuredNames.has(expr.name)) return null
+    return expr.name
+  }
+
+  if (t.isMemberExpression(expr)) {
+    if (expr.computed) return null
+    const obj = expr.object
+    const prop = expr.property
+    if (!t.isIdentifier(obj)) return null
+    if (obj.name !== "props") return null
+    if (!t.isIdentifier(prop)) return null
+    return prop.name
+  }
+
+  return null
 }
 
 function normalizeJsxText(raw: string): string {
