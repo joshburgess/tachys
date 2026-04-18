@@ -210,14 +210,30 @@ function patchStyle(
   }
 }
 
+// React's onChange normalization: on text-like inputs and textareas, onChange
+// fires per-keystroke, which native "change" does not (it fires on blur).
+// We map onChange to the native "input" event for those elements so code
+// written for React (value={state} onChange={...}) behaves identically.
+function mapEventName(dom: Element, key: string): string {
+  const eventName = key.slice(2).toLowerCase()
+  if (eventName !== "change") return eventName
+  const tag = dom.tagName
+  if (tag === "TEXTAREA") return "input"
+  if (tag === "INPUT") {
+    const type = (dom as HTMLInputElement).type
+    if (type !== "checkbox" && type !== "radio" && type !== "file") return "input"
+  }
+  return "change"
+}
+
 function patchEventProp(
   dom: Element,
   key: string,
   oldHandler: EventListener | null,
   newHandler: EventListener | null,
 ): void {
-  // Convert onClick -> click, onMouseDown -> mousedown
-  const eventName = key.slice(2).toLowerCase()
+  // Convert onClick -> click, onMouseDown -> mousedown (with onChange remap).
+  const eventName = mapEventName(dom, key)
   const root = currentRootContainer
 
   if (root !== null) {

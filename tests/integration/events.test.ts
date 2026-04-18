@@ -422,4 +422,51 @@ describe("bubbling and non-bubbling handlers on the same element", () => {
     ).toBeUndefined()
     teardown(container)
   })
+
+  describe("onChange normalization (React compat)", () => {
+    it("fires onChange on native input event for text inputs", () => {
+      const c = setup()
+      const handler = vi.fn()
+      mount(h("input", { type: "text", onChange: handler }), c)
+      const input = c.querySelector("input")!
+      input.value = "x"
+      input.dispatchEvent(new Event("input", { bubbles: true }))
+      expect(handler).toHaveBeenCalledTimes(1)
+      teardown(c)
+    })
+
+    it("fires onChange on native input event for textareas", () => {
+      const c = setup()
+      const handler = vi.fn()
+      mount(h("textarea", { onChange: handler }), c)
+      c.querySelector("textarea")!.dispatchEvent(new Event("input", { bubbles: true }))
+      expect(handler).toHaveBeenCalledTimes(1)
+      teardown(c)
+    })
+
+    it("uses native change event for checkboxes", () => {
+      const c = setup()
+      const handler = vi.fn()
+      mount(h("input", { type: "checkbox", onChange: handler }), c)
+      c.querySelector("input")!.dispatchEvent(new Event("change", { bubbles: true }))
+      expect(handler).toHaveBeenCalledTimes(1)
+      // native "input" event should NOT fire the handler for checkboxes
+      const c2 = setup()
+      const handler2 = vi.fn()
+      mount(h("input", { type: "checkbox", onChange: handler2 }), c2)
+      c2.querySelector("input")!.dispatchEvent(new Event("input", { bubbles: true }))
+      expect(handler2).not.toHaveBeenCalled()
+      teardown(c)
+      teardown(c2)
+    })
+
+    it("uses native change event for selects", () => {
+      const c = setup()
+      const handler = vi.fn()
+      mount(h("select", { onChange: handler }, h("option", { value: "a" }, "A")), c)
+      c.querySelector("select")!.dispatchEvent(new Event("change", { bubbles: true }))
+      expect(handler).toHaveBeenCalledTimes(1)
+      teardown(c)
+    })
+  })
 })
