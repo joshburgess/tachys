@@ -233,9 +233,42 @@ export function batchedUpdates<T>(fn: () => T): T {
   } finally {
     batchDepth--
     if (batchDepth === 0 && isScheduled && !isFlushing) {
-      autoFlush()
+      // Sync-only fast path: event handlers rarely touch Default/Transition
+      // lanes, so skip autoFlush's lane machinery, performance.now(),
+      // hasHigherPriorityWork, and collection-state bookkeeping.
+      if (
+        laneQueues[Lane.Default]!.length === 0 &&
+        laneQueues[Lane.Transition]!.length === 0 &&
+        !R.collecting
+      ) {
+        flushSyncBatch()
+      } else {
+        autoFlush()
+      }
     }
   }
+}
+
+/**
+ * Drain the Sync queue with no yield/slice/lane bookkeeping. Safe when
+ * Default + Transition queues are empty and we're not inside a Transition
+ * effect collection. Used by batchedUpdates for the common event-handler
+ * path where all setStates land on Sync.
+ */
+function flushSyncBatch(): void {
+  isFlushing = true
+  isScheduled = false
+  R.activeLane = Lane.Sync
+
+  const queue = laneQueues[Lane.Sync]!
+  while (queue.length > 0) {
+    const instance = queue.shift()!
+    instance._queuedLanes &= ~1
+    bridgeRerender(instance)
+  }
+
+  R.activeLane = IDLE_LANE
+  isFlushing = false
 }
 
 /**
