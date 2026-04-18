@@ -26,7 +26,7 @@ import { declare } from "@babel/helper-plugin-utils"
 import syntaxJsxRaw from "@babel/plugin-syntax-jsx"
 import type * as BabelCore from "@babel/core"
 
-import { compileComponent, type Slot } from "./compile"
+import { compileComponent, type AttrSlot, type Slot } from "./compile"
 
 const syntaxJsx =
   (syntaxJsxRaw as { default?: unknown }).default ?? syntaxJsxRaw
@@ -150,6 +150,32 @@ function buildPathExpr(
 
 function pathKey(path: number[]): string {
   return path.join(",")
+}
+
+/**
+ * Build the expression used to derive an attribute's value from props.
+ * For a plain prop reference we emit `String(props.x)` so any non-string
+ * value coerces safely. When the JSX source was a ConditionalExpression
+ * with StringLiteral branches we emit that ternary inline, skipping the
+ * String() wrap (both branches are already strings).
+ */
+function buildAttrValueExpr(
+  t: typeof BabelCore.types,
+  slot: AttrSlot,
+  propsName: string,
+): BabelCore.types.Expression {
+  const propRef = t.memberExpression(
+    t.identifier(propsName),
+    t.identifier(slot.propName),
+  )
+  if (slot.ternary !== undefined) {
+    return t.conditionalExpression(
+      propRef,
+      t.stringLiteral(slot.ternary.ifTrue),
+      t.stringLiteral(slot.ternary.ifFalse),
+    )
+  }
+  return t.callExpression(t.identifier("String"), [propRef])
 }
 
 function buildMount(
@@ -305,12 +331,7 @@ function buildMount(
 
     if (slot.kind === "attr") {
       const elName = ensureElementRef(slot.path)
-      const valueExpr = t.callExpression(t.identifier("String"), [
-        t.memberExpression(
-          t.identifier(propsName),
-          t.identifier(slot.propName),
-        ),
-      ])
+      const valueExpr = buildAttrValueExpr(t, slot, propsName)
 
       if (slot.strategy === "className") {
         stmts.push(
@@ -447,14 +468,14 @@ function buildPatch(
     const writes: BabelCore.types.Statement[] = []
     for (const { slot, index } of group) {
       const refName = slotRefName(index)
-      const valueExpr = t.callExpression(t.identifier("String"), [
-        t.memberExpression(
-          t.identifier(propsName),
-          t.identifier(slot.propName),
-        ),
-      ])
 
       if (slot.kind === "text") {
+        const textExpr = t.callExpression(t.identifier("String"), [
+          t.memberExpression(
+            t.identifier(propsName),
+            t.identifier(slot.propName),
+          ),
+        ])
         writes.push(
           t.expressionStatement(
             t.assignmentExpression(
@@ -466,12 +487,13 @@ function buildPatch(
                 ),
                 t.identifier("data"),
               ),
-              valueExpr,
+              textExpr,
             ),
           ),
         )
       } else if (slot.kind === "attr") {
         const elExpr = stateElementExpr(t, slots, slot.path)
+        const valueExpr = buildAttrValueExpr(t, slot, propsName)
 
         if (slot.strategy === "className") {
           writes.push(

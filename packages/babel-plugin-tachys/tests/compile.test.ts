@@ -318,6 +318,70 @@ describe("babel-plugin-tachys (v0.2 attribute slots)", () => {
   })
 })
 
+describe("babel-plugin-tachys (v0.4b ternary attrs)", () => {
+  it("compiles a ternary className into an inline conditional", () => {
+    const input = `
+      function Row({ selected }) {
+        return <tr className={selected ? "danger" : ""}><td>x</td></tr>;
+      }
+    `
+    const out = transform(input)
+    expect(out).toContain("markCompiled")
+    // Template has no className baked in.
+    expect(out).toContain('_template("<tr><td>x</td></tr>")')
+    // Mount: inline ternary, no String() wrap.
+    expect(out).toContain('_root.className = props.selected ? "danger" : ""')
+    // Patch: same ternary inside the grouped selected guard.
+    expect(out).toContain("state.selected !== props.selected")
+    expect(out).toContain(
+      'state._root.className = props.selected ? "danger" : ""',
+    )
+  })
+
+  it("compiles a ternary className with a destructured prop", () => {
+    const input = `
+      function Row({ selected }) {
+        return <tr className={selected ? "sel" : "norm"}><td>x</td></tr>;
+      }
+    `
+    const out = transform(input)
+    expect(out).toContain('props.selected ? "sel" : "norm"')
+    expect(out).not.toContain("String(props.selected)")
+  })
+
+  it("compiles a ternary into setAttribute for non-className attrs", () => {
+    const input = `
+      function Row({ active }) {
+        return <div aria-pressed={active ? "true" : "false"}>x</div>;
+      }
+    `
+    const out = transform(input)
+    expect(out).toMatch(
+      /setAttribute\("aria-pressed",\s*props\.active \? "true" : "false"\)/,
+    )
+  })
+
+  it("bails when a ternary branch is not a string literal", () => {
+    const input = `
+      function Row({ selected, dynVal }) {
+        return <tr className={selected ? dynVal : "off"}><td>x</td></tr>;
+      }
+    `
+    const out = transform(input)
+    expect(out).not.toContain("markCompiled")
+  })
+
+  it("bails when the ternary test is not a prop reference", () => {
+    const input = `
+      function Row() {
+        return <tr className={SOME_GLOBAL ? "a" : "b"}><td>x</td></tr>;
+      }
+    `
+    const out = transform(input)
+    expect(out).not.toContain("markCompiled")
+  })
+})
+
 describe("babel-plugin-tachys (v0.3 event handlers)", () => {
   it("compiles onClick into direct .onclick assignment", () => {
     const input = `

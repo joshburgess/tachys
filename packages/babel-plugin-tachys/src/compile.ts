@@ -76,6 +76,13 @@ export interface AttrSlot {
   attrName: string
   strategy: "className" | "setAttribute"
   propName: string
+  /**
+   * Present when the value is a ConditionalExpression whose branches are
+   * both StringLiteral. Mount/patch emit `props.x ? "a" : "b"` instead of
+   * `String(props.x)`. Common for the `className={selected ? "danger" : ""}`
+   * Krausest pattern.
+   */
+  ternary?: { ifTrue: string; ifFalse: string }
 }
 
 /**
@@ -226,7 +233,26 @@ function renderAttributes(
     }
 
     if (t.isJSXExpressionContainer(value)) {
-      const propName = resolvePropExpr(value.expression, ctx)
+      const expr = value.expression
+      const ternary = resolveTernaryAttr(expr, ctx)
+      if (ternary !== null) {
+        if (isEventAttrName(jsxName)) return null
+        const strategy: "className" | "setAttribute" =
+          jsxName === "className" || jsxName === "class"
+            ? "className"
+            : "setAttribute"
+        ctx.slots.push({
+          kind: "attr",
+          path: elementPath,
+          attrName: htmlName,
+          strategy,
+          propName: ternary.propName,
+          ternary: { ifTrue: ternary.ifTrue, ifFalse: ternary.ifFalse },
+        })
+        continue
+      }
+
+      const propName = resolvePropExpr(expr, ctx)
       if (propName === null) return null
 
       if (isEventAttrName(jsxName)) {
@@ -376,6 +402,32 @@ function renderChildren(
     }
   }
   return out
+}
+
+/**
+ * Detect `props.x ? "a" : "b"` (or `x ? "a" : "b"` under destructuring).
+ * Both branches must be StringLiteral. Returns the prop name plus the two
+ * branch values so the caller can emit a conditional expression inline.
+ */
+function resolveTernaryAttr(
+  expr:
+    | BabelCore.types.Expression
+    | BabelCore.types.JSXEmptyExpression,
+  ctx: CompileContext,
+): { propName: string; ifTrue: string; ifFalse: string } | null {
+  const t = ctx.t
+  if (!t.isConditionalExpression(expr)) return null
+  const consequent = expr.consequent
+  const alternate = expr.alternate
+  if (!t.isStringLiteral(consequent)) return null
+  if (!t.isStringLiteral(alternate)) return null
+  const propName = resolvePropExpr(expr.test, ctx)
+  if (propName === null) return null
+  return {
+    propName,
+    ifTrue: consequent.value,
+    ifFalse: alternate.value,
+  }
 }
 
 function resolvePropExpr(
