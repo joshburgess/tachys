@@ -382,6 +382,54 @@ describe("babel-plugin-tachys (v0.4b ternary attrs)", () => {
   })
 })
 
+describe("babel-plugin-tachys (v0.4c memo compare)", () => {
+  it("emits a compare that checks every dynamic prop", () => {
+    const input = `
+      function Row({ id, label, selected, onSelect }) {
+        return (
+          <tr className={selected ? "danger" : ""}>
+            <td>{id}</td>
+            <td><a onClick={onSelect}>{label}</a></td>
+          </tr>
+        );
+      }
+    `
+    const out = transform(input)
+    // The compare is the third arg to markCompiled.
+    expect(out).toMatch(/markCompiled\([\s\S]*?,[\s\S]*?,\s*\(prev, next\)/)
+    expect(out).toContain("prev.selected === next.selected")
+    expect(out).toContain("prev.id === next.id")
+    expect(out).toContain("prev.onSelect === next.onSelect")
+    expect(out).toContain("prev.label === next.label")
+    // Must be combined with && (otherwise any single match would skip
+    // patch when other props changed).
+    expect(out).toMatch(/&&/)
+  })
+
+  it("emits no compare for fully static components", () => {
+    const input = `
+      function Static() {
+        return <div className="x"><span>hi</span></div>;
+      }
+    `
+    const out = transform(input)
+    // Only two args to markCompiled: mount + patch.
+    expect(out).not.toContain("(prev, next)")
+    expect(out).not.toContain("prev.")
+  })
+
+  it("dedups repeated prop references", () => {
+    const input = `
+      function M({ name }) {
+        return <div id={name}>{name}</div>;
+      }
+    `
+    const out = transform(input)
+    const matches = out.match(/prev\.name\s*===\s*next\.name/g) ?? []
+    expect(matches.length).toBe(1)
+  })
+})
+
 describe("babel-plugin-tachys (v0.3 event handlers)", () => {
   it("compiles onClick into direct .onclick assignment", () => {
     const input = `

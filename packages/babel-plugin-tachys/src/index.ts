@@ -100,14 +100,18 @@ const plugin = declareT<PluginState>((api) => {
 
         const mountFn = buildMount(t, tplId, compiled.slots, compiled.propsParamName)
         const patchFn = buildPatch(t, compiled.slots, compiled.propsParamName)
+        const compareFn = buildCompare(t, compiled.slots)
+
+        const markCompiledArgs: BabelCore.types.Expression[] = [mountFn, patchFn]
+        if (compareFn !== null) markCompiledArgs.push(compareFn)
 
         const replacement = t.variableDeclaration("const", [
           t.variableDeclarator(
             t.identifier(name),
-            t.callExpression(t.identifier(markCompiledName), [
-              mountFn,
-              patchFn,
-            ]),
+            t.callExpression(
+              t.identifier(markCompiledName),
+              markCompiledArgs,
+            ),
           ),
         ])
 
@@ -559,6 +563,44 @@ function buildPatch(
   return t.arrowFunctionExpression(
     [t.identifier("state"), t.identifier(propsName)],
     t.blockStatement(stmts),
+  )
+}
+
+/**
+ * Build the optional `compare(prev, next)` passed as the third arg to
+ * markCompiled. When every slot-referenced prop is reference-equal between
+ * renders, returning true tells the runtime to skip `patch` altogether.
+ *
+ * Returns null when there are no dynamic props — a memo on a fully static
+ * component would be dead code.
+ */
+function buildCompare(
+  t: typeof BabelCore.types,
+  slots: Slot[],
+): BabelCore.types.ArrowFunctionExpression | null {
+  const names: string[] = []
+  const seen = new Set<string>()
+  for (const slot of slots) {
+    if (seen.has(slot.propName)) continue
+    seen.add(slot.propName)
+    names.push(slot.propName)
+  }
+  if (names.length === 0) return null
+
+  const comparisons = names.map((name) =>
+    t.binaryExpression(
+      "===",
+      t.memberExpression(t.identifier("prev"), t.identifier(name)),
+      t.memberExpression(t.identifier("next"), t.identifier(name)),
+    ),
+  )
+  let expr: BabelCore.types.Expression = comparisons[0]!
+  for (let i = 1; i < comparisons.length; i++) {
+    expr = t.logicalExpression("&&", expr, comparisons[i]!)
+  }
+  return t.arrowFunctionExpression(
+    [t.identifier("prev"), t.identifier("next")],
+    expr,
   )
 }
 
