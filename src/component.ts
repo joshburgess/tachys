@@ -85,6 +85,12 @@ interface HookState {
   value: unknown
   /** Pending state updates tagged with the lane they were scheduled at. */
   pendingUpdates: StateUpdate[] | null
+  /**
+   * Cached setter for useState/useReducer. Allocated on first render and
+   * reused on subsequent renders so the hook's identity is stable and we
+   * avoid GC pressure from re-allocating closures each render.
+   */
+  setter: ((v: unknown) => void) | null
 }
 
 /**
@@ -740,7 +746,7 @@ export function useState<T>(initial: T): readonly [T, (newVal: T | ((prev: T) =>
   if (idx >= instance._hooks.length) {
     const initialValue = typeof initial === "function" ? (initial as () => T)() : initial
     if (instance._hooks === EMPTY_HOOKS) instance._hooks = []
-    instance._hooks.push({ value: initialValue, pendingUpdates: null })
+    instance._hooks.push({ value: initialValue, pendingUpdates: null, setter: null })
   }
 
   const hook = instance._hooks[idx]!
@@ -748,33 +754,38 @@ export function useState<T>(initial: T): readonly [T, (newVal: T | ((prev: T) =>
   // Apply pending updates up to the current render lane
   const value = resolveHookState<T>(hook)
 
-  const setter = (newVal: T | ((prev: T) => T)): void => {
-    const targetLane = getCurrentLane()
-    const h = instance._hooks[idx]!
+  // Cache the setter on the hook. React does the same: the setter closes
+  // over the hook/instance and its identity never needs to change across
+  // renders, so reallocating every render is wasted work and GC pressure.
+  let setter = hook.setter
+  if (setter === null) {
+    setter = (newVal: unknown): void => {
+      const targetLane = getCurrentLane()
+      const h = instance._hooks[idx]!
 
-    if (h.pendingUpdates === null) h.pendingUpdates = []
+      if (h.pendingUpdates === null) h.pendingUpdates = []
 
-    if (typeof newVal === "function") {
-      h.pendingUpdates.push({
-        kind: "fn",
-        fn: newVal as (prev: unknown) => unknown,
-        lane: targetLane,
-      })
-    } else {
-      // Bail out for direct value assignments where value hasn't changed.
-      const current = peekHookState<T>(h)
-      if (newVal === current) {
-        // Clean up the empty array we may have just created
-        if (h.pendingUpdates.length === 0) h.pendingUpdates = null
-        return
+      if (typeof newVal === "function") {
+        h.pendingUpdates.push({
+          kind: "fn",
+          fn: newVal as (prev: unknown) => unknown,
+          lane: targetLane,
+        })
+      } else {
+        const current = peekHookState(h)
+        if (newVal === current) {
+          if (h.pendingUpdates.length === 0) h.pendingUpdates = null
+          return
+        }
+        h.pendingUpdates.push({ kind: "value", value: newVal, lane: targetLane })
       }
-      h.pendingUpdates.push({ kind: "value", value: newVal, lane: targetLane })
-    }
 
-    scheduleUpdate(instance, targetLane)
+      scheduleUpdate(instance, targetLane)
+    }
+    hook.setter = setter
   }
 
-  return [value, setter]
+  return [value, setter as (v: T | ((prev: T) => T)) => void]
 }
 
 /**
@@ -801,7 +812,7 @@ export function useReducer<S, A>(
 
   if (idx >= instance._hooks.length) {
     if (instance._hooks === EMPTY_HOOKS) instance._hooks = []
-    instance._hooks.push({ value: initialState, pendingUpdates: null })
+    instance._hooks.push({ value: initialState, pendingUpdates: null, setter: null })
   }
 
   const hook = instance._hooks[idx]!
@@ -928,7 +939,7 @@ export function useMemo<T>(factory: () => T, deps: readonly unknown[]): T {
     // First render — compute and store
     const value = factory()
     if (instance._hooks === EMPTY_HOOKS) instance._hooks = []
-    instance._hooks.push({ value: [value, deps], pendingUpdates: null })
+    instance._hooks.push({ value: [value, deps], pendingUpdates: null, setter: null })
     return value
   }
 
@@ -980,7 +991,7 @@ export function useRef<T>(initial: T): RefObject<T> {
   if (idx >= instance._hooks.length) {
     const ref = { current: initial }
     if (instance._hooks === EMPTY_HOOKS) instance._hooks = []
-    instance._hooks.push({ value: ref, pendingUpdates: null })
+    instance._hooks.push({ value: ref, pendingUpdates: null, setter: null })
     return ref
   }
 
@@ -1026,7 +1037,7 @@ export function useSyncExternalStore<T>(
   // Initialize snapshot on first render
   if (idx >= instance._hooks.length) {
     if (instance._hooks === EMPTY_HOOKS) instance._hooks = []
-    instance._hooks.push({ value: getSnapshot(), pendingUpdates: null })
+    instance._hooks.push({ value: getSnapshot(), pendingUpdates: null, setter: null })
   }
 
   const hook = instance._hooks[idx]!
@@ -1111,7 +1122,7 @@ export function useId(): string {
 
   if (idx >= instance._hooks.length) {
     if (instance._hooks === EMPTY_HOOKS) instance._hooks = []
-    instance._hooks.push({ value: `:b${idCounter++}:`, pendingUpdates: null })
+    instance._hooks.push({ value: `:b${idCounter++}:`, pendingUpdates: null, setter: null })
   }
 
   return instance._hooks[idx]!.value as string
