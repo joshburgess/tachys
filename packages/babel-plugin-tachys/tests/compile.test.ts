@@ -315,6 +315,48 @@ describe("babel-plugin-tachys (v0.2 attribute slots)", () => {
   })
 })
 
+describe("babel-plugin-tachys (v0.3 event handlers)", () => {
+  it("compiles onClick into direct .onclick assignment", () => {
+    const input = `
+      function Btn({ onSelect }) {
+        return <button onClick={onSelect}>go</button>;
+      }
+    `
+    const out = transform(input)
+    // Event attr is stripped from the template
+    expect(out).toContain('_template("<button>go</button>")')
+    // Mount assigns directly to the DOM property
+    expect(out).toContain("_root.onclick = props.onSelect")
+    // Patch reassigns on handler change
+    expect(out).toContain("state.onSelect !== props.onSelect")
+    expect(out).toContain("state._root.onclick = props.onSelect")
+  })
+
+  it("compiles onInput on a nested element", () => {
+    const input = `
+      function F({ onType }) {
+        return <div><input onInput={onType} /></div>;
+      }
+    `
+    const out = transform(input)
+    expect(out).toContain('_template("<div><input></div>")')
+    expect(out).toMatch(/_e0\s*=\s*_root\.firstChild/)
+    expect(out).toContain("_e0.oninput = props.onType")
+  })
+
+  it("mixes event + text + attr slots on the same element", () => {
+    const input = `
+      function Row({ cls, onSelect, label }) {
+        return <tr className={cls} onClick={onSelect}><td>{label}</td></tr>;
+      }
+    `
+    const out = transform(input)
+    expect(out).toContain("_root.className = String(props.cls)")
+    expect(out).toContain("_root.onclick = props.onSelect")
+    expect(out).toMatch(/_t\d+\s*=\s*document\.createTextNode\(String\(props\.label\)\)/)
+  })
+})
+
 describe("babel-plugin-tachys (runtime smoke)", () => {
   it("attr slots update the DOM in jsdom", async () => {
     const { JSDOM } = await import("jsdom")
@@ -426,5 +468,84 @@ describe("babel-plugin-tachys (runtime smoke)", () => {
     const before = spy.data
     Hello.patch(inst.state, { name: "there" })
     expect(spy.data).toBe(before)
+  })
+
+  it("end-to-end Krausest-style Row (className + events + text slots)", async () => {
+    const { JSDOM } = await import("jsdom")
+    const dom = new JSDOM("<!doctype html><html><body></body></html>")
+    const doc = dom.window.document
+
+    // This is close to what js-framework-benchmark Row components look like
+    // across frameworks: dynamic class, two click handlers, and a label slot.
+    const input = `
+      function Row({ selected, onSelect, onRemove, label }) {
+        return (
+          <tr className={selected}>
+            <td>x</td>
+            <td><a onClick={onSelect}>{label}</a></td>
+            <td><a onClick={onRemove}>remove</a></td>
+          </tr>
+        );
+      }
+    `
+    const out = transform(input)
+    const stubbed = out.replace(/import \{[^}]*\} from "tachys";?/g, "")
+
+    const markCompiled = (
+      mount: (p: Record<string, unknown>) => { dom: Element; state: Record<string, unknown> },
+      patch: (s: Record<string, unknown>, p: Record<string, unknown>) => void,
+    ): unknown => ({ mount, patch })
+    const _template = (html: string): Element => {
+      const t = doc.createElement("template")
+      t.innerHTML = `<table><tbody>${html}</tbody></table>`
+      return t.content.firstElementChild!.firstElementChild!.firstElementChild as Element
+    }
+    const fn = new Function(
+      "document",
+      "markCompiled",
+      "_template",
+      `${stubbed}; return Row;`,
+    )
+    const Row = fn(doc, markCompiled, _template) as {
+      mount: (p: Record<string, unknown>) => { dom: Element; state: Record<string, unknown> }
+      patch: (s: Record<string, unknown>, p: Record<string, unknown>) => void
+    }
+
+    let selectFired = 0
+    let removeFired = 0
+    const inst = Row.mount({
+      selected: "",
+      onSelect: () => selectFired++,
+      onRemove: () => removeFired++,
+      label: "foo",
+    })
+    expect((inst.dom as Element).outerHTML).toBe(
+      '<tr class=""><td>x</td><td><a>foo</a></td><td><a>remove</a></td></tr>'
+    )
+
+    // First anchor = select; click it.
+    const selectA = (inst.dom as Element).querySelectorAll("a")[0]!
+    ;(selectA as HTMLAnchorElement).click()
+    expect(selectFired).toBe(1)
+
+    // Second anchor = remove.
+    const removeA = (inst.dom as Element).querySelectorAll("a")[1]!
+    ;(removeA as HTMLAnchorElement).click()
+    expect(removeFired).toBe(1)
+
+    // Patch label + selection class.
+    Row.patch(inst.state, {
+      selected: "danger",
+      onSelect: () => selectFired++,
+      onRemove: () => removeFired++,
+      label: "bar",
+    })
+    expect((inst.dom as Element).outerHTML).toBe(
+      '<tr class="danger"><td>x</td><td><a>bar</a></td><td><a>remove</a></td></tr>'
+    )
+
+    // The new handler reference should be bound too
+    ;(selectA as HTMLAnchorElement).click()
+    expect(selectFired).toBe(2)
   })
 })

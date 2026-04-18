@@ -66,7 +66,19 @@ export interface AttrSlot {
   propName: string
 }
 
-export type Slot = TextSlot | AttrSlot
+/**
+ * A dynamic event listener on an element. `domProp` is the lowercased
+ * DOM property name (e.g., "onclick"). Assigning directly to the
+ * property replaces any prior listener, so patch can re-bind cheaply.
+ */
+export interface EventSlot {
+  kind: "event"
+  path: number[]
+  domProp: string
+  propName: string
+}
+
+export type Slot = TextSlot | AttrSlot | EventSlot
 
 export interface CompiledResult {
   html: string
@@ -204,6 +216,17 @@ function renderAttributes(
     if (t.isJSXExpressionContainer(value)) {
       const propName = resolvePropExpr(value.expression, ctx)
       if (propName === null) return null
+
+      if (isEventAttrName(jsxName)) {
+        ctx.slots.push({
+          kind: "event",
+          path: elementPath,
+          domProp: jsxName.toLowerCase(),
+          propName,
+        })
+        continue
+      }
+
       const strategy: "className" | "setAttribute" =
         jsxName === "className" || jsxName === "class"
           ? "className"
@@ -227,6 +250,14 @@ function jsxAttrNameToHtml(name: string): string {
   if (name === "className") return "class"
   if (name === "htmlFor") return "for"
   return name
+}
+
+function isEventAttrName(name: string): boolean {
+  if (name.length < 3) return false
+  if (name.charCodeAt(0) !== 111) return false // 'o'
+  if (name.charCodeAt(1) !== 110) return false // 'n'
+  const third = name.charCodeAt(2)
+  return third >= 65 && third <= 90
 }
 
 function renderChildren(

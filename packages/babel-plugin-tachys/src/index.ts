@@ -319,18 +319,52 @@ function buildMount(
           ),
         )
       }
+      continue
+    }
+
+    if (slot.kind === "event") {
+      const elName = ensureElementRef(slot.path)
+      // _el.onclick = props.onSelect;
+      stmts.push(
+        t.expressionStatement(
+          t.assignmentExpression(
+            "=",
+            t.memberExpression(
+              t.identifier(elName),
+              t.identifier(slot.domProp),
+            ),
+            t.memberExpression(
+              t.identifier(propsName),
+              t.identifier(slot.propName),
+            ),
+          ),
+        ),
+      )
+      if (!seenPropNames.has(slot.propName)) {
+        seenPropNames.add(slot.propName)
+        stateProps.push(
+          t.objectProperty(
+            t.identifier(slot.propName),
+            t.memberExpression(
+              t.identifier(propsName),
+              t.identifier(slot.propName),
+            ),
+          ),
+        )
+      }
     }
   }
 
-  // Attribute slots need element refs in patch. Expose them via state.
+  // Attribute + event slots need element refs in patch. Expose them via state.
   for (const [, elName] of elementRefs) {
     stateProps.push(
       t.objectProperty(t.identifier(elName), t.identifier(elName)),
     )
   }
-  // If any attr slot targets the root, expose _root as well.
+  // If any attr/event slot targets the root, expose _root as well.
   const needsRoot = slots.some(
-    (s) => s.kind === "attr" && s.path.length === 0,
+    (s) =>
+      (s.kind === "attr" || s.kind === "event") && s.path.length === 0,
   )
   if (needsRoot) {
     stateProps.push(
@@ -405,16 +439,7 @@ function buildPatch(
           ),
         )
       } else if (slot.kind === "attr") {
-        const elExpr: BabelCore.types.Expression =
-          slot.path.length === 0
-            ? t.memberExpression(
-                t.identifier("state"),
-                t.identifier("_root"),
-              )
-            : t.memberExpression(
-                t.identifier("state"),
-                t.identifier(attrElementRefNameForPath(slots, slot.path)),
-              )
+        const elExpr = stateElementExpr(t, slots, slot.path)
 
         if (slot.strategy === "className") {
           writes.push(
@@ -436,6 +461,21 @@ function buildPatch(
             ),
           )
         }
+      } else if (slot.kind === "event") {
+        // state._eN.onclick = props.onSelect
+        const elExpr = stateElementExpr(t, slots, slot.path)
+        writes.push(
+          t.expressionStatement(
+            t.assignmentExpression(
+              "=",
+              t.memberExpression(elExpr, t.identifier(slot.domProp)),
+              t.memberExpression(
+                t.identifier(propsName),
+                t.identifier(slot.propName),
+              ),
+            ),
+          ),
+        )
       }
     }
 
@@ -469,23 +509,33 @@ function buildPatch(
 }
 
 /**
- * Look up which `_eN` name was assigned to a given path during mount.
- * We reconstruct deterministically by iterating attr slots in order --
- * the same order used in buildMount -- and counting non-root unique paths.
+ * Build the expression that reads the element ref for a given slot path
+ * out of `state` during patch. Reconstructs the name assigned by
+ * buildMount deterministically by replaying its dedup logic.
  */
-function attrElementRefNameForPath(slots: Slot[], path: number[]): string {
+function stateElementExpr(
+  t: typeof BabelCore.types,
+  slots: Slot[],
+  path: number[],
+): BabelCore.types.Expression {
+  if (path.length === 0) {
+    return t.memberExpression(t.identifier("state"), t.identifier("_root"))
+  }
   const key = path.join(",")
   let counter = 0
   const seen = new Map<string, number>()
   for (const s of slots) {
-    if (s.kind !== "attr") continue
+    if (s.kind !== "attr" && s.kind !== "event") continue
     if (s.path.length === 0) continue
     const k = s.path.join(",")
     if (!seen.has(k)) {
       seen.set(k, counter++)
     }
     if (k === key) {
-      return `_e${seen.get(k)!}`
+      return t.memberExpression(
+        t.identifier("state"),
+        t.identifier(`_e${seen.get(k)!}`),
+      )
     }
   }
   throw new Error(`no element ref for path [${path.join(",")}]`)
