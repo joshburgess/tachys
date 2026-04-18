@@ -8,11 +8,17 @@ function createContext<T>(defaultValue: T): Context<T>
 
 Creates a Context object. The `defaultValue` is used when a component calls `useContext` without a matching Provider above it in the tree.
 
-The returned object has a `.Provider` component:
+The returned Context is itself a component function (React 19 style). `MyContext.Provider` aliases the same function for React 18 compatibility:
 
 ```tsx
 const ThemeCtx = createContext("light")
 
+// React 19 style
+<ThemeCtx value="dark">
+  {children}
+</ThemeCtx>
+
+// React 18 style (still works)
 <ThemeCtx.Provider value="dark">
   {children}
 </ThemeCtx.Provider>
@@ -30,12 +36,13 @@ Returns the current value of the given context, reading from the nearest Provide
 
 ```ts
 interface Context<T> {
-  Provider: (props: { value: T; children?: VNode }) => VNode
+  (props: { value: T; children?: VNode }): VNode        // React 19 usage
+  Provider: Context<T>                                   // React 18 alias (self-reference)
   Consumer: (props: { children: (value: T) => VNode }) => VNode
 }
 ```
 
-The context object. Use `.Provider` to supply a value and either `useContext` or `.Consumer` to read it.
+The context object. Use the context itself (or `.Provider`) to supply a value, and either `useContext` or `.Consumer` to read it.
 
 ## Context.Consumer
 

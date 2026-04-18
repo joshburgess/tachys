@@ -6,18 +6,28 @@
  * a simple value stack per context works correctly.
  *
  * useContext reads the current (top-of-stack) value during render.
+ *
+ * React 19 lets the Context itself act as the provider component, e.g.
+ *   <MyContext value={v}>...</MyContext>
+ * To support this, the Context object returned by `createContext` is itself
+ * the provider function. `Context.Provider` is a self-reference kept for
+ * React 18 compatibility.
  */
 
 import { registerContextDep } from "./component"
 import type { VNode } from "./vnode"
 
 export interface Context<T> {
+  /** Invoked as a component: <MyContext value={v}>children</MyContext> */
+  (props: Record<string, unknown>): VNode
   /** The default value when no Provider is above */
   _defaultValue: T
   /** Stack of active provider values (top = current) */
   _stack: T[]
-  /** The Provider component function (tagged with _context) */
-  Provider: ProviderFunction<T>
+  /** Self-reference: required by mountComponent's getProviderContext check */
+  _context: Context<T>
+  /** Self-reference for React 18 compat: `<MyContext.Provider value={v}>` */
+  Provider: Context<T>
   /** Render-prop Consumer component for React compat */
   Consumer: ConsumerFunction<T>
 }
@@ -27,52 +37,41 @@ export interface ConsumerFunction<T> {
   _contextRef: Context<T>
 }
 
-export interface ProviderFunction<T> {
-  (props: Record<string, unknown>): VNode
-  _context: Context<T>
-}
+/** Kept as an alias for backwards compatibility -- providers ARE contexts now. */
+export type ProviderFunction<T> = Context<T>
 
 /**
  * Create a new context with the given default value.
  *
+ * The returned Context is itself a component function (React 19 style):
+ *   <MyContext value={v}>...</MyContext>
+ * `MyContext.Provider` aliases the same function for React 18 compatibility.
+ *
  * @param defaultValue - Value returned by useContext when no Provider is above
- * @returns A Context object with a .Provider component
  */
 export function createContext<T>(defaultValue: T): Context<T> {
-  const context: Context<T> = {
-    _defaultValue: defaultValue,
-    _stack: [],
-    Provider: null!,
-    Consumer: null!,
-  }
-
-  // Provider is a component that passes through its children.
-  // The actual push/pop is handled by mountComponent/patchComponent
-  // which check for _context on the component function.
-  const Provider = function ContextProvider(props: Record<string, unknown>): VNode {
+  const Context = function ContextProvider(props: Record<string, unknown>): VNode {
     return props["children"] as VNode
-  } as ProviderFunction<T>
+  } as Context<T>
 
-  Provider._context = context
-  context.Provider = Provider
+  Context._defaultValue = defaultValue
+  Context._stack = []
+  Context._context = Context
+  Context.Provider = Context
 
-  // Consumer is a render-prop component that reads the current context value
-  // and calls its children function with that value.
-  // Usage: <MyContext.Consumer>{value => <div>{value}</div>}</MyContext.Consumer>
   const Consumer = function ContextConsumer(props: Record<string, unknown>): VNode {
     const value =
-      context._stack.length > 0
-        ? context._stack[context._stack.length - 1]!
-        : context._defaultValue
-    registerContextDep(context as Context<unknown>, value)
+      Context._stack.length > 0
+        ? Context._stack[Context._stack.length - 1]!
+        : Context._defaultValue
+    registerContextDep(Context as Context<unknown>, value)
     const children = props["children"] as (val: T) => VNode
     return children(value)
   } as ConsumerFunction<T>
+  Consumer._contextRef = Context
+  Context.Consumer = Consumer
 
-  Consumer._contextRef = context
-  context.Consumer = Consumer
-
-  return context
+  return Context
 }
 
 /**

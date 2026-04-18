@@ -286,7 +286,7 @@ function patchElement(oldVNode: VNode, newVNode: VNode, parentDom: Element): voi
       if (R.pending) {
         deferRefUpdate(dom, oldRef, newRef)
       } else {
-        if (oldRef !== undefined) clearRef(oldRef)
+        if (oldRef !== undefined) clearRef(oldRef, dom)
         if (newRef !== undefined) setRef(newRef, dom)
       }
     }
@@ -299,7 +299,7 @@ function patchElement(oldVNode: VNode, newVNode: VNode, parentDom: Element): voi
  */
 function deferRefUpdate(dom: Element, oldRef: unknown, newRef: unknown): void {
   appendAfterWork(() => {
-    if (oldRef !== undefined) clearRef(oldRef)
+    if (oldRef !== undefined) clearRef(oldRef, dom)
     if (newRef !== undefined) setRef(newRef, dom)
   })
 }

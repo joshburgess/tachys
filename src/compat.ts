@@ -241,6 +241,131 @@ export function useFormStatus(): {
   }
 }
 
+// --- React 19 resource preloading APIs ---
+
+/**
+ * Resource preloading APIs. These exist for API parity with `react-dom` --
+ * libraries may call them unconditionally during render. In Tachys, they are
+ * thin wrappers that insert `<link>` tags into `document.head` with the
+ * appropriate `rel`, skipping duplicates by `href`.
+ *
+ * On the server or when `document` is unavailable, they are no-ops.
+ */
+
+interface PreloadOptions {
+  as?: string
+  crossOrigin?: string
+  integrity?: string
+  type?: string
+  fetchPriority?: "auto" | "high" | "low"
+  imageSrcSet?: string
+  imageSizes?: string
+  referrerPolicy?: string
+  nonce?: string
+}
+
+interface PreinitOptions extends PreloadOptions {
+  precedence?: string
+}
+
+interface PreinitModuleOptions {
+  as?: "script"
+  crossOrigin?: string
+  integrity?: string
+  nonce?: string
+}
+
+function injectLink(rel: string, href: string, options?: Record<string, string | undefined>): void {
+  if (typeof document === "undefined") return
+  const head = document.head
+  if (head === null) return
+  // Dedup by rel+href to match React 19's hoisting semantics
+  const selector = `link[rel="${rel}"][href="${cssEscape(href)}"]`
+  if (head.querySelector(selector) !== null) return
+  const link = document.createElement("link")
+  link.rel = rel
+  link.href = href
+  if (options !== undefined) {
+    for (const k in options) {
+      const v = options[k]
+      if (v !== undefined) link.setAttribute(k, v)
+    }
+  }
+  head.appendChild(link)
+}
+
+function cssEscape(value: string): string {
+  // Minimal CSS.escape polyfill for attribute-selector values
+  return value.replace(/["\\]/g, "\\$&")
+}
+
+export function prefetchDNS(href: string): void {
+  injectLink("dns-prefetch", href)
+}
+
+export function preconnect(href: string, options?: { crossOrigin?: string }): void {
+  injectLink("preconnect", href, options as Record<string, string | undefined> | undefined)
+}
+
+export function preload(href: string, options: PreloadOptions & { as: string }): void {
+  injectLink("preload", href, options as unknown as Record<string, string | undefined>)
+}
+
+export function preloadModule(href: string, options?: { as?: "script" }): void {
+  injectLink("modulepreload", href, options as Record<string, string | undefined> | undefined)
+}
+
+export function preinit(
+  href: string,
+  options: PreinitOptions & { as: "style" | "script" },
+): void {
+  if (typeof document === "undefined") return
+  const head = document.head
+  if (head === null) return
+  if (options.as === "style") {
+    if (head.querySelector(`link[rel="stylesheet"][href="${cssEscape(href)}"]`) !== null) return
+    const link = document.createElement("link")
+    link.rel = "stylesheet"
+    link.href = href
+    for (const k in options) {
+      if (k === "as") continue
+      const v = (options as unknown as Record<string, string | undefined>)[k]
+      if (v !== undefined) link.setAttribute(k, v)
+    }
+    head.appendChild(link)
+  } else if (options.as === "script") {
+    if (head.querySelector(`script[src="${cssEscape(href)}"]`) !== null) return
+    const script = document.createElement("script")
+    script.src = href
+    script.async = true
+    for (const k in options) {
+      if (k === "as") continue
+      const v = (options as unknown as Record<string, string | undefined>)[k]
+      if (v !== undefined) script.setAttribute(k, v)
+    }
+    head.appendChild(script)
+  }
+}
+
+export function preinitModule(href: string, options?: PreinitModuleOptions): void {
+  if (typeof document === "undefined") return
+  const head = document.head
+  if (head === null) return
+  if (head.querySelector(`script[src="${cssEscape(href)}"][type="module"]`) !== null) return
+  const script = document.createElement("script")
+  script.type = "module"
+  script.src = href
+  script.async = true
+  if (options !== undefined) {
+    for (const k in options) {
+      if (k === "as") continue
+      const v = (options as unknown as Record<string, string | undefined>)[k]
+      if (v !== undefined) script.setAttribute(k, v)
+    }
+  }
+  head.appendChild(script)
+}
+
 // --- version ---
 
 export const version = "0.0.1"

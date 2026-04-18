@@ -27,6 +27,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - New `tachys/tags` entry exports typed tag-name functions for every HTML and SVG element (`div`, `span`, `button`, `svg`, `circle`, ...). Each helper accepts `(props, ...children)` or `(...children)` and is typed per-element from `JSX.IntrinsicElements`. Useful for no-JSX setups, REPLs, and FP-style codebases. JS reserved identifiers are suffixed (`var_`, `switch_`); SVG `<use>` is exported as `useEl` to avoid colliding with the React `use()` hook.
 
+**React 19 parity**
+
+- Callback refs may now return a cleanup function (`ref={node => { setup(); return () => cleanup() }}`). The cleanup runs when the ref is replaced or when the element unmounts and replaces the usual `ref(null)` teardown call.
+- Contexts are themselves component functions: `<MyContext value={v}>...</MyContext>` works in addition to `<MyContext.Provider value={v}>`. `MyContext.Provider` now self-references `MyContext`.
+- Resource preloading APIs exported from `tachys/compat`: `preload`, `preloadModule`, `preinit`, `preinitModule`, `preconnect`, `prefetchDNS`. Each injects a matching `<link>` / `<script>` tag into `document.head`, deduplicating repeat calls by URL. No-op on the server.
+- `ref` is already passed through to function components as a regular prop (no `forwardRef` required); new tests document the React 19 behavior.
+
 ### Changed
 
 - Scheduler `processAllLanes` is split into a dedicated Sync+Default loop and a Transition loop. Sync/Default flushes no longer pay the `R.pending` check that only matters for resumable Transition work.

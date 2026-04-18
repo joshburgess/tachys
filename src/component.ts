@@ -1105,9 +1105,12 @@ function trackPromise<T>(promise: UsablePromise<T>): void {
  * Check if a value is a Context object.
  */
 function isContext(value: unknown): value is Context<unknown> {
+  // Context is itself a function (React 19), so we match both objects and
+  // functions carrying the internal Context fields.
+  if (value === null) return false
+  const t = typeof value
+  if (t !== "object" && t !== "function") return false
   return (
-    value !== null &&
-    typeof value === "object" &&
     "_defaultValue" in (value as Record<string, unknown>) &&
     "_stack" in (value as Record<string, unknown>)
   )

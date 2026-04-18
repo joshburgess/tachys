@@ -69,6 +69,8 @@ The compat module re-exports the full core API plus React-specific names:
 | `useOptimistic` | Optimistic UI state (React 19) |
 | `useActionState` | Form action reducer (React 19) |
 | `useFormStatus` | Form status (always idle) |
+| `preload`, `preloadModule`, `preinit`, `preinitModule` | Inject `<link>` / `<script>` into `<head>` (React 19) |
+| `preconnect`, `prefetchDNS` | Inject `<link rel=preconnect>` / `<link rel=dns-prefetch>` (React 19) |
 
 ## Limitations
 

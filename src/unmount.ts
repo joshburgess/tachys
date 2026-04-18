@@ -67,7 +67,7 @@ function unmountElement(vnode: VNode, parentDom: Element): void {
   // Clear ref (guard behind props null check)
   const props = vnode.props
   if (props !== null && props["ref"] !== undefined) {
-    clearRef(props["ref"])
+    clearRef(props["ref"], dom ?? undefined)
   }
 
   // Clean up delegated event handlers -- skip if no __tachys (avoids function call for
