@@ -30,6 +30,7 @@ import {
 } from "./reconcile-bridge"
 import { acquireVNode, releaseVNode } from "./pool"
 import type { PortalFn } from "./portal"
+import type { CompiledComponent } from "./compiled"
 import type { RefObject } from "./ref"
 import { scheduleUpdate, Lane, setCurrentLane, getCurrentLane, signalTransitionSuspended } from "./scheduler"
 import {
@@ -245,6 +246,17 @@ export function mountComponent(vnode: VNode, parentDom: Element, isSvg: boolean)
   // so this collapses four "_xxx in type" prototype-chain lookups to a single
   // property read that returns 0 and bypasses all four branches.
   const meta = ((type as Partial<{ _meta: number }>)._meta ?? 0) | 0
+
+  // Compiled components skip the VDOM entirely: call the component's mount
+  // fn, append its pre-built DOM directly, no hooks / no child recursion.
+  if ((meta & ComponentMeta.Compiled) !== 0) {
+    const compiled = (type as unknown as CompiledComponent)(props)
+    instance._rendered = compiled as unknown as VNode
+    domAppendChild(parentDom, compiled.dom)
+    vnode.dom = compiled.dom
+    vnode.parentDom = parentDom
+    return
+  }
 
   // Check if this is a Context Provider
   const providerCtx =
@@ -541,6 +553,15 @@ export function patchComponent(oldVNode: VNode, newVNode: VNode, parentDom: Elem
   const newType = newVNode.type as ComponentFn
   const meta = ((newType as Partial<{ _meta: number }>)._meta ?? 0) | 0
 
+  // Compiled components: props differed, dispatch slot-diff patch.
+  if ((meta & ComponentMeta.Compiled) !== 0) {
+    const compiled = oldInstance._rendered as unknown as { dom: Element; state: Record<string, unknown> }
+    ;(newType as unknown as CompiledComponent).patch(compiled.state, newProps)
+    newVNode.dom = compiled.dom
+    newVNode.children = compiled as unknown as VNode
+    return
+  }
+
   // Check if this is a Context Provider
   const providerCtx =
     (meta & ComponentMeta.Provider) !== 0 ? (newType as ProviderFunction<unknown>)._context : null
@@ -652,6 +673,20 @@ export function patchComponent(oldVNode: VNode, newVNode: VNode, parentDom: Elem
  */
 export function unmountComponent(vnode: VNode, parentDom: Element): void {
   const instance = vnode.instance as ComponentInstance | null
+
+  // Check if this is a Portal or Compiled component
+  const unmountType = vnode.type as ComponentFn
+  const unmountMeta = ((unmountType as Partial<{ _meta: number }>)._meta ?? 0) | 0
+
+  // Compiled components: no effects, no child tree to unmount. Just remove
+  // the root DOM. GC handles the closure-held state object.
+  if ((unmountMeta & ComponentMeta.Compiled) !== 0) {
+    if (vnode.dom !== null) domRemoveChild(parentDom, vnode.dom)
+    vnode.instance = null
+    releaseVNode(vnode)
+    return
+  }
+
   if (instance !== null) {
     // Run all effect cleanups
     for (let i = 0; i < instance._effects.length; i++) {
@@ -663,9 +698,6 @@ export function unmountComponent(vnode: VNode, parentDom: Element): void {
     vnode.instance = null
   }
 
-  // Check if this is a Portal
-  const unmountType = vnode.type as ComponentFn
-  const unmountMeta = ((unmountType as Partial<{ _meta: number }>)._meta ?? 0) | 0
   const portalTarget =
     (unmountMeta & ComponentMeta.Portal) !== 0
       ? (unmountType as PortalFn)._portalContainer

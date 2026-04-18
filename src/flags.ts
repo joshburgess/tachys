@@ -68,10 +68,12 @@ export const ComponentMeta: {
   readonly Suspense: number
   readonly Portal: number
   readonly Provider: number
+  readonly Compiled: number
 } = {
   None: 0,
   ErrorBoundary: 1,
   Suspense: 1 << 1,
   Portal: 1 << 2,
   Provider: 1 << 3,
+  Compiled: 1 << 4,
 }

@@ -25,6 +25,8 @@ export {
   useTransition,
 } from "./component"
 export type { EffectCleanup } from "./component"
+export { markCompiled, _template } from "./compiled"
+export type { CompiledComponent, CompiledMount } from "./compiled"
 export { createContext, useContext } from "./context"
 export { __DEV__, getComponentName } from "./dev"
 export type { TachysDevToolsHook, SerializedNode } from "./devtools-hook"
