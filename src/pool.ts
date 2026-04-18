@@ -41,6 +41,7 @@ export function acquireVNode(
     pooled.childFlags = (childFlags | 0) as ChildFlag
     pooled.parentDom = null
     pooled.className = className
+    pooled.instance = null
     return pooled
   }
   return new VNode(flags, type, key, props, children, childFlags, className)
@@ -71,6 +72,7 @@ export function releaseVNode(vnode: VNode): void {
   vnode.children = null
   vnode.dom = null
   vnode.parentDom = null
+  vnode.instance = null
 
   pool.push(vnode)
 }

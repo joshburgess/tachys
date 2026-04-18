@@ -25,9 +25,9 @@ describe("VNode", () => {
     expect(vnode.className).toBeNull()
   })
 
-  it("should have exactly 9 own properties", () => {
+  it("should have exactly 10 own properties", () => {
     const vnode = new VNode(VNodeFlags.Text, null, null, null, "hello", ChildFlags.NoChildren, null)
-    expect(Object.keys(vnode)).toHaveLength(9)
+    expect(Object.keys(vnode)).toHaveLength(10)
   })
 })
 

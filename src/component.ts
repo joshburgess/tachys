@@ -185,13 +185,18 @@ function resolveHookState<T>(hook: HookState): T {
 }
 
 /**
- * Get or create a ComponentInstance for a component VNode.
+ * Get the ComponentInstance for a component VNode.
+ *
+ * The instance is stored directly on the VNode (via the `instance` field)
+ * rather than in a WeakMap -- the hot memo-bail path walks ~1000 component
+ * vnodes per render in the krausest bench, and two WeakMap ops per bail
+ * (get + set) dominated script time. Direct field access is a single
+ * hidden-class load; GC is unaffected because releaseVNode() clears the
+ * field when the vnode returns to the pool.
  */
 export function getComponentInstance(vnode: VNode): ComponentInstance | undefined {
-  return instanceMap.get(vnode)
+  return (vnode.instance as ComponentInstance | null) ?? undefined
 }
-
-const instanceMap = new WeakMap<VNode, ComponentInstance>()
 
 // Register rerenderComponent with the bridge so scheduler.ts/hydrate.ts can
 // re-enter without each ComponentInstance allocating a closure at mount time.
@@ -236,7 +241,7 @@ export function mountComponent(vnode: VNode, parentDom: Element, isSvg: boolean)
     _hookCount: -1,
   }
 
-  instanceMap.set(vnode, instance)
+  vnode.instance = instance
 
   // Check if this is a Context Provider
   const providerCtx = getProviderContext(type)
@@ -363,7 +368,7 @@ export function hydrateComponentInstance(
     _hookCount: -1,
   }
 
-  instanceMap.set(vnode, instance)
+  vnode.instance = instance
 
   // Check if this is a Context Provider
   const providerCtx = getProviderContext(type)
@@ -421,7 +426,7 @@ export function hydrateSuspenseInstance(
     _hookCount: -1,
   }
 
-  instanceMap.set(vnode, instance)
+  vnode.instance = instance
 
   const providerCtx = getProviderContext(type)
   if (providerCtx !== null) providerCtx._stack.push(props["value"])
@@ -470,8 +475,8 @@ export function switchSuspenseToFallback(
  * Re-renders with new props and patches the output.
  */
 export function patchComponent(oldVNode: VNode, newVNode: VNode, parentDom: Element): void {
-  const oldInstance = instanceMap.get(oldVNode)
-  if (oldInstance === undefined) {
+  const oldInstance = oldVNode.instance as ComponentInstance | null
+  if (oldInstance === null) {
     // Fallback: mount fresh if no instance found
     mountComponent(newVNode, parentDom, false)
     return
@@ -506,7 +511,7 @@ export function patchComponent(oldVNode: VNode, newVNode: VNode, parentDom: Elem
     newVNode.children = oldInstance._rendered
     newVNode.dom = oldVNode.dom
     newVNode.parentDom = parentDom
-    instanceMap.set(newVNode, oldInstance)
+    newVNode.instance = oldInstance
     oldInstance._vnode = newVNode
     return
   }
@@ -517,7 +522,7 @@ export function patchComponent(oldVNode: VNode, newVNode: VNode, parentDom: Elem
   oldInstance._props = newProps
   oldInstance._vnode = newVNode
   oldInstance._parentDom = parentDom
-  instanceMap.set(newVNode, oldInstance)
+  newVNode.instance = oldInstance
 
   // Check if this is a Context Provider
   const providerCtx = getProviderContext(newVNode.type as ComponentFn)
@@ -627,8 +632,8 @@ export function patchComponent(oldVNode: VNode, newVNode: VNode, parentDom: Elem
  * Runs effect cleanups and removes the instance.
  */
 export function unmountComponent(vnode: VNode, parentDom: Element): void {
-  const instance = instanceMap.get(vnode)
-  if (instance !== undefined) {
+  const instance = vnode.instance as ComponentInstance | null
+  if (instance !== null) {
     // Run all effect cleanups
     for (let i = 0; i < instance._effects.length; i++) {
       const effect = instance._effects[i]!
@@ -636,7 +641,7 @@ export function unmountComponent(vnode: VNode, parentDom: Element): void {
         effect.cleanup()
       }
     }
-    instanceMap.delete(vnode)
+    vnode.instance = null
   }
 
   // Check if this is a Portal
@@ -1467,7 +1472,7 @@ function savePatchRestorer(oldInstance: ComponentInstance, oldVNode: VNode): voi
     oldInstance._parentDom = savedParentDom
     oldInstance._rendered = savedRendered
     savedVNode.dom = savedDom
-    instanceMap.set(savedVNode, oldInstance)
+    savedVNode.instance = oldInstance
     for (let i = 0; i < savedHooks.length; i++) {
       hooks[i]!.value = savedHooks[i]!.value
       hooks[i]!.pendingUpdates = savedHooks[i]!.pending

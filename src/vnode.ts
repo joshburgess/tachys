@@ -2,12 +2,16 @@
  * VNode class -- the core virtual DOM node representation.
  *
  * All properties are initialized in the constructor in a fixed order
- * to ensure V8 hidden class stability. The class has exactly 9 properties,
- * staying within V8's in-object property threshold.
+ * to ensure V8 hidden class stability. The class has exactly 10 properties,
+ * staying within V8's in-object property threshold on x64.
  *
  * `className` is stored as a top-level field (extracted from props at
  * creation time) so mount/patch can apply it via direct property write
  * (`dom.className = ...`) without going through the props loop.
+ *
+ * `instance` holds the ComponentInstance for component vnodes (null for
+ * element/text/fragment). It is typed as `unknown` here to avoid a circular
+ * import with component.ts; component-internal code casts at access sites.
  */
 
 export type VNodeType = string | ((props: Record<string, unknown>) => VNode) | null
@@ -39,6 +43,7 @@ export class VNode {
   childFlags: ChildFlag
   parentDom: Element | null
   className: string | null
+  instance: unknown
 
   constructor(
     flags: VNodeFlag,
@@ -58,6 +63,7 @@ export class VNode {
     this.childFlags = (childFlags | 0) as ChildFlag
     this.parentDom = null
     this.className = className
+    this.instance = null
   }
 }
 
