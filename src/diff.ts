@@ -14,7 +14,6 @@ import type { ChildFlag } from "./flags"
 import { ChildFlags, VNodeFlags } from "./flags"
 import { mountInternal } from "./mount"
 import { patchProp, setRootContainer } from "./patch"
-import { releaseVNode } from "./pool"
 import { R, LANE_TRANSITION } from "./render-state"
 import { registerPatch } from "./reconcile-bridge"
 import { clearRef, setRef } from "./ref"
@@ -504,9 +503,7 @@ function patchNonKeyedChildren(
     const newLen = newChildren.length | 0
     const minLen = oldLen < newLen ? oldLen : newLen
     for (let i = 0; i < minLen; i++) {
-      const oldChild = oldChildren[i]!
-      patchInner(oldChild, newChildren[i]!, dom)
-      releaseVNode(oldChild)
+      patchInner(oldChildren[i]!, newChildren[i]!, dom)
     }
     if (newLen > oldLen) {
       for (let i = oldLen; i < newLen; i++) {
@@ -642,16 +639,11 @@ function patchKeyedChildrenSync(
   let oldEnd = (oldChildren.length | 0) - 1
   let newEnd = (newChildren.length | 0) - 1
 
-  // Prefix and suffix scans release matched oldVNodes back to the pool
-  // so the next render's jsx() calls pop them instead of allocating. For
-  // update10th-style rerenders (all 1000 rows keep their key and position),
-  // this converts 1000 heap allocations per render into 1000 pool pops.
   while (oldStart <= oldEnd && newStart <= newEnd) {
     const oldVNode = oldChildren[oldStart]!
     const newVNode = newChildren[newStart]!
     if (oldVNode.key !== newVNode.key) break
     patchInner(oldVNode, newVNode, dom)
-    releaseVNode(oldVNode)
     oldStart++
     newStart++
   }
@@ -661,7 +653,6 @@ function patchKeyedChildrenSync(
     const newVNode = newChildren[newEnd]!
     if (oldVNode.key !== newVNode.key) break
     patchInner(oldVNode, newVNode, dom)
-    releaseVNode(oldVNode)
     oldEnd--
     newEnd--
   }
@@ -719,7 +710,6 @@ function patchKeyedChildrenSync(
         lastOldIndex = newIndex
       }
       patchInner(oldVNode, newChildren[newIndex]!, dom)
-      releaseVNode(oldVNode)
     }
   }
 
@@ -986,10 +976,8 @@ function patchKeyedSmall(
     for (let j = oldStart; j <= oldEnd; j++) {
       const bit = 1 << (j - oldStart)
       if (matchedOld & bit) continue
-      const oldChild = oldChildren[j]!
-      if (oldChild.key === newKey) {
-        patchInner(oldChild, newChild, dom)
-        releaseVNode(oldChild)
+      if (oldChildren[j]!.key === newKey) {
+        patchInner(oldChildren[j]!, newChild, dom)
         found = true
         matchedOld |= bit
         break
