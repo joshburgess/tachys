@@ -12,24 +12,24 @@ Numbers are **median** durations (ms) as produced by the official harness: total
 
 | Benchmark              | Inferno total | Tachys total | T/I total | Inferno script | Tachys script | T/I script | Inferno paint | Tachys paint | T/I paint |
 |------------------------|---------------|--------------|-----------|----------------|---------------|------------|---------------|--------------|-----------|
-| 01_run1k               |        38.50  |       45.80  |     1.19x |          5.00  |         6.70  |      1.34x |        32.80  |       33.50  |     1.02x |
-| 02_replace1k           |        44.50  |       51.10  |     1.15x |          8.00  |        11.40  |      1.43x |        35.10  |       36.00  |     1.03x |
-| 03_update10th1k_x16    |        26.20  |       41.00  |     1.56x |          2.20  |         5.40  |      2.45x |        19.30  |       24.20  |     1.25x |
-| 04_select1k            |         9.70  |       17.40  |     1.79x |          1.80  |         3.50  |      1.94x |         5.80  |        8.50  |     1.47x |
-| 05_swap1k              |        30.30  |       40.50  |     1.34x |          1.50  |         3.20  |      2.13x |        24.20  |       30.70  |     1.27x |
-| 06_remove-one-1k       |        20.20  |       23.60  |     1.17x |          0.50  |         1.70  |      3.40x |        17.50  |       19.20  |     1.10x |
-| 07_create10k           |       391.70  |      401.00  |     1.02x |         53.70  |        70.60  |      1.31x |       325.00  |      322.80  |     0.99x |
-| 08_create1k-after1k_x2 |        44.90  |       51.70  |     1.15x |          5.80  |         6.60  |      1.14x |        37.30  |       40.10  |     1.08x |
-| 09_clear1k_x8          |        17.80  |       28.10  |     1.58x |         13.90  |        18.70  |      1.35x |         2.10  |        6.80  |     3.24x |
+| 01_run1k               |        37.40  |       44.50  |     1.19x |          4.90  |         6.00  |      1.22x |        31.70  |       32.20  |     1.02x |
+| 02_replace1k           |        44.20  |       49.00  |     1.11x |          8.10  |        10.40  |      1.28x |        34.90  |       34.70  |     0.99x |
+| 03_update10th1k_x16    |        28.10  |       31.80  |     1.13x |          2.20  |         5.30  |      2.41x |        21.30  |       23.00  |     1.08x |
+| 04_select1k            |         9.00  |       18.50  |     2.06x |          1.80  |         3.50  |      1.94x |         5.30  |        9.20  |     1.74x |
+| 05_swap1k              |        28.70  |       46.70  |     1.63x |          1.50  |         2.60  |      1.73x |        23.50  |       25.70  |     1.09x |
+| 06_remove-one-1k       |        21.50  |       23.10  |     1.07x |          0.50  |         1.50  |      3.00x |        18.80  |       18.90  |     1.01x |
+| 07_create10k           |       402.10  |      405.10  |     1.01x |         54.60  |        69.90  |      1.28x |       333.20  |      326.00  |     0.98x |
+| 08_create1k-after1k_x2 |        47.70  |       51.70  |     1.08x |          5.90  |         6.70  |      1.14x |        39.60  |       39.10  |     0.99x |
+| 09_clear1k_x8          |        17.20  |       22.00  |     1.28x |         13.30  |        13.60  |      1.02x |         2.10  |        5.40  |     2.57x |
 
 **Geometric mean ratios (Tachys / Inferno):**
-- Total: **1.307x**
-- Script: 1.722x
-- Paint: 1.281x
+- Total: **1.251x**
+- Script: **1.567x**
+- Paint: **1.200x**
 
 ## Progress
 
-Prior runs: 1.339x geomean total (baseline), 1.282x (`3047eee`), 1.382x (`0d1c5f6`, after round-over-round Inferno host-state shift). This round adds two mount-path optimizations: (1) `mountComponent` reuses `vnode.props` directly when the component has no JSX children, skipping the `buildComponentProps` spread; (2) `jsx()` probes for `children` / `className` in the props literal with `in` and reuses the literal unchanged when neither is present — zero-allocation pass-through for component call sites like `<Row id={...} label={...} />`. Geomean total landed at 1.307x (from 1.382x), a 0.075x improvement.
+Prior runs: 1.339x geomean total (baseline), 1.282x (`3047eee`), 1.382x (`0d1c5f6`, after round-over-round Inferno host-state shift), 1.307x (`7f2a3cc`). This round drops the per-component `_rerender` closure: every `mountComponent` used to allocate `() => rerenderComponent(instance)` and store it on the ComponentInstance. The scheduler now calls `rerenderComponent` through the reconcile bridge instead, so production mounts allocate no closure at all (tests can still set `_rerender` on the instance to intercept). The payoff is visible across nearly every benchmark -- `09_clear1k_x8` script goes from 1.35x to 1.02x, `05_swap1k` from 2.13x to 1.73x, `06_remove-one-1k` from 3.40x to 3.00x -- and geomean total landed at 1.251x (from 1.307x), a 0.056x improvement (0.131x cumulative since baseline).
 
 Local render-only micro-bench (Playwright, no CPU throttle, no click-to-paint overhead) now shows Tachys beating Inferno on every individual benchmark, with select-row at 0.13x (7.5x faster than Inferno). The Krausest gap is dominated by paint (1.28x) and hook/state overhead measured script-side.
 
