@@ -380,23 +380,10 @@ function buildMount(
     }
 
     if (slot.kind === "event") {
-      const elName = ensureElementRef(slot.path)
-      // _el.onclick = props.onSelect;
-      stmts.push(
-        t.expressionStatement(
-          t.assignmentExpression(
-            "=",
-            t.memberExpression(
-              t.identifier(elName),
-              t.identifier(slot.domProp),
-            ),
-            t.memberExpression(
-              t.identifier(propsName),
-              t.identifier(slot.propName),
-            ),
-          ),
-        ),
-      )
+      // Register the element ref now so state includes it; the actual
+      // listener assignment happens after the `state` variable exists so
+      // the wrapper function can close over it.
+      ensureElementRef(slot.path)
       if (!seenPropNames.has(slot.propName)) {
         seenPropNames.add(slot.propName)
         stateProps.push(
@@ -429,14 +416,60 @@ function buildMount(
     )
   }
 
+  // const state = { ... };
+  stmts.push(
+    t.variableDeclaration("const", [
+      t.variableDeclarator(
+        t.identifier("state"),
+        t.objectExpression(stateProps),
+      ),
+    ]),
+  )
+
+  // Event listener assignments use a state-closure wrapper so patch does
+  // not need to rebind the DOM listener when props.onX changes identity.
+  // The wrapper reads `state.onX` lazily at event-dispatch time and uses
+  // `.call(this, ev)` to preserve the `this` binding DOM listeners get.
+  for (const slot of slots) {
+    if (slot.kind !== "event") continue
+    const elName = ensureElementRef(slot.path)
+    const wrapper = t.functionExpression(
+      null,
+      [t.identifier("ev")],
+      t.blockStatement([
+        t.returnStatement(
+          t.callExpression(
+            t.memberExpression(
+              t.memberExpression(
+                t.identifier("state"),
+                t.identifier(slot.propName),
+              ),
+              t.identifier("call"),
+            ),
+            [t.thisExpression(), t.identifier("ev")],
+          ),
+        ),
+      ]),
+    )
+    stmts.push(
+      t.expressionStatement(
+        t.assignmentExpression(
+          "=",
+          t.memberExpression(
+            t.identifier(elName),
+            t.identifier(slot.domProp),
+          ),
+          wrapper,
+        ),
+      ),
+    )
+  }
+
   stmts.push(
     t.returnStatement(
       t.objectExpression([
         t.objectProperty(t.identifier("dom"), t.identifier("_root")),
-        t.objectProperty(
-          t.identifier("state"),
-          t.objectExpression(stateProps),
-        ),
+        t.objectProperty(t.identifier("state"), t.identifier("state")),
       ]),
     ),
   )
@@ -520,20 +553,9 @@ function buildPatch(
           )
         }
       } else if (slot.kind === "event") {
-        // state._eN.onclick = props.onSelect
-        const elExpr = stateElementExpr(t, slots, slot.path)
-        writes.push(
-          t.expressionStatement(
-            t.assignmentExpression(
-              "=",
-              t.memberExpression(elExpr, t.identifier(slot.domProp)),
-              t.memberExpression(
-                t.identifier(propsName),
-                t.identifier(slot.propName),
-              ),
-            ),
-          ),
-        )
+        // Mount installed a state-closure wrapper that reads
+        // `state.<prop>` at dispatch time. Patch just keeps state in
+        // sync — no DOM listener rebind needed.
       }
     }
 

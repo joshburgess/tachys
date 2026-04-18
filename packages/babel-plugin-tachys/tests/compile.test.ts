@@ -440,11 +440,14 @@ describe("babel-plugin-tachys (v0.3 event handlers)", () => {
     const out = transform(input)
     // Event attr is stripped from the template
     expect(out).toContain('_template("<button>go</button>")')
-    // Mount assigns directly to the DOM property
-    expect(out).toContain("_root.onclick = props.onSelect")
-    // Patch reassigns on handler change
+    // Mount installs a state-closure wrapper so patch never rebinds the
+    // DOM listener. The wrapper reads state.onSelect at dispatch time.
+    expect(out).toMatch(/_root\.onclick\s*=\s*function\s*\(ev\)/)
+    expect(out).toContain("state.onSelect.call(this, ev)")
+    // Patch updates state only.
     expect(out).toContain("state.onSelect !== props.onSelect")
-    expect(out).toContain("state._root.onclick = props.onSelect")
+    expect(out).toContain("state.onSelect = props.onSelect")
+    expect(out).not.toContain("state._root.onclick")
   })
 
   it("compiles onInput on a nested element", () => {
@@ -456,7 +459,9 @@ describe("babel-plugin-tachys (v0.3 event handlers)", () => {
     const out = transform(input)
     expect(out).toContain('_template("<div><input></div>")')
     expect(out).toMatch(/_e0\s*=\s*_root\.firstChild/)
-    expect(out).toContain("_e0.oninput = props.onType")
+    // State-closure wrapper on the nested element.
+    expect(out).toMatch(/_e0\.oninput\s*=\s*function\s*\(ev\)/)
+    expect(out).toContain("state.onType.call(this, ev)")
   })
 
   it("mixes event + text + attr slots on the same element", () => {
@@ -467,7 +472,9 @@ describe("babel-plugin-tachys (v0.3 event handlers)", () => {
     `
     const out = transform(input)
     expect(out).toContain("_root.className = String(props.cls)")
-    expect(out).toContain("_root.onclick = props.onSelect")
+    // Handler is state-closure-wrapped; no direct props.onSelect assignment.
+    expect(out).toMatch(/_root\.onclick\s*=\s*function\s*\(ev\)/)
+    expect(out).toContain("state.onSelect.call(this, ev)")
     // `{label}` is the sole child of <td>, so it uses a prealloc text node:
     // navigate to it and write .data directly, no createTextNode.
     expect(out).toMatch(/_t\d+\s*=\s*_root\.firstChild\.firstChild/)
