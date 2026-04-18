@@ -6,9 +6,6 @@ import {
   domAppendChild,
   domInsertBefore,
   domRemoveChild,
-  domSetInnerHTML,
-  domSetNodeValue,
-  domSetTextContent,
   isCollecting,
   pauseCollecting,
   pendingEffectCount,
@@ -446,100 +443,6 @@ describe("pushThunk", () => {
 })
 
 // ---------------------------------------------------------------------------
-// domSetTextContent
-// ---------------------------------------------------------------------------
-
-describe("domSetTextContent", () => {
-  it("executes directly when not collecting", () => {
-    const div = document.createElement("div")
-    domSetTextContent(div, "hello")
-    expect(div.textContent).toBe("hello")
-  })
-
-  it("queues when collecting and applies on commit", () => {
-    const div = document.createElement("div")
-    div.textContent = "old"
-
-    beginCollecting()
-    domSetTextContent(div, "new")
-    expect(div.textContent).toBe("old") // unchanged
-    expect(pendingEffectCount()).toBe(1)
-
-    commitEffects()
-    expect(div.textContent).toBe("new")
-  })
-
-  it("discardEffects preserves original content", () => {
-    const div = document.createElement("div")
-    div.textContent = "keep me"
-
-    beginCollecting()
-    domSetTextContent(div, "replace me")
-    discardEffects()
-
-    expect(div.textContent).toBe("keep me")
-  })
-})
-
-// ---------------------------------------------------------------------------
-// domSetNodeValue
-// ---------------------------------------------------------------------------
-
-describe("domSetNodeValue", () => {
-  it("executes directly when not collecting", () => {
-    const text = document.createTextNode("old")
-    domSetNodeValue(text, "new")
-    expect(text.nodeValue).toBe("new")
-  })
-
-  it("queues when collecting and applies on commit", () => {
-    const text = document.createTextNode("old")
-
-    beginCollecting()
-    domSetNodeValue(text, "new")
-    expect(text.nodeValue).toBe("old")
-
-    commitEffects()
-    expect(text.nodeValue).toBe("new")
-  })
-})
-
-// ---------------------------------------------------------------------------
-// domSetInnerHTML
-// ---------------------------------------------------------------------------
-
-describe("domSetInnerHTML", () => {
-  it("executes directly when not collecting", () => {
-    const div = document.createElement("div")
-    domSetInnerHTML(div, "<b>bold</b>")
-    expect(div.innerHTML).toBe("<b>bold</b>")
-  })
-
-  it("queues when collecting and applies on commit", () => {
-    const div = document.createElement("div")
-    div.innerHTML = "<i>old</i>"
-
-    beginCollecting()
-    domSetInnerHTML(div, "<b>new</b>")
-    expect(div.innerHTML).toBe("<i>old</i>")
-
-    commitEffects()
-    expect(div.innerHTML).toBe("<b>new</b>")
-  })
-
-  it("clears innerHTML on commit when set to empty string", () => {
-    const div = document.createElement("div")
-    div.innerHTML = "<span>content</span>"
-
-    beginCollecting()
-    domSetInnerHTML(div, "")
-    commitEffects()
-
-    expect(div.innerHTML).toBe("")
-  })
-})
-
-// ---------------------------------------------------------------------------
 // Combined structural + property effects
 // ---------------------------------------------------------------------------
 
@@ -554,7 +457,7 @@ describe("structural + property effects together", () => {
 
     beginCollecting()
     // Property change on existing (live) element
-    domSetTextContent(existing, "updated")
+    pushThunk(() => { existing.textContent = "updated" })
     // Structural change: add a new child
     domAppendChild(parent, newChild)
 

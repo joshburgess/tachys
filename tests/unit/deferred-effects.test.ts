@@ -4,11 +4,11 @@ import {
   commitEffects,
   discardEffects,
   domAppendChild,
-  domSetTextContent,
   flushDeferredEffects,
   isCollecting,
   pendingDeferredEffectCount,
   pushDeferredEffect,
+  pushThunk,
 } from "../../src/effects"
 
 // ---------------------------------------------------------------------------
@@ -116,7 +116,7 @@ describe("deferred effects see committed DOM", () => {
     let observedText = ""
 
     beginCollecting()
-    domSetTextContent(el, "new")
+    pushThunk(() => { el.textContent = "new" })
 
     pushDeferredEffect(() => {
       observedText = el.textContent ?? ""

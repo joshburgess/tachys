@@ -267,42 +267,6 @@ export function pushThunk(fn: () => void): void {
   _effects.push({ t: THUNK, f: fn })
 }
 
-/**
- * Set textContent on a node (element or text).
- * Used for text children updates and clearing element content.
- */
-export function domSetTextContent(node: Node, text: string): void {
-  if (_collecting) {
-    _effects.push({ t: THUNK, f: () => { node.textContent = text } })
-    return
-  }
-  node.textContent = text
-}
-
-/**
- * Set nodeValue on a Text node.
- * Used for patching text VNode content.
- */
-export function domSetNodeValue(node: Text, text: string): void {
-  if (_collecting) {
-    _effects.push({ t: THUNK, f: () => { node.nodeValue = text } })
-    return
-  }
-  node.nodeValue = text
-}
-
-/**
- * Set innerHTML on an element.
- * Used for dangerouslySetInnerHTML updates.
- */
-export function domSetInnerHTML(node: Element, html: string): void {
-  if (_collecting) {
-    _effects.push({ t: THUNK, f: () => { node.innerHTML = html } })
-    return
-  }
-  node.innerHTML = html
-}
-
 // --- Deferred component effects ---
 //
 // During Transition-lane rendering, component effects (useEffect,
