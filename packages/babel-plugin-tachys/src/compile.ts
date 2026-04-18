@@ -49,6 +49,18 @@ export interface TextSlot {
   path: number[]
   /** Name on `props` to read (post-normalization of destructured params). */
   propName: string
+  /**
+   * How the template carries the placeholder:
+   *   - "marker": the template emits `<!>` and mount swaps it for a
+   *     freshly-created text node via replaceChild.
+   *   - "prealloc": the template emits a space character so the parser
+   *     pre-allocates a text node; mount just navigates to it and
+   *     writes `.data = ...`.
+   *
+   * "prealloc" is safe only when the slot has no adjacent JSXText
+   * siblings (otherwise the parser would merge them into one text node).
+   */
+  placeholder: "marker" | "prealloc"
 }
 
 /**
@@ -260,6 +272,42 @@ function isEventAttrName(name: string): boolean {
   return third >= 65 && third <= 90
 }
 
+type EffectiveChild =
+  | { kind: "text"; value: string }
+  | { kind: "element"; node: BabelCore.types.JSXElement }
+  | { kind: "expr"; node: BabelCore.types.JSXExpressionContainer }
+
+function collectEffectiveChildren(
+  children: Array<
+    | BabelCore.types.JSXText
+    | BabelCore.types.JSXExpressionContainer
+    | BabelCore.types.JSXSpreadChild
+    | BabelCore.types.JSXElement
+    | BabelCore.types.JSXFragment
+  >,
+  t: T,
+): EffectiveChild[] | null {
+  const out: EffectiveChild[] = []
+  for (const child of children) {
+    if (t.isJSXText(child)) {
+      const normalized = normalizeJsxText(child.value)
+      if (normalized === "") continue
+      out.push({ kind: "text", value: normalized })
+      continue
+    }
+    if (t.isJSXElement(child)) {
+      out.push({ kind: "element", node: child })
+      continue
+    }
+    if (t.isJSXExpressionContainer(child)) {
+      out.push({ kind: "expr", node: child })
+      continue
+    }
+    return null
+  }
+  return out
+}
+
 function renderChildren(
   children: Array<
     | BabelCore.types.JSXText
@@ -271,38 +319,61 @@ function renderChildren(
   ctx: CompileContext,
   parentPath: number[],
 ): string | null {
-  const t = ctx.t
+  const effective = collectEffectiveChildren(children, ctx.t)
+  if (effective === null) return null
+
   let out = ""
-  let domIndex = 0
-  for (const child of children) {
-    if (t.isJSXText(child)) {
-      const text = normalizeJsxText(child.value)
-      if (text === "") continue
-      out += escapeText(text)
-      domIndex++
+  for (let i = 0; i < effective.length; i++) {
+    const child = effective[i]!
+
+    if (child.kind === "text") {
+      out += escapeText(child.value)
       continue
     }
-    if (t.isJSXElement(child)) {
-      const nested = renderElement(child, ctx, [...parentPath, domIndex])
+
+    if (child.kind === "element") {
+      const nested = renderElement(child.node, ctx, [...parentPath, i])
       if (nested === null) return null
       out += nested
-      domIndex++
       continue
     }
-    if (t.isJSXExpressionContainer(child)) {
-      const propName = resolvePropExpr(child.expression, ctx)
+
+    if (child.kind === "expr") {
+      const propName = resolvePropExpr(child.node.expression, ctx)
       if (propName === null) return null
-      ctx.slots.push({
-        kind: "text",
-        path: [...parentPath, domIndex],
-        propName,
-      })
-      // Emit a comment marker that the mount code swaps for a real text node.
-      out += "<!>"
-      domIndex++
-      continue
+
+      const prev = i > 0 ? effective[i - 1]! : null
+      const next = i < effective.length - 1 ? effective[i + 1]! : null
+      // Prealloc requires both neighbors (if any) to be elements: two
+      // adjacent text-like things (JSXText or another ExpressionContainer
+      // using a space placeholder) would collapse into a single merged
+      // text node during HTML parsing.
+      const isBlocking = (c: EffectiveChild | null): boolean =>
+        c !== null && c.kind !== "element"
+      const canPrealloc = !isBlocking(prev) && !isBlocking(next)
+
+      if (canPrealloc) {
+        // Pre-allocated text node placeholder: mount writes .data directly.
+        // A single space is enough; the parser yields one text child. The
+        // space is overwritten in mount before the component is inserted.
+        ctx.slots.push({
+          kind: "text",
+          path: [...parentPath, i],
+          propName,
+          placeholder: "prealloc",
+        })
+        out += " "
+      } else {
+        // Marker path: emit a comment, mount swaps it for a text node.
+        ctx.slots.push({
+          kind: "text",
+          path: [...parentPath, i],
+          propName,
+          placeholder: "marker",
+        })
+        out += "<!>"
+      }
     }
-    return null
   }
   return out
 }

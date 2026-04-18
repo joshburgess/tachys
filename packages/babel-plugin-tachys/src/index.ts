@@ -208,50 +208,82 @@ function buildMount(
 
     if (slot.kind === "text") {
       const refName = slotRefName(i)
-      const markerName = `_m${i}`
-      stmts.push(
-        t.variableDeclaration("const", [
-          t.variableDeclarator(
-            t.identifier(markerName),
-            buildPathExpr(t, "_root", slot.path),
+
+      if (slot.placeholder === "prealloc") {
+        // const _tN = <path-to-text-node>;
+        stmts.push(
+          t.variableDeclaration("const", [
+            t.variableDeclarator(
+              t.identifier(refName),
+              buildPathExpr(t, "_root", slot.path),
+            ),
+          ]),
+        )
+        // _tN.data = String(props.x);
+        stmts.push(
+          t.expressionStatement(
+            t.assignmentExpression(
+              "=",
+              t.memberExpression(
+                t.identifier(refName),
+                t.identifier("data"),
+              ),
+              t.callExpression(t.identifier("String"), [
+                t.memberExpression(
+                  t.identifier(propsName),
+                  t.identifier(slot.propName),
+                ),
+              ]),
+            ),
           ),
-        ]),
-      )
-      stmts.push(
-        t.variableDeclaration("const", [
-          t.variableDeclarator(
-            t.identifier(refName),
+        )
+      } else {
+        // Marker path: create a fresh text node, replace the <!> comment.
+        const markerName = `_m${i}`
+        stmts.push(
+          t.variableDeclaration("const", [
+            t.variableDeclarator(
+              t.identifier(markerName),
+              buildPathExpr(t, "_root", slot.path),
+            ),
+          ]),
+        )
+        stmts.push(
+          t.variableDeclaration("const", [
+            t.variableDeclarator(
+              t.identifier(refName),
+              t.callExpression(
+                t.memberExpression(
+                  t.identifier("document"),
+                  t.identifier("createTextNode"),
+                ),
+                [
+                  t.callExpression(t.identifier("String"), [
+                    t.memberExpression(
+                      t.identifier(propsName),
+                      t.identifier(slot.propName),
+                    ),
+                  ]),
+                ],
+              ),
+            ),
+          ]),
+        )
+        stmts.push(
+          t.expressionStatement(
             t.callExpression(
               t.memberExpression(
-                t.identifier("document"),
-                t.identifier("createTextNode"),
+                t.memberExpression(
+                  t.identifier(markerName),
+                  t.identifier("parentNode"),
+                ),
+                t.identifier("replaceChild"),
               ),
-              [
-                t.callExpression(t.identifier("String"), [
-                  t.memberExpression(
-                    t.identifier(propsName),
-                    t.identifier(slot.propName),
-                  ),
-                ]),
-              ],
+              [t.identifier(refName), t.identifier(markerName)],
             ),
           ),
-        ]),
-      )
-      stmts.push(
-        t.expressionStatement(
-          t.callExpression(
-            t.memberExpression(
-              t.memberExpression(
-                t.identifier(markerName),
-                t.identifier("parentNode"),
-              ),
-              t.identifier("replaceChild"),
-            ),
-            [t.identifier(refName), t.identifier(markerName)],
-          ),
-        ),
-      )
+        )
+      }
 
       stateProps.push(
         t.objectProperty(t.identifier(refName), t.identifier(refName)),

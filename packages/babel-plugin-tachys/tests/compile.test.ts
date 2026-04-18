@@ -149,11 +149,11 @@ describe("babel-plugin-tachys (v0.1 text slots)", () => {
     `
     const out = transform(input)
     expect(out).toContain("markCompiled")
-    // Template contains comment marker
-    expect(out).toContain('_template("<span><!></span>")')
-    // Mount creates a text node, replaces the marker
-    expect(out).toContain("document.createTextNode")
-    expect(out).toContain("replaceChild")
+    // Sole expression child uses pre-allocated text node: template emits a
+    // space placeholder and mount writes .data directly.
+    expect(out).toContain('_template("<span> </span>")')
+    expect(out).not.toContain("document.createTextNode")
+    expect(out).not.toContain("replaceChild")
     // Patch compares and writes .data
     expect(out).toContain("state.name !== props.name")
     expect(out).toContain(".data =")
@@ -167,7 +167,8 @@ describe("babel-plugin-tachys (v0.1 text slots)", () => {
     `
     const out = transform(input)
     expect(out).toContain("markCompiled")
-    expect(out).toContain('_template("<span><!></span>")')
+    // Prealloc placeholder because the slot is the sole child.
+    expect(out).toContain('_template("<span> </span>")')
     // Destructured names are rewritten as props.x
     expect(out).toContain("props.label")
     expect(out).toContain("state.label !== props.label")
@@ -202,9 +203,11 @@ describe("babel-plugin-tachys (v0.1 text slots)", () => {
       }
     `
     const out = transform(input)
-    expect(out).toContain('_template("<div><p><!></p></div>")')
-    // _root.firstChild reaches <p>, .firstChild reaches the comment
+    // Slot is sole child of <p>, so prealloc space placeholder applies here.
+    expect(out).toContain('_template("<div><p> </p></div>")')
+    // _root.firstChild reaches <p>, .firstChild reaches the text placeholder.
     expect(out).toMatch(/_root\.firstChild\.firstChild/)
+    expect(out).toMatch(/_t\d+\.data\s*=\s*String\(props\.x\)/)
   })
 
   it("does not rebind the same prop twice in state", () => {
@@ -353,7 +356,11 @@ describe("babel-plugin-tachys (v0.3 event handlers)", () => {
     const out = transform(input)
     expect(out).toContain("_root.className = String(props.cls)")
     expect(out).toContain("_root.onclick = props.onSelect")
-    expect(out).toMatch(/_t\d+\s*=\s*document\.createTextNode\(String\(props\.label\)\)/)
+    // `{label}` is the sole child of <td>, so it uses a prealloc text node:
+    // navigate to it and write .data directly, no createTextNode.
+    expect(out).toMatch(/_t\d+\s*=\s*_root\.firstChild\.firstChild/)
+    expect(out).toMatch(/_t\d+\.data\s*=\s*String\(props\.label\)/)
+    expect(out).not.toContain("document.createTextNode")
   })
 })
 
