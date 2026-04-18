@@ -269,8 +269,8 @@ describe("scheduleUpdate() with explicit lanes", () => {
     const rerender = vi.fn()
     const instance = makeInstance(rerender)
 
-    // Default currentLane is Lane.Default
-    expect(getCurrentLane()).toBe(Lane.Default)
+    // Default currentLane is Lane.Sync (concurrent work is opt-in via startTransition)
+    expect(getCurrentLane()).toBe(Lane.Sync)
 
     scheduleUpdate(instance)
     flushUpdates()

@@ -83,7 +83,7 @@ let sliceStart = 0
 const SLICE_BUDGET = 5
 
 /** Current transition lane context. Set by startTransition. */
-let currentLane: Lane = Lane.Default
+let currentLane: Lane = Lane.Sync
 
 /**
  * Transition generation counter. Incremented each time a Transition-lane
