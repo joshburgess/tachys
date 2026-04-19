@@ -30,6 +30,7 @@ import {
   compileComponent,
   type AttrSlot,
   type ComponentSlot,
+  type ListSlot,
   type Slot,
   type TextSlot,
 } from "./compile"
@@ -41,9 +42,16 @@ interface PluginState extends PluginPass {
   tachysImports: {
     markCompiled: string | null
     template: string | null
+    mountList: string | null
+    patchList: string | null
   }
   templateCounter: number
   pendingTemplates: Array<{ id: string; html: string }>
+  /**
+   * Module-level `const` helpers for compiled lists (makeProps and keyOf).
+   * Hoisted so they allocate once per module, not once per parent mount.
+   */
+  pendingHelpers: Array<{ id: string; init: BabelCore.types.Expression }>
 }
 
 const PACKAGE_NAME = "tachys"
@@ -62,9 +70,15 @@ const plugin = declareT<PluginState>((api) => {
     inherits: syntaxJsx as BabelCore.PluginObj,
 
     pre() {
-      this.tachysImports = { markCompiled: null, template: null }
+      this.tachysImports = {
+        markCompiled: null,
+        template: null,
+        mountList: null,
+        patchList: null,
+      }
       this.templateCounter = 0
       this.pendingTemplates = []
+      this.pendingHelpers = []
     },
 
     visitor: {
@@ -74,6 +88,29 @@ const plugin = declareT<PluginState>((api) => {
 
           ensureImport(path, t, state, "markCompiled")
           const templateLocal = ensureImport(path, t, state, "_template")
+          if (state.tachysImports.mountList !== null) {
+            ensureImport(path, t, state, "_mountList")
+          }
+          if (state.tachysImports.patchList !== null) {
+            ensureImport(path, t, state, "_patchList")
+          }
+
+          // List-helper module consts come right after the imports but
+          // before the template decls so they are already bound when
+          // compiled component constructors run. Unshift in reverse to
+          // land in source order.
+          for (let i = state.pendingHelpers.length - 1; i >= 0; i--) {
+            const helper = state.pendingHelpers[i]!
+            path.unshiftContainer(
+              "body",
+              t.variableDeclaration("const", [
+                t.variableDeclarator(
+                  t.identifier(helper.id),
+                  helper.init,
+                ),
+              ]),
+            )
+          }
 
           for (let i = state.pendingTemplates.length - 1; i >= 0; i--) {
             const tpl = state.pendingTemplates[i]!
@@ -104,8 +141,43 @@ const plugin = declareT<PluginState>((api) => {
 
         const markCompiledName = reserveImport(state, "markCompiled")
 
-        const mountFn = buildMount(t, tplId, compiled.slots, compiled.propsParamName)
-        const patchFn = buildPatch(t, compiled.slots, compiled.propsParamName)
+        // List slots need two module-scope helpers each (makeProps + keyOf)
+        // plus the _mountList / _patchList runtime imports. Register them
+        // up-front so buildMount and buildPatch can reference stable names.
+        const listHelpers = new Map<
+          number,
+          { makePropsId: string; keyOfId: string }
+        >()
+        compiled.slots.forEach((slot, index) => {
+          if (slot.kind !== "list") return
+          reserveImport(state, "_mountList")
+          reserveImport(state, "_patchList")
+          const makePropsId = `_lp$${name}_${index}`
+          const keyOfId = `_lk$${name}_${index}`
+          listHelpers.set(index, { makePropsId, keyOfId })
+          state.pendingHelpers.push({
+            id: makePropsId,
+            init: buildListMakePropsFn(t, slot),
+          })
+          state.pendingHelpers.push({
+            id: keyOfId,
+            init: buildListKeyOfFn(t, slot),
+          })
+        })
+
+        const mountFn = buildMount(
+          t,
+          tplId,
+          compiled.slots,
+          compiled.propsParamName,
+          listHelpers,
+        )
+        const patchFn = buildPatch(
+          t,
+          compiled.slots,
+          compiled.propsParamName,
+          listHelpers,
+        )
         const compareFn = buildCompare(t, compiled.slots)
 
         const markCompiledArgs: BabelCore.types.Expression[] = [mountFn, patchFn]
@@ -333,6 +405,7 @@ function maybeRetargetPropsName(
  */
 function slotPropNames(slot: Slot): string[] {
   if (slot.kind === "component") return slot.allDeps
+  if (slot.kind === "list") return [slot.arrayPropName]
   if (
     (slot.kind === "text" || slot.kind === "attr") &&
     slot.composite !== undefined
@@ -342,11 +415,50 @@ function slotPropNames(slot: Slot): string[] {
   return [slot.propName]
 }
 
+/**
+ * Emit the module-level `makeProps` helper for a list slot: an arrow that
+ * takes the item param and returns an object literal of prop entries. Kept
+ * as a pure function so the runtime can call it for every item on both
+ * mount and patch without rebuilding closures per render.
+ */
+function buildListMakePropsFn(
+  t: typeof BabelCore.types,
+  slot: ListSlot,
+): BabelCore.types.ArrowFunctionExpression {
+  const obj = t.objectExpression(
+    slot.propSpecs.map((p) =>
+      t.objectProperty(t.identifier(p.name), p.valueExpr),
+    ),
+  )
+  return t.arrowFunctionExpression([t.identifier(slot.itemParamName)], obj)
+}
+
+/**
+ * Emit the module-level `keyOf` helper for a list slot.
+ */
+function buildListKeyOfFn(
+  t: typeof BabelCore.types,
+  slot: ListSlot,
+): BabelCore.types.ArrowFunctionExpression {
+  return t.arrowFunctionExpression(
+    [t.identifier(slot.itemParamName)],
+    slot.keyExpr,
+  )
+}
+
+/**
+ * Stable state-key name for a list slot's runtime state object.
+ */
+function listInstanceName(index: number): string {
+  return `_ls${index}`
+}
+
 function buildMount(
   t: typeof BabelCore.types,
   tplId: string,
   slots: Slot[],
   propsName: string,
+  listHelpers: Map<number, { makePropsId: string; keyOfId: string }>,
 ): BabelCore.types.ArrowFunctionExpression {
   const stmts: BabelCore.types.Statement[] = []
 
@@ -514,6 +626,51 @@ function buildMount(
       continue
     }
 
+    if (slot.kind === "list") {
+      const markerName = `_lm${i}`
+      const instName = listInstanceName(i)
+      const helpers = listHelpers.get(i)!
+
+      // const _lmN = <path-to-comment-anchor>;
+      stmts.push(
+        t.variableDeclaration("const", [
+          t.variableDeclarator(
+            t.identifier(markerName),
+            buildPathExpr(t, "_root", slot.path),
+          ),
+        ]),
+      )
+      // const _lsN = _mountList(
+      //   props.<arrayProp>,
+      //   <componentRef>,
+      //   _makeProps_N,
+      //   _keyOf_N,
+      //   _lmN,
+      // );
+      stmts.push(
+        t.variableDeclaration("const", [
+          t.variableDeclarator(
+            t.identifier(instName),
+            t.callExpression(t.identifier("_mountList"), [
+              t.memberExpression(
+                t.identifier(propsName),
+                t.identifier(slot.arrayPropName),
+              ),
+              t.identifier(slot.componentRef),
+              t.identifier(helpers.makePropsId),
+              t.identifier(helpers.keyOfId),
+              t.identifier(markerName),
+            ]),
+          ),
+        ]),
+      )
+      stateProps.push(
+        t.objectProperty(t.identifier(instName), t.identifier(instName)),
+      )
+      registerSlotProps(slot, seenPropNames, stateProps, t, propsName)
+      continue
+    }
+
     if (slot.kind === "component") {
       const markerName = `_cm${i}`
       const instName = componentInstanceName(i)
@@ -666,6 +823,7 @@ function buildPatch(
   t: typeof BabelCore.types,
   slots: Slot[],
   propsName: string,
+  listHelpers: Map<number, { makePropsId: string; keyOfId: string }>,
 ): BabelCore.types.ArrowFunctionExpression {
   if (slots.length === 0) {
     return t.arrowFunctionExpression([], t.blockStatement([]))
@@ -674,24 +832,26 @@ function buildPatch(
   const hasComposite = slots.some(
     (s) =>
       s.kind === "component" ||
+      s.kind === "list" ||
       ((s.kind === "text" || s.kind === "attr") && s.composite !== undefined),
   )
 
   return hasComposite
-    ? buildPatchComposite(t, slots, propsName)
-    : buildPatchSimple(t, slots, propsName)
+    ? buildPatchComposite(t, slots, propsName, listHelpers)
+    : buildPatchSimple(t, slots, propsName, listHelpers)
 }
 
 function buildPatchSimple(
   t: typeof BabelCore.types,
   slots: Slot[],
   propsName: string,
+  _listHelpers: Map<number, { makePropsId: string; keyOfId: string }>,
 ): BabelCore.types.ArrowFunctionExpression {
-  // Simple path is only entered when no slot is a ComponentSlot or has
+  // Simple path is only entered when no slot is a Component/List or has
   // a composite expression, so every slot has a single `.propName`.
   const grouped = new Map<string, { slot: Slot; index: number }[]>()
   slots.forEach((slot, index) => {
-    if (slot.kind === "component") return
+    if (slot.kind === "component" || slot.kind === "list") return
     const arr = grouped.get(slot.propName) ?? []
     arr.push({ slot, index })
     grouped.set(slot.propName, arr)
@@ -702,7 +862,14 @@ function buildPatchSimple(
   for (const [propName, group] of grouped) {
     const writes: BabelCore.types.Statement[] = []
     for (const { slot, index } of group) {
-      const write = buildSlotWrite(t, slot, index, slots, propsName)
+      const write = buildSlotWrite(
+        t,
+        slot,
+        index,
+        slots,
+        propsName,
+        _listHelpers,
+      )
       if (write !== null) writes.push(write)
     }
 
@@ -739,6 +906,7 @@ function buildPatchComposite(
   t: typeof BabelCore.types,
   slots: Slot[],
   propsName: string,
+  listHelpers: Map<number, { makePropsId: string; keyOfId: string }>,
 ): BabelCore.types.ArrowFunctionExpression {
   const propNames = collectReactiveProps(slots)
   const dirtyLocals = new Map<string, string>()
@@ -768,7 +936,14 @@ function buildPatchComposite(
   slots.forEach((slot, index) => {
     const deps = slotPropNames(slot)
     if (deps.length === 0) return
-    const write = buildSlotWrite(t, slot, index, slots, propsName)
+    const write = buildSlotWrite(
+      t,
+      slot,
+      index,
+      slots,
+      propsName,
+      listHelpers,
+    )
     if (write === null) return
     let test: BabelCore.types.Expression = t.identifier(dirtyLocals.get(deps[0]!)!)
     for (let i = 1; i < deps.length; i++) {
@@ -817,6 +992,7 @@ function buildSlotWrite(
   index: number,
   slots: Slot[],
   propsName: string,
+  listHelpers: Map<number, { makePropsId: string; keyOfId: string }>,
 ): BabelCore.types.Statement | null {
   if (slot.kind === "text") {
     const refName = slotRefName(index)
@@ -875,6 +1051,25 @@ function buildSlotWrite(
           buildChildPropsObject(t, slot, propsName),
         ],
       ),
+    )
+  }
+  if (slot.kind === "list") {
+    // _patchList(state._lsN, props.<arrayProp>, Child, makeProps, keyOf)
+    const helpers = listHelpers.get(index)!
+    return t.expressionStatement(
+      t.callExpression(t.identifier("_patchList"), [
+        t.memberExpression(
+          t.identifier("state"),
+          t.identifier(listInstanceName(index)),
+        ),
+        t.memberExpression(
+          t.identifier(propsName),
+          t.identifier(slot.arrayPropName),
+        ),
+        t.identifier(slot.componentRef),
+        t.identifier(helpers.makePropsId),
+        t.identifier(helpers.keyOfId),
+      ]),
     )
   }
   // event slots: no DOM rebind needed; state mutation happens at the
@@ -948,11 +1143,21 @@ function stateElementExpr(
   throw new Error(`no element ref for path [${path.join(",")}]`)
 }
 
-function reserveImport(
-  state: PluginState,
-  local: "markCompiled" | "_template",
-): string {
-  const key = local === "markCompiled" ? "markCompiled" : "template"
+type ImportLocal =
+  | "markCompiled"
+  | "_template"
+  | "_mountList"
+  | "_patchList"
+
+function importKey(local: ImportLocal): keyof PluginState["tachysImports"] {
+  if (local === "markCompiled") return "markCompiled"
+  if (local === "_template") return "template"
+  if (local === "_mountList") return "mountList"
+  return "patchList"
+}
+
+function reserveImport(state: PluginState, local: ImportLocal): string {
+  const key = importKey(local)
   const existing = state.tachysImports[key]
   if (existing !== null) return existing
   state.tachysImports[key] = local
@@ -963,7 +1168,7 @@ function ensureImport(
   path: BabelCore.NodePath<BabelCore.types.Program>,
   t: typeof BabelCore.types,
   state: PluginState,
-  local: "markCompiled" | "_template",
+  local: ImportLocal,
 ): string {
   const name = reserveImport(state, local)
 

@@ -150,7 +150,44 @@ export interface ComponentSlot {
   allDeps: string[]
 }
 
-export type Slot = TextSlot | AttrSlot | EventSlot | ComponentSlot
+/**
+ * A keyed list of compiled child components rendered from `{arr.map(...)}`.
+ * The parent template carries a `<!>` marker at the list's position that
+ * serves as the DOM anchor: `_mountList` inserts each child before it, and
+ * `_patchList` reconciles order without disturbing surrounding siblings.
+ *
+ * Props are split into `keyExpr` (the `key={...}` prop, required) and the
+ * remaining entries. Each expression is stored with the arrow param name
+ * rewritten to a stable identifier the emitter can substitute when building
+ * the module-scope `makeProps`/`keyOf` helpers.
+ */
+export interface ListSlot {
+  kind: "list"
+  path: number[]
+  /** Local name of the child component (e.g. "Row"). */
+  componentRef: string
+  /** Parent prop name that holds the array. */
+  arrayPropName: string
+  /**
+   * Parameter name the JSX source used for each item (e.g. `row`). The
+   * emitted helpers rename this to a stable local, but callers reading the
+   * ListSlot need the original for diagnostics.
+   */
+  itemParamName: string
+  /** Key expression (from `key={...}`), with itemParam preserved as-is. */
+  keyExpr: BabelCore.types.Expression
+  /**
+   * Ordered non-key prop entries. Each valueExpr references `itemParamName`
+   * (or is a literal). The emitter can substitute the param name before
+   * emitting the helper.
+   */
+  propSpecs: Array<{
+    name: string
+    valueExpr: BabelCore.types.Expression
+  }>
+}
+
+export type Slot = TextSlot | AttrSlot | EventSlot | ComponentSlot | ListSlot
 
 export interface CompiledResult {
   html: string
@@ -300,6 +337,169 @@ function buildComponentSlot(
     props,
     allDeps,
   }
+}
+
+/**
+ * Detect `arr.map(item => <Row .../>)` where `arr` is a parent prop and
+ * the callback returns a single PascalCase JSX element whose attributes
+ * reference only the item parameter (or literals). Requires a `key={...}`
+ * attribute so the runtime helper can diff.
+ *
+ * Returns a ListSlot without `path` (caller fills it in). Returns null for
+ * anything outside the grammar so the caller can fall through to other
+ * expr-child handlers.
+ */
+function resolveListExpr(
+  expr:
+    | BabelCore.types.Expression
+    | BabelCore.types.JSXEmptyExpression,
+  ctx: CompileContext,
+): Omit<ListSlot, "path"> | null {
+  const t = ctx.t
+  if (!t.isCallExpression(expr)) return null
+  const callee = expr.callee
+  if (!t.isMemberExpression(callee)) return null
+  if (callee.computed) return null
+  if (!t.isIdentifier(callee.property)) return null
+  if (callee.property.name !== "map") return null
+  if (expr.arguments.length !== 1) return null
+
+  // Array source must be a parent prop reference.
+  const arrayObj = callee.object
+  let arrayPropName: string | null = null
+  if (t.isIdentifier(arrayObj)) {
+    if (
+      ctx.destructuredNames === null ||
+      !ctx.destructuredNames.has(arrayObj.name)
+    ) {
+      return null
+    }
+    arrayPropName = arrayObj.name
+  } else if (
+    t.isMemberExpression(arrayObj) &&
+    t.isIdentifier(arrayObj.object) &&
+    arrayObj.object.name === "props" &&
+    t.isIdentifier(arrayObj.property) &&
+    !arrayObj.computed
+  ) {
+    arrayPropName = arrayObj.property.name
+  } else {
+    return null
+  }
+
+  // Callback must be a single-param arrow whose body is a JSX element.
+  const cb = expr.arguments[0]!
+  if (!t.isArrowFunctionExpression(cb)) return null
+  if (cb.params.length !== 1) return null
+  const param = cb.params[0]!
+  if (!t.isIdentifier(param)) return null
+  const itemParamName = param.name
+  let body: BabelCore.types.Node = cb.body
+  if (t.isBlockStatement(body)) {
+    if (body.body.length !== 1) return null
+    const stmt = body.body[0]!
+    if (!t.isReturnStatement(stmt)) return null
+    if (stmt.argument === null || stmt.argument === undefined) return null
+    body = stmt.argument
+  }
+  if (!t.isJSXElement(body)) return null
+  const childEl = body
+  const nameNode = childEl.openingElement.name
+  if (!t.isJSXIdentifier(nameNode)) return null
+  const componentRef = nameNode.name
+  if (isHostTag(componentRef)) return null
+  if (childEl.children.length > 0) return null
+
+  // Every attribute value must reference only the item param (or literals).
+  let keyExpr: BabelCore.types.Expression | null = null
+  const propSpecs: ListSlot["propSpecs"] = []
+  for (const attr of childEl.openingElement.attributes) {
+    if (!t.isJSXAttribute(attr)) return null
+    if (!t.isJSXIdentifier(attr.name)) return null
+    const propName = attr.name.name
+    const value = attr.value
+    let valueExpr: BabelCore.types.Expression
+    if (value === null || value === undefined) {
+      valueExpr = t.booleanLiteral(true)
+    } else if (t.isStringLiteral(value)) {
+      valueExpr = t.stringLiteral(value.value)
+    } else if (t.isJSXExpressionContainer(value)) {
+      const e = value.expression
+      if (t.isJSXEmptyExpression(e)) return null
+      if (!isItemRestrictedExpr(e, itemParamName, t)) return null
+      valueExpr = e
+    } else {
+      return null
+    }
+    if (propName === "key") {
+      keyExpr = valueExpr
+    } else {
+      propSpecs.push({ name: propName, valueExpr })
+    }
+  }
+  if (keyExpr === null) return null
+
+  return {
+    kind: "list",
+    componentRef,
+    arrayPropName,
+    itemParamName,
+    keyExpr,
+    propSpecs,
+  }
+}
+
+/**
+ * Accept literals plus any expression whose only identifier roots are
+ * `itemParam`. Keeps the emitted makeProps/keyOf helpers pure so they can
+ * be hoisted to module scope.
+ */
+function isItemRestrictedExpr(
+  expr: BabelCore.types.Expression,
+  itemParam: string,
+  t: T,
+): boolean {
+  if (
+    t.isStringLiteral(expr) ||
+    t.isNumericLiteral(expr) ||
+    t.isBooleanLiteral(expr) ||
+    t.isNullLiteral(expr)
+  ) {
+    return true
+  }
+  if (t.isIdentifier(expr)) return expr.name === itemParam
+  if (t.isMemberExpression(expr)) {
+    if (expr.computed) return false
+    let cursor: BabelCore.types.Expression = expr
+    while (t.isMemberExpression(cursor)) {
+      if (cursor.computed) return false
+      cursor = cursor.object
+    }
+    return t.isIdentifier(cursor) && cursor.name === itemParam
+  }
+  if (t.isTemplateLiteral(expr)) {
+    for (const sub of expr.expressions) {
+      if (t.isTSType(sub)) return false
+      if (
+        !isItemRestrictedExpr(
+          sub as BabelCore.types.Expression,
+          itemParam,
+          t,
+        )
+      ) {
+        return false
+      }
+    }
+    return true
+  }
+  if (t.isConditionalExpression(expr)) {
+    return (
+      isItemRestrictedExpr(expr.test, itemParam, t) &&
+      isItemRestrictedExpr(expr.consequent, itemParam, t) &&
+      isItemRestrictedExpr(expr.alternate, itemParam, t)
+    )
+  }
+  return false
 }
 
 /**
@@ -682,6 +882,24 @@ function renderChildren(
     }
 
     if (child.kind === "expr") {
+      // `{arr.map(item => <Row key={item.id} ... />)}` -- keyed compiled list.
+      // Must sit alone (bordered only by elements) so the <!> marker does
+      // not merge with surrounding text during HTML parsing.
+      const list = resolveListExpr(child.node.expression, ctx)
+      if (list !== null) {
+        const prev = i > 0 ? effective[i - 1]! : null
+        const next = i < effective.length - 1 ? effective[i + 1]! : null
+        const isTextLike = (c: EffectiveChild | null): boolean =>
+          c !== null && c.kind !== "element"
+        if (isTextLike(prev) || isTextLike(next)) return null
+        ctx.slots.push({
+          ...list,
+          path: [...parentPath, i],
+        })
+        out += "<!>"
+        continue
+      }
+
       const composite = resolveTemplateExpr(child.node.expression, ctx)
       const propName =
         composite !== null

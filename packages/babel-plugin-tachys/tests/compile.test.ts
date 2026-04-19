@@ -1065,3 +1065,257 @@ describe("babel-plugin-tachys (v0.6 literal attr expressions)", () => {
     expect(out).toMatch(/setAttribute\("id",\s*String\(props\.id\)\)/)
   })
 })
+
+describe("babel-plugin-tachys (v0.8 keyed list compilation)", () => {
+  it("compiles {arr.map(item => <Row/>)} into _mountList", () => {
+    const input = `
+      function Row({ id }) { return <span>{id}</span>; }
+      function List({ items }) {
+        return <ul>{items.map(item => <Row key={item.id} id={item.id} />)}</ul>;
+      }
+    `
+    const out = transform(input)
+    // Template has a <!> comment anchor inside ul.
+    expect(out).toContain('_template("<ul><!></ul>")')
+    // Runtime imports got added.
+    expect(out).toMatch(/import \{[^}]*_mountList[^}]*\} from "tachys"/)
+    expect(out).toMatch(/import \{[^}]*_patchList[^}]*\} from "tachys"/)
+    // Module-level helpers emitted with component-scoped names.
+    expect(out).toMatch(/const _lp\$List_0 = item =>/)
+    expect(out).toMatch(/const _lk\$List_0 = item => item\.id/)
+    // Mount calls _mountList with the resolved args.
+    expect(out).toMatch(
+      /_mountList\(props\.items,\s*Row,\s*_lp\$List_0,\s*_lk\$List_0,\s*_lm\d+\)/,
+    )
+    // Patch calls _patchList under the items dirty-check.
+    expect(out).toMatch(
+      /_patchList\(state\._ls\d+,\s*props\.items,\s*Row,\s*_lp\$List_0,\s*_lk\$List_0\)/,
+    )
+  })
+
+  it("emits non-key props in the makeProps arrow", () => {
+    const input = `
+      function Row({ id, label }) { return <span>{label}</span>; }
+      function List({ rows }) {
+        return <div>{rows.map(r => <Row key={r.id} id={r.id} label={r.label} />)}</div>;
+      }
+    `
+    const out = transform(input)
+    // Key is not duplicated into makeProps.
+    expect(out).toMatch(
+      /const _lp\$List_0 = r => \(\{\s*id: r\.id,\s*label: r\.label\s*\}\)/,
+    )
+    expect(out).toMatch(/const _lk\$List_0 = r => r\.id/)
+  })
+
+  it("bails when the map callback has no key prop", () => {
+    const input = `
+      function Row({ id }) { return <span>{id}</span>; }
+      function List({ items }) {
+        return <ul>{items.map(item => <Row id={item.id} />)}</ul>;
+      }
+    `
+    const out = transform(input)
+    // Row still compiles; List must remain as a FunctionDeclaration.
+    expect(out).toContain("function List(")
+    expect(out).not.toContain("const List = markCompiled")
+  })
+
+  it("bails when the map callback body is a host element", () => {
+    const input = `
+      function List({ items }) {
+        return <ul>{items.map(item => <li key={item.id}>{item.id}</li>)}</ul>;
+      }
+    `
+    const out = transform(input)
+    expect(out).toContain("function List(")
+    expect(out).not.toContain("const List = markCompiled")
+  })
+
+  it("bails when an attr references outside the item param", () => {
+    const input = `
+      function Row({ id, flag }) { return <span>{id}</span>; }
+      function List({ items, highlight }) {
+        return <ul>{items.map(item => <Row key={item.id} id={item.id} flag={highlight} />)}</ul>;
+      }
+    `
+    const out = transform(input)
+    // Row still compiles; List must bail because `flag={highlight}` reads
+    // a parent prop inside the callback body.
+    expect(out).toContain("function List(")
+    expect(out).not.toContain("const List = markCompiled")
+  })
+
+  it("supports props.<name>.map form (no destructure)", () => {
+    const input = `
+      function Row({ id }) { return <span>{id}</span>; }
+      function List(props) {
+        return <ul>{props.items.map(item => <Row key={item.id} id={item.id} />)}</ul>;
+      }
+    `
+    const out = transform(input)
+    expect(out).toContain("markCompiled")
+    expect(out).toMatch(
+      /_mountList\(props\.items,\s*Row,\s*_lp\$List_0,\s*_lk\$List_0/,
+    )
+  })
+
+  it("accepts template literal attr values that only reference the item", () => {
+    const input = `
+      function Row({ label }) { return <span>{label}</span>; }
+      function List({ items }) {
+        return <ul>{items.map(item => <Row key={item.id} label={\`#\${item.id}\`} />)}</ul>;
+      }
+    `
+    const out = transform(input)
+    expect(out).toContain("markCompiled")
+    expect(out).toMatch(/label: `#\$\{item\.id\}`/)
+  })
+
+  it("compare keeps the array prop in the memo check", () => {
+    const input = `
+      function Row({ id }) { return <span>{id}</span>; }
+      function List({ items }) {
+        return <ul>{items.map(item => <Row key={item.id} id={item.id} />)}</ul>;
+      }
+    `
+    const out = transform(input)
+    expect(out).toContain("prev.items === next.items")
+  })
+
+  it("runs a keyed list end-to-end in jsdom", async () => {
+    const { JSDOM } = await import("jsdom")
+    const dom = new JSDOM("<!doctype html><html><body></body></html>")
+    const doc = dom.window.document
+
+    const input = `
+      function Row({ id, label }) {
+        return <li className="row">{label}</li>;
+      }
+      function List({ items }) {
+        return <ul>{items.map(item => <Row key={item.id} id={item.id} label={item.label} />)}</ul>;
+      }
+    `
+    const out = transform(input)
+    const stubbed = out.replace(/import \{[^}]*\} from "tachys";?/g, "")
+
+    type MountResult = { dom: Element; state: Record<string, unknown> }
+
+    const markCompiled = (
+      mount: (p: Record<string, unknown>) => MountResult,
+      patch: (s: Record<string, unknown>, p: Record<string, unknown>) => void,
+      compare?: (
+        a: Record<string, unknown>,
+        b: Record<string, unknown>,
+      ) => boolean,
+    ): ((p: Record<string, unknown>) => MountResult) & {
+      patch: typeof patch
+      _compare?: typeof compare
+    } => {
+      const callable = mount as ((p: Record<string, unknown>) => MountResult) & {
+        patch: typeof patch
+        _compare?: typeof compare
+      }
+      callable.patch = patch
+      if (compare !== undefined) callable._compare = compare
+      return callable
+    }
+    const _template = (html: string): Element => {
+      const tpl = doc.createElement("template")
+      tpl.innerHTML = html
+      return tpl.content.firstElementChild as Element
+    }
+
+    // Bring in the real runtime helpers from the library source. We
+    // can't just import them because their types expect a real global
+    // `document`; stub it via the same `new Function` trick.
+    const runtime = await import("../../../src/compiled")
+    const { _mountList, _patchList } = runtime
+
+    const fn = new Function(
+      "document",
+      "markCompiled",
+      "_template",
+      "_mountList",
+      "_patchList",
+      `${stubbed}; return { Row, List };`,
+    )
+    const { List } = fn(
+      doc,
+      markCompiled,
+      _template,
+      _mountList,
+      _patchList,
+    ) as {
+      List: ((p: Record<string, unknown>) => MountResult) & {
+        patch: (s: Record<string, unknown>, p: Record<string, unknown>) => void
+      }
+    }
+
+    const items = [
+      { id: 1, label: "one" },
+      { id: 2, label: "two" },
+      { id: 3, label: "three" },
+    ]
+    const inst = List({ items })
+    expect((inst.dom as Element).outerHTML).toBe(
+      '<ul>' +
+        '<li class="row">one</li>' +
+        '<li class="row">two</li>' +
+        '<li class="row">three</li>' +
+        '<!---->' +
+      '</ul>',
+    )
+
+    // Swap order: keyed diff must not re-mount anything.
+    const reordered = [items[2]!, items[0]!, items[1]!]
+    List.patch(inst.state, { items: reordered })
+    expect((inst.dom as Element).outerHTML).toBe(
+      '<ul>' +
+        '<li class="row">three</li>' +
+        '<li class="row">one</li>' +
+        '<li class="row">two</li>' +
+        '<!---->' +
+      '</ul>',
+    )
+
+    // Remove the middle item.
+    List.patch(inst.state, { items: [reordered[0]!, reordered[2]!] })
+    expect((inst.dom as Element).outerHTML).toBe(
+      '<ul>' +
+        '<li class="row">three</li>' +
+        '<li class="row">two</li>' +
+        '<!---->' +
+      '</ul>',
+    )
+
+    // Append a new item.
+    List.patch(inst.state, {
+      items: [reordered[0]!, reordered[2]!, { id: 4, label: "four" }],
+    })
+    expect((inst.dom as Element).outerHTML).toBe(
+      '<ul>' +
+        '<li class="row">three</li>' +
+        '<li class="row">two</li>' +
+        '<li class="row">four</li>' +
+        '<!---->' +
+      '</ul>',
+    )
+
+    // Patch an existing item's label -- key stays the same, child.patch fires.
+    const patched = [
+      { id: 3, label: "THREE" },
+      reordered[2]!,
+      { id: 4, label: "four" },
+    ]
+    List.patch(inst.state, { items: patched })
+    expect((inst.dom as Element).outerHTML).toBe(
+      '<ul>' +
+        '<li class="row">THREE</li>' +
+        '<li class="row">two</li>' +
+        '<li class="row">four</li>' +
+        '<!---->' +
+      '</ul>',
+    )
+  })
+})

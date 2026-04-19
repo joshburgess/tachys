@@ -120,7 +120,7 @@ test("Tachys vs Inferno browser benchmark", async ({ page }) => {
       "",
       "## Comparison",
       "",
-      "Three-way comparison: Tachys with raw `h()`, Tachys with plugin-compiled Row, and Inferno.",
+      "Three-way comparison: Tachys with raw `h()`, Tachys with `babel-plugin-tachys` output (compiled Row + compiled keyed list), and Inferno.",
       "",
       "| Operation | h() | compiled | inferno | c/h() | c/inf | h()/inf |",
       "|---|---|---|---|---|---|---|",
@@ -156,7 +156,7 @@ test("Tachys vs Inferno browser benchmark", async ({ page }) => {
     }
 
     lines.push("")
-    lines.push("## Tachys Detail (compiled Row)")
+    lines.push("## Tachys Detail (compiled Row + list)")
     lines.push("")
     lines.push("| Operation | Median (ms) | Mean (ms) | Min (ms) | Max (ms) |")
     lines.push("|---|---|---|---|---|")

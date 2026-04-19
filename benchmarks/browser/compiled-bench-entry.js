@@ -1,16 +1,25 @@
 /**
- * Tachys browser benchmark using a plugin-compiled Row component.
+ * Tachys browser benchmark using plugin-compiled Row + Table.
  *
- * The Row below is exactly what `babel-plugin-tachys` emits for the
- * equivalent JSX source (verified by the plugin test suite). Hand-written
- * here to avoid pulling Babel into the benchmark build pipeline.
+ * The components below are exactly what `babel-plugin-tachys` emits for
+ * the equivalent JSX source (verified by the plugin test suite). Hand-
+ * written here to avoid pulling Babel into the benchmark build pipeline.
  *
- * The Table wrapper still uses raw h() -- the plugin's list-compilation
- * pass isn't landed yet, so `data.map(...)` as a child expression bails.
- * This lets the benchmark isolate the compiled-Row speedup against the
- * same raw-h() control already running in index.html.
+ * The Table wrapper now uses the plugin's keyed-list helpers (`_mountList`
+ * / `_patchList`), so this row reflects the full compiled output. The
+ * select bench uses a TableSelect whose items carry a precomputed
+ * `selected` flag, matching the pattern the plugin supports (attributes
+ * may only read from the item param).
  */
-import { h, mount, patch, clearPool, markCompiled, _template } from "../../dist/index.js"
+import {
+  _mountList,
+  _patchList,
+  _template,
+  clearPool,
+  markCompiled,
+  mount,
+  patch,
+} from "../../dist/index.js"
 
 const adjectives = ["pretty", "large", "big", "small", "tall", "short", "long", "handsome"]
 const nouns = ["table", "chair", "house", "bbq", "desk", "car", "pony", "cookie"]
@@ -46,8 +55,6 @@ const _tpl$Row_0 = _template(
 const Row = markCompiled(
   (props) => {
     const _root = _tpl$Row_0.cloneNode(true)
-    // Text slots -- prealloc path (text node already present from the " "
-    // whitespace placeholder in the template).
     const _t0 = _root.firstChild.firstChild
     _t0.data = String(props.id)
     const _t1 = _root.firstChild.nextSibling.firstChild.firstChild
@@ -73,7 +80,7 @@ const Row = markCompiled(
   (prev, next) => prev.id === next.id && prev.label === next.label,
 )
 
-// ── Compiled Row with className ternary (for select bench) ───────────────
+// ── Compiled SelectRow (className ternary, `selected` prop) ──────────────
 // Source equivalent:
 //   function SelectRow({ id, label, selected }) {
 //     return (
@@ -127,36 +134,83 @@ const SelectRow = markCompiled(
     prev.selected === next.selected,
 )
 
-function Table(data) {
-  return h(
-    "table",
-    { className: "table table-hover" },
-    h(
-      "tbody",
-      null,
-      ...data.map((row) => h(Row, { key: row.id, id: row.id, label: row.label })),
-    ),
-  )
-}
+// ── Compiled Table (exactly what the plugin emits for the list case) ────
+// Source equivalent:
+//   function Table({ data }) {
+//     return (
+//       <table className="table table-hover">
+//         <tbody>
+//           {data.map(row => <Row key={row.id} id={row.id} label={row.label} />)}
+//         </tbody>
+//       </table>
+//     )
+//   }
 
-function TableSelect(data, selected) {
-  return h(
-    "table",
-    { className: "table table-hover" },
-    h(
-      "tbody",
-      null,
-      ...data.map((row) =>
-        h(SelectRow, {
-          key: row.id,
-          id: row.id,
-          label: row.label,
-          selected: row.id === selected,
-        }),
-      ),
-    ),
-  )
-}
+const _tpl$Table_0 = _template(
+  '<table class="table table-hover"><tbody><!></tbody></table>',
+)
+const _lp$Table_0 = (row) => ({ id: row.id, label: row.label })
+const _lk$Table_0 = (row) => row.id
+
+const Table = markCompiled(
+  (props) => {
+    const _root = _tpl$Table_0.cloneNode(true)
+    const _lm0 = _root.firstChild.firstChild
+    const _ls0 = _mountList(props.data, Row, _lp$Table_0, _lk$Table_0, _lm0)
+    const state = { _ls0, data: props.data }
+    return { dom: _root, state }
+  },
+  (state, props) => {
+    const _d0 = state.data !== props.data
+    if (_d0) {
+      _patchList(state._ls0, props.data, Row, _lp$Table_0, _lk$Table_0)
+    }
+    if (_d0) state.data = props.data
+  },
+  (prev, next) => prev.data === next.data,
+)
+
+// ── Compiled TableSelect (uses SelectRow + precomputed `selected` field) ─
+
+const _tpl$TableSelect_0 = _template(
+  '<table class="table table-hover"><tbody><!></tbody></table>',
+)
+const _lp$TableSelect_0 = (row) => ({
+  id: row.id,
+  label: row.label,
+  selected: row.selected,
+})
+const _lk$TableSelect_0 = (row) => row.id
+
+const TableSelect = markCompiled(
+  (props) => {
+    const _root = _tpl$TableSelect_0.cloneNode(true)
+    const _lm0 = _root.firstChild.firstChild
+    const _ls0 = _mountList(
+      props.data,
+      SelectRow,
+      _lp$TableSelect_0,
+      _lk$TableSelect_0,
+      _lm0,
+    )
+    const state = { _ls0, data: props.data }
+    return { dom: _root, state }
+  },
+  (state, props) => {
+    const _d0 = state.data !== props.data
+    if (_d0) {
+      _patchList(
+        state._ls0,
+        props.data,
+        SelectRow,
+        _lp$TableSelect_0,
+        _lk$TableSelect_0,
+      )
+    }
+    if (_d0) state.data = props.data
+  },
+  (prev, next) => prev.data === next.data,
+)
 
 function benchmark(name, setup, run, teardown, iterations = 20) {
   const times = []
@@ -176,6 +230,16 @@ function benchmark(name, setup, run, teardown, iterations = 20) {
   return { name, median, mean, min, max, times }
 }
 
+// Mounts a compiled component's output into a container element by
+// replacing the container's contents. Matches the raw-h() harness so
+// comparisons stay apples-to-apples.
+function mountCompiled(component, props, container) {
+  const inst = component(props)
+  container.textContent = ""
+  container.appendChild(inst.dom)
+  return inst
+}
+
 export function runTachysCompiledBenchmarks(container) {
   const results = []
 
@@ -188,9 +252,7 @@ export function runTachysCompiledBenchmarks(container) {
         return {}
       },
       () => {
-        const tree = Table(buildRowData(1000))
-        mount(tree, container)
-        return tree
+        mountCompiled(Table, { data: buildRowData(1000) }, container)
       },
       () => {
         container.textContent = ""
@@ -208,9 +270,7 @@ export function runTachysCompiledBenchmarks(container) {
         return {}
       },
       () => {
-        const tree = Table(buildRowData(10000))
-        mount(tree, container)
-        return tree
+        mountCompiled(Table, { data: buildRowData(10000) }, container)
       },
       () => {
         container.textContent = ""
@@ -224,14 +284,11 @@ export function runTachysCompiledBenchmarks(container) {
       "replace all 1,000 rows",
       () => {
         container.textContent = ""
-        const tree = Table(buildRowData(1000))
-        mount(tree, container)
-        return { tree }
+        const inst = mountCompiled(Table, { data: buildRowData(1000) }, container)
+        return { inst }
       },
       (state) => {
-        const newTree = Table(buildRowData(1000))
-        patch(state.tree, newTree, container)
-        state.tree = newTree
+        Table.patch(state.inst.state, { data: buildRowData(1000) })
       },
       () => {
         container.textContent = ""
@@ -246,17 +303,14 @@ export function runTachysCompiledBenchmarks(container) {
       () => {
         container.textContent = ""
         const data = buildRowData(1000)
-        const tree = Table(data)
-        mount(tree, container)
-        return { tree, data }
+        const inst = mountCompiled(Table, { data }, container)
+        return { inst, data }
       },
       (state) => {
         const newData = state.data.map((row, i) =>
           i % 10 === 0 ? { ...row, label: `${row.label} !!!` } : row,
         )
-        const newTree = Table(newData)
-        patch(state.tree, newTree, container)
-        state.tree = newTree
+        Table.patch(state.inst.state, { data: newData })
         state.data = newData
       },
       () => {
@@ -272,18 +326,15 @@ export function runTachysCompiledBenchmarks(container) {
       () => {
         container.textContent = ""
         const data = buildRowData(1000)
-        const tree = Table(data)
-        mount(tree, container)
-        return { tree, data }
+        const inst = mountCompiled(Table, { data }, container)
+        return { inst, data }
       },
       (state) => {
         const newData = [...state.data]
         const tmp = newData[1]
         newData[1] = newData[998]
         newData[998] = tmp
-        const newTree = Table(newData)
-        patch(state.tree, newTree, container)
-        state.tree = newTree
+        Table.patch(state.inst.state, { data: newData })
       },
       () => {
         container.textContent = ""
@@ -298,15 +349,12 @@ export function runTachysCompiledBenchmarks(container) {
       () => {
         container.textContent = ""
         const data = buildRowData(1000)
-        const tree = Table(data)
-        mount(tree, container)
-        return { tree, data }
+        const inst = mountCompiled(Table, { data }, container)
+        return { inst, data }
       },
       (state) => {
         const newData = [...state.data.slice(0, 500), ...state.data.slice(501)]
-        const newTree = Table(newData)
-        patch(state.tree, newTree, container)
-        state.tree = newTree
+        Table.patch(state.inst.state, { data: newData })
         state.data = newData
       },
       () => {
@@ -321,16 +369,15 @@ export function runTachysCompiledBenchmarks(container) {
       "select row (highlight one)",
       () => {
         container.textContent = ""
-        const data = buildRowData(1000)
-        const tree = TableSelect(data, -1)
-        mount(tree, container)
-        return { tree, data }
+        const data = buildRowData(1000).map((r) => ({ ...r, selected: false }))
+        const inst = mountCompiled(TableSelect, { data }, container)
+        return { inst, data }
       },
       (state) => {
-        const selected = state.data[5].id
-        const newTree = TableSelect(state.data, selected)
-        patch(state.tree, newTree, container)
-        state.tree = newTree
+        const newData = state.data.map((r, i) =>
+          i === 5 ? { ...r, selected: true } : r,
+        )
+        TableSelect.patch(state.inst.state, { data: newData })
       },
       () => {
         container.textContent = ""
@@ -345,18 +392,15 @@ export function runTachysCompiledBenchmarks(container) {
       () => {
         container.textContent = ""
         const data = buildRowData(1000)
-        const tree = Table(data)
-        mount(tree, container)
-        return { tree, data }
+        const inst = mountCompiled(Table, { data }, container)
+        return { inst, data }
       },
       (state) => {
         const appended = [
           ...state.data,
           ...buildRowData(1000).map((r) => ({ ...r, id: r.id + 1000 })),
         ]
-        const newTree = Table(appended)
-        patch(state.tree, newTree, container)
-        state.tree = newTree
+        Table.patch(state.inst.state, { data: appended })
       },
       () => {
         container.textContent = ""
