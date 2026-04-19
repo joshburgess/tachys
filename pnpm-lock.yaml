@@ -59,9 +59,15 @@ importers:
 
   packages/babel-plugin-tachys:
     dependencies:
+      '@babel/generator':
+        specifier: ^7.24.0
+        version: 7.29.1
       '@babel/helper-plugin-utils':
         specifier: ^7.20.0
         version: 7.28.6
+      '@babel/parser':
+        specifier: ^7.24.0
+        version: 7.29.2
     devDependencies:
       '@babel/core':
         specifier: ^7.24.0
@@ -78,6 +84,9 @@ importers:
       '@types/babel__core':
         specifier: ^7.20.0
         version: 7.20.5
+      '@types/babel__generator':
+        specifier: ^7.27.0
+        version: 7.27.0
       '@types/babel__helper-plugin-utils':
         specifier: ^7.10.0
         version: 7.10.3

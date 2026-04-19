@@ -34,7 +34,9 @@
     "@babel/core": "^7.20.0"
   },
   "dependencies": {
-    "@babel/helper-plugin-utils": "^7.20.0"
+    "@babel/generator": "^7.24.0",
+    "@babel/helper-plugin-utils": "^7.20.0",
+    "@babel/parser": "^7.24.0"
   },
   "devDependencies": {
     "@babel/core": "^7.24.0",
@@ -42,6 +44,7 @@
     "@babel/types": "^7.24.0",
     "@rollup/plugin-node-resolve": "^16.0.0",
     "@types/babel__core": "^7.20.0",
+    "@types/babel__generator": "^7.27.0",
     "@types/babel__helper-plugin-utils": "^7.10.0",
     "jsdom": "^26.0.0",
     "rollup": "^4.28.0",

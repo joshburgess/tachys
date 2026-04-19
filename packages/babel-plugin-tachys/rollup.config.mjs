@@ -12,7 +12,9 @@ const swcPlugin = swc({
 
 const external = [
   "@babel/core",
+  "@babel/generator",
   "@babel/helper-plugin-utils",
+  "@babel/parser",
   "@babel/plugin-syntax-jsx",
   "@babel/types",
 ]

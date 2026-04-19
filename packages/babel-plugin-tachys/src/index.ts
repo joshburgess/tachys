@@ -39,6 +39,8 @@ import {
   type Slot,
   type TextSlot,
 } from "./compile"
+import { compiledToIR } from "./compiled-to-ir"
+import { irToCompiled } from "./ir-to-compiled"
 
 const syntaxJsx =
   (syntaxJsxRaw as { default?: unknown }).default ?? syntaxJsxRaw
@@ -158,8 +160,13 @@ const plugin = declareT<PluginState>((api) => {
         const name = id.name
         if (!isPascalCase(name)) return
 
-        const compiled = compileComponent(path.node, t)
-        if (compiled === null) return
+        const compiledRaw = compileComponent(path.node, t)
+        if (compiledRaw === null) return
+        // Route through the portable IR so the emitter's input stays
+        // shaped by `src/ir.ts`, not by any particular AST library.
+        // Frontends for other toolchains (SWC, Oxc) target the same IR.
+        const ir = compiledToIR(compiledRaw)
+        const compiled = irToCompiled(t, ir)
 
         const tplId = `_tpl$${name}_${state.templateCounter++}`
         state.pendingTemplates.push({ id: tplId, html: compiled.html })
@@ -241,6 +248,24 @@ const plugin = declareT<PluginState>((api) => {
 })
 
 export default plugin
+
+// Re-export the portable IR so non-Babel frontends (SWC/Oxc) and custom
+// emitters can target it without importing from deep paths.
+export type {
+  CompiledIR,
+  IRAltSlot,
+  IRAttrSlot,
+  IRChildPropEntry,
+  IRComponentSlot,
+  IRCompositeExpr,
+  IRCondSlot,
+  IREventSlot,
+  IRListSlot,
+  IRSlot,
+  IRTextSlot,
+} from "./ir"
+export { compiledToIR } from "./compiled-to-ir"
+export { irToCompiled } from "./ir-to-compiled"
 
 function isPascalCase(name: string): boolean {
   const first = name.charCodeAt(0)
