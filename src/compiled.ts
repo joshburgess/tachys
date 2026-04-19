@@ -249,6 +249,14 @@ export interface CompiledListState {
   anchor: Comment
   parent: Node
   lastParentDeps: unknown[] | null
+  /**
+   * Scratch props object reused across `_patchList` iterations when the
+   * child has no user-supplied compare. The compiler-emitted makeProps
+   * mutates and returns this object instead of allocating a fresh one per
+   * row, trading 1000 allocations per patch for 0. Undefined until the
+   * first iteration allocates it via the makeProps default parameter.
+   */
+  scratchProps: Record<string, unknown> | undefined
 }
 
 /**
@@ -260,7 +268,7 @@ export interface CompiledListState {
 export function _mountList<Item>(
   items: ArrayLike<Item>,
   Child: CompiledComponent,
-  makeProps: (item: Item) => Record<string, unknown>,
+  makeProps: (item: Item, scratch?: Record<string, unknown>) => Record<string, unknown>,
   keyOf: (item: Item) => unknown,
   anchor: Comment,
   parentDeps?: unknown[],
@@ -288,6 +296,7 @@ export function _mountList<Item>(
     anchor,
     parent,
     lastParentDeps: parentDeps === undefined ? null : parentDeps.slice(),
+    scratchProps: undefined,
   }
 }
 
@@ -311,7 +320,7 @@ export function _patchList<Item>(
   list: CompiledListState,
   items: ArrayLike<Item>,
   Child: CompiledComponent,
-  makeProps: (item: Item) => Record<string, unknown>,
+  makeProps: (item: Item, scratch?: Record<string, unknown>) => Record<string, unknown>,
   keyOf: (item: Item) => unknown,
   parentDeps?: unknown[],
 ): void {
@@ -392,14 +401,17 @@ export function _patchList<Item>(
 
   // Split the per-row patch into two specialisations: when Child has no
   // compare (the compiler-emitted common case), `patch` itself owns the
-  // early-bail so we skip one indirect call and one props-field write.
-  // User-supplied compare still uses the memo-style path.
+  // early-bail so we skip one indirect call and one props-field write,
+  // and we can reuse a scratch props object across iterations rather
+  // than allocating one per row. User-supplied compare still uses the
+  // memo-style path (compare reads prev.props so we can't mutate it).
+  let scratch = list.scratchProps
   const patchInPlace =
     compare === undefined
       ? (existing: ListInstance, item: Item): void => {
           if (canSkipOnIdentity && existing.item === item) return
-          const props = makeProps(item)
-          patchFn(existing.state, props)
+          scratch = makeProps(item, scratch)
+          patchFn(existing.state, scratch)
           existing.item = item
         }
       : (existing: ListInstance, item: Item): void => {
@@ -444,6 +456,7 @@ export function _patchList<Item>(
   if (prefixEnd > e2) {
     for (let k = prefixEnd; k <= e1; k++) parent.removeChild(prev[k]!.dom)
     list.instances = next
+    list.scratchProps = scratch
     return
   }
 
@@ -466,6 +479,7 @@ export function _patchList<Item>(
       next[k] = inst
     }
     list.instances = next
+    list.scratchProps = scratch
     return
   }
 
@@ -572,6 +586,7 @@ export function _patchList<Item>(
   }
 
   list.instances = next
+  list.scratchProps = scratch
 }
 
 /**

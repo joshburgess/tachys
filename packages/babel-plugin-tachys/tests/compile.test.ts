@@ -1254,7 +1254,9 @@ describe("babel-plugin-tachys (v0.8 keyed list compilation)", () => {
     expect(out).toMatch(/import \{[^}]*_mountList[^}]*\} from "tachys"/)
     expect(out).toMatch(/import \{[^}]*_patchList[^}]*\} from "tachys"/)
     // Module-level helpers emitted with component-scoped names.
-    expect(out).toMatch(/const _lp\$List_0 = item =>/)
+    // makeProps is a mutator over a scratch arg so _patchList can reuse
+    // one props object per row instead of allocating per iteration.
+    expect(out).toMatch(/const _lp\$List_0 = \(item, __r = \{\}\) =>/)
     expect(out).toMatch(/const _lk\$List_0 = item => item\.id/)
     // Mount calls _mountList with the resolved args.
     expect(out).toMatch(
@@ -1276,7 +1278,7 @@ describe("babel-plugin-tachys (v0.8 keyed list compilation)", () => {
     const out = transform(input)
     // Key is not duplicated into makeProps.
     expect(out).toMatch(
-      /const _lp\$List_0 = r => \(\{\s*id: r\.id,\s*label: r\.label\s*\}\)/,
+      /const _lp\$List_0 = \(r, __r = \{\}\) => \{[\s\S]*__r\.id = r\.id[\s\S]*__r\.label = r\.label[\s\S]*return __r/,
     )
     expect(out).toMatch(/const _lk\$List_0 = r => r\.id/)
   })
@@ -1319,7 +1321,7 @@ describe("babel-plugin-tachys (v0.8 keyed list compilation)", () => {
     expect(out).not.toMatch(/const _lp\$List_0 =/)
     expect(out).not.toMatch(/const _lk\$List_0 =/)
     // The inline closure reads the parent prop directly.
-    expect(out).toMatch(/flag:\s*props\.highlight/)
+    expect(out).toMatch(/__r\.flag = props\.highlight/)
     // The dirty-check path ORs both the array and the captured parent prop.
     expect(out).toMatch(/state\.items !== props\.items/)
     expect(out).toMatch(/state\.highlight !== props\.highlight/)
@@ -1356,7 +1358,7 @@ describe("babel-plugin-tachys (v0.8 keyed list compilation)", () => {
     `
     const out = transform(input)
     expect(out).toContain("markCompiled")
-    expect(out).toMatch(/label: `#\$\{item\.id\}`/)
+    expect(out).toMatch(/__r\.label = `#\$\{item\.id\}`/)
   })
 
   it("leading-bail keeps the array prop", () => {

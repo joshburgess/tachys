@@ -189,21 +189,23 @@ function propsClosure(entries: readonly IRChildPropEntry[]): D.JsExpr {
 }
 
 /**
- * `(item) => ({...})` for list slots — closes over `props` so the body
- * can reference parent props inline.
+ * `(item, __r = {}) => { __r.a = ...; return __r }` for list slots.
+ * The default parameter lets mount invoke with one arg (fresh alloc) while
+ * the patch hot-loop passes a scratch object it reuses across iterations,
+ * eliminating per-row allocations. Field assignment order is stable across
+ * calls so V8 keeps a single hidden class for both mount and patch calls.
  */
 function listMakePropsExpr(slot: IRListSlot): D.JsExpr {
-  const obj = D.obj(
-    slot.propSpecs.map(
-      (p) =>
-        ({
-          kind: "prop",
-          key: p.name,
-          value: rawExpr(p.valueSrc),
-        }) as const,
-    ),
-  )
-  return D.arrow([slot.itemParamName], obj)
+  const stmts: D.JsStmt[] = []
+  for (const p of slot.propSpecs) {
+    stmts.push(
+      D.exprStmt(
+        D.assign(D.member(D.id("__r"), p.name), rawExpr(p.valueSrc)),
+      ),
+    )
+  }
+  stmts.push(D.ret(D.id("__r")))
+  return D.arrowBlock([slot.itemParamName, "__r = {}"], stmts)
 }
 
 /**
