@@ -33,7 +33,7 @@ export interface EmitInput {
 }
 
 export interface EmitResult {
-  /** Source of the `markCompiled(mount, patch, compare)` call expression. */
+  /** Source of the `markCompiled(mount, patch)` call expression. */
   callSrc: string
   /**
    * List helpers that the caller wanted hoisted. `kind: "hoisted"` entries
@@ -578,6 +578,15 @@ function stateElementExpr(
   throw new Error(`no element ref for path [${path.join(",")}]`)
 }
 
+function emitLeadingBail(propNames: readonly string[], propsName: string): D.JsStmt | null {
+  if (propNames.length === 0) return null
+  const cmp = (name: string) =>
+    D.bin("===", D.member(D.id("state"), name), D.member(D.id(propsName), name))
+  let expr: D.JsExpr = cmp(propNames[0]!)
+  for (let i = 1; i < propNames.length; i++) expr = D.and(expr, cmp(propNames[i]!))
+  return D.ifStmt(expr, [D.retVoid()])
+}
+
 function emitPatchSimple(
   ir: CompiledIR,
   listHelpers: Map<number, ListHelpers>,
@@ -600,6 +609,9 @@ function emitPatchSimple(
   })
 
   const stmts: D.JsStmt[] = []
+  const propNames = collectReactiveProps(slots)
+  const bail = emitLeadingBail(propNames, propsName)
+  if (bail !== null) stmts.push(bail)
   for (const [propName, group] of grouped) {
     const writes: D.JsStmt[] = []
     for (const { slot, index } of group) {
@@ -638,6 +650,9 @@ function emitPatchComposite(
   const propNames = collectReactiveProps(slots)
   const dirtyLocals = new Map<string, string>()
   const stmts: D.JsStmt[] = []
+
+  const bail = emitLeadingBail(propNames, propsName)
+  if (bail !== null) stmts.push(bail)
 
   propNames.forEach((name, i) => {
     const local = `_d${i}`
@@ -704,23 +719,10 @@ function emitPatch(
     : emitPatchSimple(ir, listHelpers)
 }
 
-function emitCompare(ir: CompiledIR): D.JsExpr | null {
-  const names = collectReactiveProps(ir.slots)
-  if (names.length === 0) return null
-  const comparisons = names.map((name) =>
-    D.bin("===", D.member(D.id("prev"), name), D.member(D.id("next"), name)),
-  )
-  let expr: D.JsExpr = comparisons[0]!
-  for (let i = 1; i < comparisons.length; i++) {
-    expr = D.and(expr, comparisons[i]!)
-  }
-  return D.arrow(["prev", "next"], expr)
-}
-
 /**
- * Top-level emit: produce the `markCompiled(mount, patch, compare)` call
- * source plus any hoisted list helpers the plugin shell should declare
- * at module scope.
+ * Top-level emit: produce the `markCompiled(mount, patch)` call source
+ * plus any hoisted list helpers the plugin shell should declare at module
+ * scope.
  *
  * `tplId` is the const name the shell will bind to `_template("...")`;
  * this emitter just references it.
@@ -735,11 +737,8 @@ export function emitComponent(
 ): EmitResult {
   const mount = emitMount(ir, opts.tplId, opts.listHelpers)
   const patch = emitPatch(ir, opts.listHelpers)
-  const compare = emitCompare(ir)
 
-  const args: D.JsExpr[] = [mount, patch]
-  if (compare !== null) args.push(compare)
-  const call = D.call(D.id(opts.markCompiledName), args)
+  const call = D.call(D.id(opts.markCompiledName), [mount, patch])
 
   const hoisted: EmitResult["hoistedHelpers"] = []
   ir.slots.forEach((slot, index) => {

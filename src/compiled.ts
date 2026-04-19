@@ -153,7 +153,9 @@ export function _patchCond(
   if (cond && inst !== null) {
     const props = makeProps()
     const compare = Child._compare
-    if (compare === undefined || !compare(inst.props, props)) {
+    if (compare === undefined) {
+      Child.patch(inst.state, props)
+    } else if (!compare(inst.props, props)) {
       Child.patch(inst.state, props)
       inst.props = props
     }
@@ -229,7 +231,9 @@ export function _patchAlt(
   const make = nextBranch === 0 ? makePropsA : makePropsB
   const props = make()
   const compare = Child._compare
-  if (compare === undefined || !compare(state.inst.props, props)) {
+  if (compare === undefined) {
+    Child.patch(state.inst.state, props)
+  } else if (!compare(state.inst.props, props)) {
     Child.patch(state.inst.state, props)
     state.inst.props = props
   }
@@ -386,15 +390,27 @@ export function _patchList<Item>(
 
   const next: ListInstance[] = new Array(nextLen)
 
-  const patchInPlace = (existing: ListInstance, item: Item): void => {
-    if (canSkipOnIdentity && existing.item === item) return
-    const props = makeProps(item)
-    if (compare === undefined || !compare(existing.props, props)) {
-      patchFn(existing.state, props)
-      existing.props = props
-    }
-    existing.item = item
-  }
+  // Split the per-row patch into two specialisations: when Child has no
+  // compare (the compiler-emitted common case), `patch` itself owns the
+  // early-bail so we skip one indirect call and one props-field write.
+  // User-supplied compare still uses the memo-style path.
+  const patchInPlace =
+    compare === undefined
+      ? (existing: ListInstance, item: Item): void => {
+          if (canSkipOnIdentity && existing.item === item) return
+          const props = makeProps(item)
+          patchFn(existing.state, props)
+          existing.item = item
+        }
+      : (existing: ListInstance, item: Item): void => {
+          if (canSkipOnIdentity && existing.item === item) return
+          const props = makeProps(item)
+          if (!compare(existing.props, props)) {
+            patchFn(existing.state, props)
+            existing.props = props
+          }
+          existing.item = item
+        }
 
   // ── 1. Prefix trim ────────────────────────────────────────────────────
   let i = 0

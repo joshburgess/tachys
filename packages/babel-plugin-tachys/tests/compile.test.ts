@@ -437,7 +437,7 @@ describe("babel-plugin-tachys (v0.4b ternary attrs)", () => {
 })
 
 describe("babel-plugin-tachys (v0.4c memo compare)", () => {
-  it("emits a compare that checks every dynamic prop", () => {
+  it("emits a leading-bail in patch that checks every dynamic prop", () => {
     const input = `
       function Row({ id, label, selected, onSelect }) {
         return (
@@ -449,37 +449,39 @@ describe("babel-plugin-tachys (v0.4c memo compare)", () => {
       }
     `
     const out = transform(input)
-    // The compare is the third arg to markCompiled.
-    expect(out).toMatch(/markCompiled\([\s\S]*?,[\s\S]*?,\s*\(prev, next\)/)
-    expect(out).toContain("prev.selected === next.selected")
-    expect(out).toContain("prev.id === next.id")
-    expect(out).toContain("prev.onSelect === next.onSelect")
-    expect(out).toContain("prev.label === next.label")
-    // Must be combined with && (otherwise any single match would skip
-    // patch when other props changed).
+    // The early-bail lives at the top of the patch function. No separate
+    // compare callback passed as the third arg.
+    expect(out).not.toMatch(/markCompiled\([\s\S]*?,[\s\S]*?,\s*\(prev, next\)/)
+    expect(out).toContain("state.selected === props.selected")
+    expect(out).toContain("state.id === props.id")
+    expect(out).toContain("state.onSelect === props.onSelect")
+    expect(out).toContain("state.label === props.label")
+    // Must be combined with && so any single mismatch falls through to
+    // the per-slot write guards below.
     expect(out).toMatch(/&&/)
   })
 
-  it("emits no compare for fully static components", () => {
+  it("emits no leading bail for fully static components", () => {
     const input = `
       function Static() {
         return <div className="x"><span>hi</span></div>;
       }
     `
     const out = transform(input)
-    // Only two args to markCompiled: mount + patch.
+    // No per-prop checks at all.
     expect(out).not.toContain("(prev, next)")
     expect(out).not.toContain("prev.")
+    expect(out).not.toMatch(/state\.\w+ === props\.\w+/)
   })
 
-  it("dedups repeated prop references", () => {
+  it("dedups repeated prop references in the leading bail", () => {
     const input = `
       function M({ name }) {
         return <div id={name}>{name}</div>;
       }
     `
     const out = transform(input)
-    const matches = out.match(/prev\.name\s*===\s*next\.name/g) ?? []
+    const matches = out.match(/state\.name\s*===\s*props\.name/g) ?? []
     expect(matches.length).toBe(1)
   })
 })
@@ -793,15 +795,15 @@ describe("babel-plugin-tachys (v0.5 template literal slots)", () => {
     expect(out).toMatch(/if \(_d0\) \{[\s\S]*?\.className\s*=\s*`row-\$\{props\.cls\}`/)
   })
 
-  it("memo compare includes all props used by composite slots", () => {
+  it("leading-bail includes all props used by composite slots", () => {
     const input = `
       function Row({ a, b }) {
         return <div className={\`\${a}-\${b}\`} />;
       }
     `
     const out = transform(input)
-    expect(out).toContain("prev.a === next.a")
-    expect(out).toContain("prev.b === next.b")
+    expect(out).toContain("state.a === props.a")
+    expect(out).toContain("state.b === props.b")
     expect(out).toMatch(/&&/)
   })
 
@@ -985,8 +987,8 @@ describe("babel-plugin-tachys (v0.7 nested compiled components)", () => {
     expect(out).toContain("markCompiled")
     // Spread emitted into the child props object.
     expect(out).toMatch(/Row\(\{\s*\.\.\.props\.row\s*\}\)/)
-    // Memo compare + patch guard still track the spread source as a dep.
-    expect(out).toContain("prev.row === next.row")
+    // Leading-bail + per-slot dirty check both track the spread source.
+    expect(out).toContain("state.row === props.row")
     expect(out).toContain("state.row !== props.row")
   })
 
@@ -1002,8 +1004,8 @@ describe("babel-plugin-tachys (v0.7 nested compiled components)", () => {
     expect(out).toMatch(
       /Row\(\{\s*\.\.\.props\.row,\s*selected:\s*props\.selected\s*\}\)/,
     )
-    expect(out).toContain("prev.row === next.row")
-    expect(out).toContain("prev.selected === next.selected")
+    expect(out).toContain("state.row === props.row")
+    expect(out).toContain("state.selected === props.selected")
   })
 
   it("compiles a child with explicit prop before spread (spread wins)", () => {
@@ -1031,8 +1033,8 @@ describe("babel-plugin-tachys (v0.7 nested compiled components)", () => {
     expect(out).toMatch(
       /Row\(\{\s*\.\.\.props\.base,\s*\.\.\.props\.overrides\s*\}\)/,
     )
-    expect(out).toContain("prev.base === next.base")
-    expect(out).toContain("prev.overrides === next.overrides")
+    expect(out).toContain("state.base === props.base")
+    expect(out).toContain("state.overrides === props.overrides")
   })
 
   it("bails on a child whose spread source is not a prop ref", () => {
@@ -1056,15 +1058,15 @@ describe("babel-plugin-tachys (v0.7 nested compiled components)", () => {
     expect(out).not.toContain("markCompiled")
   })
 
-  it("memo compare includes all child deps", () => {
+  it("leading-bail includes all child deps", () => {
     const input = `
       function App({ a, b }) {
         return <div><Row x={a} y={b} /></div>;
       }
     `
     const out = transform(input)
-    expect(out).toContain("prev.a === next.a")
-    expect(out).toContain("prev.b === next.b")
+    expect(out).toContain("state.a === props.a")
+    expect(out).toContain("state.b === props.b")
     expect(out).toMatch(/&&/)
   })
 
@@ -1321,9 +1323,9 @@ describe("babel-plugin-tachys (v0.8 keyed list compilation)", () => {
     // The dirty-check path ORs both the array and the captured parent prop.
     expect(out).toMatch(/state\.items !== props\.items/)
     expect(out).toMatch(/state\.highlight !== props\.highlight/)
-    // Compare covers both reactive props.
+    // Leading-bail covers both reactive props.
     expect(out).toMatch(
-      /prev\.items === next\.items[\s\S]*prev\.highlight === next\.highlight/,
+      /state\.items === props\.items[\s\S]*state\.highlight === props\.highlight/,
     )
     // Parent-dep array is passed so _patchList can short-circuit item
     // identity when parent deps are unchanged.
@@ -1357,7 +1359,7 @@ describe("babel-plugin-tachys (v0.8 keyed list compilation)", () => {
     expect(out).toMatch(/label: `#\$\{item\.id\}`/)
   })
 
-  it("compare keeps the array prop in the memo check", () => {
+  it("leading-bail keeps the array prop", () => {
     const input = `
       function Row({ id }) { return <span>{id}</span>; }
       function List({ items }) {
@@ -1365,7 +1367,7 @@ describe("babel-plugin-tachys (v0.8 keyed list compilation)", () => {
       }
     `
     const out = transform(input)
-    expect(out).toContain("prev.items === next.items")
+    expect(out).toContain("state.items === props.items")
   })
 
   it("runs a keyed list end-to-end in jsdom", async () => {
@@ -1604,10 +1606,10 @@ describe("babel-plugin-tachys (v0.8 keyed list compilation)", () => {
       '</ul>',
     )
 
-    // Flip selection from 1 -> 2 keeping items identity stable. Row's
-    // _compare must short-circuit on row 3 (selected stays false) while
-    // rows 1 and 2 re-patch. Total counted patches are 1 List.patch +
-    // 2 Row.patch calls; row 3 never enters Row.patch.
+    // Flip selection from 1 -> 2 keeping items identity stable. Each row
+    // enters Row.patch (which increments the counter), but the leading
+    // all-equal bail short-circuits row 3 before any DOM write. Total
+    // counted patches are 1 List.patch + 3 Row.patch calls.
     patchCallCount = 0
     List.patch(inst.state, { items, selectedId: 2 })
     expect((inst.dom as Element).outerHTML).toBe(
@@ -1618,7 +1620,7 @@ describe("babel-plugin-tachys (v0.8 keyed list compilation)", () => {
         '<!---->' +
       '</ul>',
     )
-    expect(patchCallCount).toBe(3)
+    expect(patchCallCount).toBe(4)
   })
 })
 
@@ -1654,7 +1656,7 @@ describe("babel-plugin-tachys (v0.9 conditional compiled children)", () => {
     expect(out).toMatch(/\(\)\s*=>\s*\(\{\s*label:\s*props\.label\s*\}\)/)
   })
 
-  it("memo compare includes both cond deps and child prop deps", () => {
+  it("leading-bail includes both cond deps and child prop deps", () => {
     const input = `
       function Badge({ label }) {
         return <span>{label}</span>;
@@ -1664,8 +1666,8 @@ describe("babel-plugin-tachys (v0.9 conditional compiled children)", () => {
       }
     `
     const out = transform(input)
-    expect(out).toContain("prev.visible === next.visible")
-    expect(out).toContain("prev.label === next.label")
+    expect(out).toContain("state.visible === props.visible")
+    expect(out).toContain("state.label === props.label")
   })
 
   it("supports a member-access condition", () => {
@@ -1840,7 +1842,7 @@ describe("babel-plugin-tachys (v1.0 ternary alt slots)", () => {
     expect(out).toContain("const Panel = markCompiled")
   })
 
-  it("memo compare covers cond + both branches' deps", () => {
+  it("leading-bail covers cond + both branches' deps", () => {
     const input = `
       function Yes({ name }) { return <span>{name}</span>; }
       function No({ count }) { return <span>{count}</span>; }
@@ -1849,9 +1851,9 @@ describe("babel-plugin-tachys (v1.0 ternary alt slots)", () => {
       }
     `
     const out = transform(input)
-    expect(out).toContain("prev.visible === next.visible")
-    expect(out).toContain("prev.name === next.name")
-    expect(out).toContain("prev.count === next.count")
+    expect(out).toContain("state.visible === props.visible")
+    expect(out).toContain("state.name === props.name")
+    expect(out).toContain("state.count === props.count")
   })
 
   it("bails when a branch is a host element", () => {

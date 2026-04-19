@@ -276,6 +276,10 @@ export function ret(expr: JsExpr): JsStmt {
   return makeStmt((indent) => [`${indent}return ${expr.src};`])
 }
 
+export function retVoid(): JsStmt {
+  return makeStmt((indent) => [`${indent}return;`])
+}
+
 export function ifStmt(
   cond: JsExpr,
   cons: readonly JsStmt[],
