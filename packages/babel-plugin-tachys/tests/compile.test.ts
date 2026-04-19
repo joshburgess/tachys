@@ -1319,3 +1319,218 @@ describe("babel-plugin-tachys (v0.8 keyed list compilation)", () => {
     )
   })
 })
+
+describe("babel-plugin-tachys (v0.9 conditional compiled children)", () => {
+  it("compiles {cond && <Compiled .../>} into _mountCond / _patchCond", () => {
+    const input = `
+      function Badge({ label }) {
+        return <span className="badge">{label}</span>;
+      }
+      function Panel({ visible, label }) {
+        return <div>{visible && <Badge label={label} />}</div>;
+      }
+    `
+    const out = transform(input)
+    expect(out).toContain("_mountCond")
+    expect(out).toContain("_patchCond")
+    expect(out).toContain("<!>")
+    expect(out).toContain("const Panel = markCompiled")
+  })
+
+  it("passes an inline () => ({...}) closure so makeProps reads live parent props", () => {
+    const input = `
+      function Badge({ label }) {
+        return <span>{label}</span>;
+      }
+      function Panel({ visible, label }) {
+        return <div>{visible && <Badge label={label} />}</div>;
+      }
+    `
+    const out = transform(input)
+    // makeProps must be an arrow that returns the child props object;
+    // it must read props.label so the closure sees updated values.
+    expect(out).toMatch(/\(\)\s*=>\s*\(\{\s*label:\s*props\.label\s*\}\)/)
+  })
+
+  it("memo compare includes both cond deps and child prop deps", () => {
+    const input = `
+      function Badge({ label }) {
+        return <span>{label}</span>;
+      }
+      function Panel({ visible, label }) {
+        return <div>{visible && <Badge label={label} />}</div>;
+      }
+    `
+    const out = transform(input)
+    expect(out).toContain("prev.visible === next.visible")
+    expect(out).toContain("prev.label === next.label")
+  })
+
+  it("supports a member-access condition", () => {
+    const input = `
+      function Badge({ label }) {
+        return <span>{label}</span>;
+      }
+      function Panel(props) {
+        return <div>{props.user.active && <Badge label={props.user.name} />}</div>;
+      }
+    `
+    const out = transform(input)
+    expect(out).toContain("_mountCond")
+    expect(out).toContain("props.user.active")
+    expect(out).toContain("props.user.name")
+  })
+
+  it("bails on a ternary (cond ? <A/> : <B/>) -- not yet supported", () => {
+    const input = `
+      function A({}) { return <span>a</span>; }
+      function B({}) { return <span>b</span>; }
+      function Panel({ visible }) {
+        return <div>{visible ? <A /> : <B />}</div>;
+      }
+    `
+    const out = transform(input)
+    // The Panel itself should not compile; helper components A and B still do.
+    expect(out).toContain("function Panel(")
+    expect(out).not.toContain("const Panel = markCompiled")
+  })
+
+  it("bails on a host element on the right of &&", () => {
+    const input = `
+      function Panel({ visible }) {
+        return <div>{visible && <span>hi</span>}</div>;
+      }
+    `
+    const out = transform(input)
+    expect(out).toContain("function Panel(")
+    expect(out).not.toContain("const Panel = markCompiled")
+  })
+
+  it("bails when the conditional child has JSX children (slot would need to know structure)", () => {
+    const input = `
+      function Badge({ label }) {
+        return <span>{label}</span>;
+      }
+      function Panel({ visible, label }) {
+        return <div>{visible && <Badge label={label}>extra</Badge>}</div>;
+      }
+    `
+    const out = transform(input)
+    expect(out).toContain("function Panel(")
+    expect(out).not.toContain("const Panel = markCompiled")
+  })
+
+  it("bails when cond references an unresolvable expression", () => {
+    // `something` is a free variable here, neither a destructured param
+    // nor a `props.*` member chain.
+    const input = `
+      function Badge({ label }) {
+        return <span>{label}</span>;
+      }
+      function Panel({ label }) {
+        return <div>{something && <Badge label={label} />}</div>;
+      }
+    `
+    const out = transform(input)
+    expect(out).toContain("function Panel(")
+    expect(out).not.toContain("const Panel = markCompiled")
+  })
+
+  it("runs cond end-to-end in jsdom (mount, toggle, patch, remount)", async () => {
+    const { JSDOM } = await import("jsdom")
+    const dom = new JSDOM("<!doctype html><html><body></body></html>")
+    const doc = dom.window.document
+
+    const input = `
+      function Badge({ label }) {
+        return <span className="badge">{label}</span>;
+      }
+      function Panel({ visible, label }) {
+        return <div>{visible && <Badge label={label} />}</div>;
+      }
+    `
+    const out = transform(input)
+    const stubbed = out.replace(/import \{[^}]*\} from "tachys";?/g, "")
+
+    type MountResult = { dom: Element; state: Record<string, unknown> }
+
+    const markCompiled = (
+      mount: (p: Record<string, unknown>) => MountResult,
+      patch: (s: Record<string, unknown>, p: Record<string, unknown>) => void,
+      compare?: (
+        a: Record<string, unknown>,
+        b: Record<string, unknown>,
+      ) => boolean,
+    ): ((p: Record<string, unknown>) => MountResult) & {
+      patch: typeof patch
+      _compare?: typeof compare
+    } => {
+      const callable = mount as ((p: Record<string, unknown>) => MountResult) & {
+        patch: typeof patch
+        _compare?: typeof compare
+      }
+      callable.patch = patch
+      if (compare !== undefined) callable._compare = compare
+      return callable
+    }
+    const _template = (html: string): Element => {
+      const tpl = doc.createElement("template")
+      tpl.innerHTML = html
+      return tpl.content.firstElementChild as Element
+    }
+
+    const runtime = await import("../../../src/compiled")
+    const { _mountCond, _patchCond } = runtime
+
+    const fn = new Function(
+      "document",
+      "markCompiled",
+      "_template",
+      "_mountCond",
+      "_patchCond",
+      `${stubbed}; return { Badge, Panel };`,
+    )
+    const { Panel } = fn(
+      doc,
+      markCompiled,
+      _template,
+      _mountCond,
+      _patchCond,
+    ) as {
+      Panel: ((p: Record<string, unknown>) => MountResult) & {
+        patch: (s: Record<string, unknown>, p: Record<string, unknown>) => void
+      }
+    }
+
+    // Initial mount: visible=false -> only the anchor, no badge.
+    const inst = Panel({ visible: false, label: "hello" })
+    expect((inst.dom as Element).outerHTML).toBe("<div><!----></div>")
+
+    // Toggle visible on: badge should mount before the anchor.
+    Panel.patch(inst.state, { visible: true, label: "hello" })
+    expect((inst.dom as Element).outerHTML).toBe(
+      '<div><span class="badge">hello</span><!----></div>',
+    )
+
+    // Keep visible, change label: child.patch fires, DOM updates in place.
+    const spanBefore = (inst.dom as Element).querySelector("span.badge")!
+    Panel.patch(inst.state, { visible: true, label: "world" })
+    expect((inst.dom as Element).outerHTML).toBe(
+      '<div><span class="badge">world</span><!----></div>',
+    )
+    // Node identity must persist across a same-cond patch.
+    expect((inst.dom as Element).querySelector("span.badge")).toBe(spanBefore)
+
+    // Toggle visible off: badge unmounts.
+    Panel.patch(inst.state, { visible: false, label: "world" })
+    expect((inst.dom as Element).outerHTML).toBe("<div><!----></div>")
+
+    // Toggle back on: fresh badge, new DOM node.
+    Panel.patch(inst.state, { visible: true, label: "again" })
+    const spanAfter = (inst.dom as Element).querySelector("span.badge")!
+    expect(spanAfter).not.toBe(spanBefore)
+    expect((inst.dom as Element).outerHTML).toBe(
+      '<div><span class="badge">again</span><!----></div>',
+    )
+  })
+})

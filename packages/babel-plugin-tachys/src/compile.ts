@@ -187,7 +187,43 @@ export interface ListSlot {
   }>
 }
 
-export type Slot = TextSlot | AttrSlot | EventSlot | ComponentSlot | ListSlot
+/**
+ * A conditional child rendered from `{cond && <Compiled prop={...}/>}`.
+ * The parent template carries a `<!>` marker at the child's position.
+ * On mount the runtime inserts the child before the marker iff `cond`
+ * is truthy; on patch it mounts/unmounts as `cond` flips and dispatches
+ * the child's own patch while it stays mounted.
+ *
+ * The ternary form (`cond ? <A/> : <B/>`) is not yet supported — only
+ * the short-circuit `&&` grammar with a single compiled child on the
+ * right is recognized.
+ */
+export interface CondSlot {
+  kind: "cond"
+  path: number[]
+  /** Local name of the conditional child component. */
+  componentRef: string
+  /** Condition expression with parent prop names rewritten to `props.*`. */
+  condExpr: BabelCore.types.Expression
+  /** Parent prop names the cond reads (subset of allDeps). */
+  condDeps: string[]
+  /** Ordered prop entries passed to the child, mirroring ComponentSlot. */
+  props: Array<{
+    name: string
+    valueExpr: BabelCore.types.Expression
+    deps: string[]
+  }>
+  /** Union of condDeps + every prop's deps, deduped and in first-seen order. */
+  allDeps: string[]
+}
+
+export type Slot =
+  | TextSlot
+  | AttrSlot
+  | EventSlot
+  | ComponentSlot
+  | ListSlot
+  | CondSlot
 
 export interface CompiledResult {
   html: string
@@ -446,6 +482,88 @@ function resolveListExpr(
     itemParamName,
     keyExpr,
     propSpecs,
+  }
+}
+
+/**
+ * Detect `<cond> && <Compiled prop={...}/>` where `<cond>` is resolvable
+ * via `resolveChildPropExpr` (literals, prop refs, member chains, template
+ * literals, or conditional expressions whose leaves are valid) and the
+ * right-hand side is a single PascalCase JSX element with no children.
+ *
+ * Attribute values follow the same grammar as ComponentSlot. Returns a
+ * CondSlot without `path` (caller fills it in), or null for anything
+ * outside the grammar.
+ */
+function resolveCondExpr(
+  expr:
+    | BabelCore.types.Expression
+    | BabelCore.types.JSXEmptyExpression,
+  ctx: CompileContext,
+): Omit<CondSlot, "path"> | null {
+  const t = ctx.t
+  if (!t.isLogicalExpression(expr)) return null
+  if (expr.operator !== "&&") return null
+
+  const leftResolved = resolveChildPropExpr(
+    expr.left as BabelCore.types.Expression,
+    ctx,
+  )
+  if (leftResolved === null) return null
+
+  const right = expr.right
+  if (!t.isJSXElement(right)) return null
+  const nameNode = right.openingElement.name
+  if (!t.isJSXIdentifier(nameNode)) return null
+  const componentRef = nameNode.name
+  if (isHostTag(componentRef)) return null
+  if (right.children.length > 0) return null
+
+  const depsSet = new Set<string>()
+  const allDeps: string[] = []
+  for (const d of leftResolved.deps) {
+    if (depsSet.has(d)) continue
+    depsSet.add(d)
+    allDeps.push(d)
+  }
+
+  const props: CondSlot["props"] = []
+  for (const attr of right.openingElement.attributes) {
+    if (!t.isJSXAttribute(attr)) return null
+    if (!t.isJSXIdentifier(attr.name)) return null
+    const propName = attr.name.name
+    const value = attr.value
+    let valueExpr: BabelCore.types.Expression
+    let deps: string[] = []
+    if (value === null || value === undefined) {
+      valueExpr = t.booleanLiteral(true)
+    } else if (t.isStringLiteral(value)) {
+      valueExpr = t.stringLiteral(value.value)
+    } else if (t.isJSXExpressionContainer(value)) {
+      const e = value.expression
+      if (t.isJSXEmptyExpression(e)) return null
+      const r = resolveChildPropExpr(e, ctx)
+      if (r === null) return null
+      valueExpr = r.expr
+      deps = r.deps
+    } else {
+      return null
+    }
+    for (const d of deps) {
+      if (depsSet.has(d)) continue
+      depsSet.add(d)
+      allDeps.push(d)
+    }
+    props.push({ name: propName, valueExpr, deps })
+  }
+
+  return {
+    kind: "cond",
+    componentRef,
+    condExpr: leftResolved.expr,
+    condDeps: leftResolved.deps,
+    props,
+    allDeps,
   }
 }
 
@@ -894,6 +1012,24 @@ function renderChildren(
         if (isTextLike(prev) || isTextLike(next)) return null
         ctx.slots.push({
           ...list,
+          path: [...parentPath, i],
+        })
+        out += "<!>"
+        continue
+      }
+
+      // `{cond && <Compiled .../>}` -- conditional compiled child. Same
+      // neighbor rule as lists: the `<!>` marker must not butt up against
+      // text-like siblings that would merge during HTML parsing.
+      const cond = resolveCondExpr(child.node.expression, ctx)
+      if (cond !== null) {
+        const prev = i > 0 ? effective[i - 1]! : null
+        const next = i < effective.length - 1 ? effective[i + 1]! : null
+        const isTextLike = (c: EffectiveChild | null): boolean =>
+          c !== null && c.kind !== "element"
+        if (isTextLike(prev) || isTextLike(next)) return null
+        ctx.slots.push({
+          ...cond,
           path: [...parentPath, i],
         })
         out += "<!>"

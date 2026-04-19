@@ -74,6 +74,91 @@ interface ListInstance {
   props: Record<string, unknown>
 }
 
+interface CondInstance {
+  dom: Node
+  state: Record<string, unknown>
+  props: Record<string, unknown>
+}
+
+/**
+ * State kept between mount and patch for a compiled conditional child.
+ * The plugin emits `state._c_N = _mountCond(...)` once, then calls
+ * `_patchCond` with that same object on every subsequent render.
+ *
+ * `inst` is null when the condition is false (child unmounted). The
+ * `parent` + `anchor` pair tell the patch where to (re-)insert on a
+ * false -> true transition.
+ */
+export interface CompiledCondState {
+  parent: Node
+  anchor: Comment
+  inst: CondInstance | null
+}
+
+/**
+ * Mount a compiled conditional child. `anchor` is the comment marker
+ * in the parent template at the child's position. When `cond` is truthy
+ * the child is mounted and inserted before the anchor; otherwise only
+ * the placeholder state is returned.
+ *
+ * `makeProps` is a module-scoped pure function emitted by the plugin;
+ * it must not close over per-render values.
+ */
+export function _mountCond(
+  cond: unknown,
+  Child: CompiledComponent,
+  makeProps: () => Record<string, unknown>,
+  anchor: Comment,
+): CompiledCondState {
+  const parent = anchor.parentNode as Node
+  const state: CompiledCondState = { parent, anchor, inst: null }
+  if (cond) {
+    const props = makeProps()
+    const mounted = Child(props)
+    parent.insertBefore(mounted.dom, anchor)
+    state.inst = { dom: mounted.dom, state: mounted.state, props }
+  }
+  return state
+}
+
+/**
+ * Patch a compiled conditional child.
+ *
+ * Four cases:
+ *   - cond true, no prior inst  -> mount + insert
+ *   - cond false, prior inst    -> remove + drop state
+ *   - cond true, prior inst     -> patch child props (honoring _compare)
+ *   - cond false, no prior inst -> nothing to do
+ */
+export function _patchCond(
+  state: CompiledCondState,
+  cond: unknown,
+  Child: CompiledComponent,
+  makeProps: () => Record<string, unknown>,
+): void {
+  const inst = state.inst
+  if (cond && inst === null) {
+    const props = makeProps()
+    const mounted = Child(props)
+    state.parent.insertBefore(mounted.dom, state.anchor)
+    state.inst = { dom: mounted.dom, state: mounted.state, props }
+    return
+  }
+  if (!cond && inst !== null) {
+    state.parent.removeChild(inst.dom)
+    state.inst = null
+    return
+  }
+  if (cond && inst !== null) {
+    const props = makeProps()
+    const compare = Child._compare
+    if (compare === undefined || !compare(inst.props, props)) {
+      Child.patch(inst.state, props)
+      inst.props = props
+    }
+  }
+}
+
 /**
  * State kept between mount and patch for a compiled keyed list. The plugin
  * emits `state._list_N = _mountList(...)` once, then calls `_patchList`

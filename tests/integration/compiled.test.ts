@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest"
 import {
+  _mountCond,
   _mountList,
+  _patchCond,
   _patchList,
   _template,
   h,
@@ -456,5 +458,130 @@ describe("_mountList / _patchList (LIS reconcile)", () => {
     for (let i = 0; i < rows.length; i++) {
       expect(parent.children[i]).toBe(original[i])
     }
+  })
+})
+
+describe("_mountCond / _patchCond", () => {
+  const tpl = _template("<span> </span>")
+  let patchCalls = 0
+  const Badge = markCompiled(
+    (props: Record<string, unknown>) => {
+      const dom = tpl.cloneNode(true) as Element
+      const text = dom.firstChild as Text
+      text.data = String(props["label"])
+      return { dom, state: { text, label: props["label"] } }
+    },
+    (state: Record<string, unknown>, props: Record<string, unknown>) => {
+      patchCalls++
+      if (state["label"] !== props["label"]) {
+        ;(state["text"] as Text).data = String(props["label"])
+        state["label"] = props["label"]
+      }
+    },
+    (prev, next) => prev["label"] === next["label"],
+  )
+
+  function setupCond(
+    cond: unknown,
+    makeProps: () => Record<string, unknown>,
+  ): { parent: HTMLDivElement; anchor: Comment; state: ReturnType<typeof _mountCond> } {
+    patchCalls = 0
+    const parent = document.createElement("div")
+    const anchor = document.createComment("cond")
+    parent.appendChild(anchor)
+    const state = _mountCond(cond, Badge, makeProps, anchor)
+    return { parent, anchor, state }
+  }
+
+  it("mounts child when cond is truthy", () => {
+    const { parent, anchor, state } = setupCond(true, () => ({ label: "hi" }))
+    expect(state.inst).not.toBeNull()
+    expect(parent.childNodes.length).toBe(2)
+    expect(parent.firstChild?.textContent).toBe("hi")
+    expect(parent.lastChild).toBe(anchor)
+  })
+
+  it("does not mount child when cond is falsy", () => {
+    const { parent, anchor, state } = setupCond(false, () => ({ label: "hi" }))
+    expect(state.inst).toBeNull()
+    expect(parent.childNodes.length).toBe(1)
+    expect(parent.firstChild).toBe(anchor)
+  })
+
+  it("mounts on false -> true transition", () => {
+    const makeProps = (): Record<string, unknown> => ({ label: "now-shown" })
+    const { parent, anchor, state } = setupCond(false, makeProps)
+    _patchCond(state, true, Badge, makeProps)
+    expect(state.inst).not.toBeNull()
+    expect(parent.firstChild?.textContent).toBe("now-shown")
+    expect(parent.lastChild).toBe(anchor)
+  })
+
+  it("unmounts on true -> false transition", () => {
+    const makeProps = (): Record<string, unknown> => ({ label: "bye" })
+    const { parent, anchor, state } = setupCond(true, makeProps)
+    _patchCond(state, false, Badge, makeProps)
+    expect(state.inst).toBeNull()
+    expect(parent.childNodes.length).toBe(1)
+    expect(parent.firstChild).toBe(anchor)
+  })
+
+  it("patches child props when cond stays truthy", () => {
+    let label = "first"
+    const makeProps = (): Record<string, unknown> => ({ label })
+    const { parent, state } = setupCond(true, makeProps)
+    label = "second"
+    _patchCond(state, true, Badge, makeProps)
+    expect(patchCalls).toBe(1)
+    expect(parent.firstChild?.textContent).toBe("second")
+  })
+
+  it("honors compare and skips patch when props unchanged", () => {
+    const makeProps = (): Record<string, unknown> => ({ label: "same" })
+    const { state } = setupCond(true, makeProps)
+    _patchCond(state, true, Badge, makeProps)
+    expect(patchCalls).toBe(0)
+  })
+
+  it("does nothing when cond stays falsy", () => {
+    const makeProps = (): Record<string, unknown> => ({ label: "unused" })
+    const { parent, state } = setupCond(false, makeProps)
+    _patchCond(state, false, Badge, makeProps)
+    expect(state.inst).toBeNull()
+    expect(parent.childNodes.length).toBe(1)
+    expect(patchCalls).toBe(0)
+  })
+
+  it("mounts fresh instance on re-toggle (no stale state)", () => {
+    let label = "a"
+    const makeProps = (): Record<string, unknown> => ({ label })
+    const { parent, state } = setupCond(true, makeProps)
+    const firstDom = state.inst?.dom
+    _patchCond(state, false, Badge, makeProps)
+    label = "b"
+    _patchCond(state, true, Badge, makeProps)
+    expect(state.inst).not.toBeNull()
+    expect(state.inst?.dom).not.toBe(firstDom)
+    expect(parent.firstChild?.textContent).toBe("b")
+  })
+
+  it("inserts between sibling anchors correctly", () => {
+    const parent = document.createElement("div")
+    parent.appendChild(document.createTextNode("before"))
+    const anchor = document.createComment("cond")
+    parent.appendChild(anchor)
+    parent.appendChild(document.createTextNode("after"))
+
+    const makeProps = (): Record<string, unknown> => ({ label: "middle" })
+    const state = _mountCond(true, Badge, makeProps, anchor)
+    expect(state.inst).not.toBeNull()
+    // Walk text nodes around the inserted element.
+    const nodes = Array.from(parent.childNodes)
+    const childEl = state.inst!.dom
+    const idx = nodes.indexOf(childEl as ChildNode)
+    expect(idx).toBeGreaterThan(0)
+    expect(nodes[idx - 1]?.textContent).toBe("before")
+    expect(nodes[idx + 1]).toBe(anchor)
+    expect(nodes[idx + 2]?.textContent).toBe("after")
   })
 })

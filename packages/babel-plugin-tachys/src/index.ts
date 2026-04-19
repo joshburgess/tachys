@@ -16,8 +16,10 @@
  * Anything outside this grammar falls through unchanged; the existing
  * jsx-runtime path handles it.
  *
- * Future iterations add attribute slots, event handlers, and conditional
- * rendering.
+ * Later iterations have added attribute slots (v0.2), event handlers
+ * (v0.3), template literal / ternary / memo-compare slots (v0.4-0.5),
+ * nested compiled components (v0.7), keyed lists (v0.8), and the
+ * short-circuit `{cond && <Compiled/>}` conditional form (v0.9).
  */
 
 import type { PluginObj, PluginPass } from "@babel/core"
@@ -30,6 +32,7 @@ import {
   compileComponent,
   type AttrSlot,
   type ComponentSlot,
+  type CondSlot,
   type ListSlot,
   type Slot,
   type TextSlot,
@@ -44,6 +47,8 @@ interface PluginState extends PluginPass {
     template: string | null
     mountList: string | null
     patchList: string | null
+    mountCond: string | null
+    patchCond: string | null
   }
   templateCounter: number
   pendingTemplates: Array<{ id: string; html: string }>
@@ -75,6 +80,8 @@ const plugin = declareT<PluginState>((api) => {
         template: null,
         mountList: null,
         patchList: null,
+        mountCond: null,
+        patchCond: null,
       }
       this.templateCounter = 0
       this.pendingTemplates = []
@@ -93,6 +100,12 @@ const plugin = declareT<PluginState>((api) => {
           }
           if (state.tachysImports.patchList !== null) {
             ensureImport(path, t, state, "_patchList")
+          }
+          if (state.tachysImports.mountCond !== null) {
+            ensureImport(path, t, state, "_mountCond")
+          }
+          if (state.tachysImports.patchCond !== null) {
+            ensureImport(path, t, state, "_patchCond")
           }
 
           // List-helper module consts come right after the imports but
@@ -149,20 +162,26 @@ const plugin = declareT<PluginState>((api) => {
           { makePropsId: string; keyOfId: string }
         >()
         compiled.slots.forEach((slot, index) => {
-          if (slot.kind !== "list") return
-          reserveImport(state, "_mountList")
-          reserveImport(state, "_patchList")
-          const makePropsId = `_lp$${name}_${index}`
-          const keyOfId = `_lk$${name}_${index}`
-          listHelpers.set(index, { makePropsId, keyOfId })
-          state.pendingHelpers.push({
-            id: makePropsId,
-            init: buildListMakePropsFn(t, slot),
-          })
-          state.pendingHelpers.push({
-            id: keyOfId,
-            init: buildListKeyOfFn(t, slot),
-          })
+          if (slot.kind === "list") {
+            reserveImport(state, "_mountList")
+            reserveImport(state, "_patchList")
+            const makePropsId = `_lp$${name}_${index}`
+            const keyOfId = `_lk$${name}_${index}`
+            listHelpers.set(index, { makePropsId, keyOfId })
+            state.pendingHelpers.push({
+              id: makePropsId,
+              init: buildListMakePropsFn(t, slot),
+            })
+            state.pendingHelpers.push({
+              id: keyOfId,
+              init: buildListKeyOfFn(t, slot),
+            })
+            return
+          }
+          if (slot.kind === "cond") {
+            reserveImport(state, "_mountCond")
+            reserveImport(state, "_patchCond")
+          }
         })
 
         const mountFn = buildMount(
@@ -406,6 +425,7 @@ function maybeRetargetPropsName(
 function slotPropNames(slot: Slot): string[] {
   if (slot.kind === "component") return slot.allDeps
   if (slot.kind === "list") return [slot.arrayPropName]
+  if (slot.kind === "cond") return slot.allDeps
   if (
     (slot.kind === "text" || slot.kind === "attr") &&
     slot.composite !== undefined
@@ -451,6 +471,47 @@ function buildListKeyOfFn(
  */
 function listInstanceName(index: number): string {
   return `_ls${index}`
+}
+
+/**
+ * Stable state-key name for a conditional slot's runtime state object.
+ */
+function condInstanceName(index: number): string {
+  return `_cd${index}`
+}
+
+/**
+ * Build the object expression passed to a conditional child as its props.
+ * Identical in shape to `buildChildPropsObject` but sourced from a CondSlot;
+ * kept separate to keep the two slot types' type-narrowing clean.
+ */
+function buildCondPropsObject(
+  t: typeof BabelCore.types,
+  slot: CondSlot,
+  propsName: string,
+): BabelCore.types.ObjectExpression {
+  return t.objectExpression(
+    slot.props.map((p) =>
+      t.objectProperty(
+        t.identifier(p.name),
+        maybeRetargetPropsName(t, p.valueExpr, propsName),
+      ),
+    ),
+  )
+}
+
+/**
+ * Build the `() => ({...})` closure passed as `makeProps` to the cond
+ * runtime helpers. The closure reads the surrounding component's current
+ * `props` at each call, so the emitted patch body does not need to
+ * re-bind or track prop identities across renders.
+ */
+function buildCondMakePropsFn(
+  t: typeof BabelCore.types,
+  slot: CondSlot,
+  propsName: string,
+): BabelCore.types.ArrowFunctionExpression {
+  return t.arrowFunctionExpression([], buildCondPropsObject(t, slot, propsName))
 }
 
 function buildMount(
@@ -671,6 +732,40 @@ function buildMount(
       continue
     }
 
+    if (slot.kind === "cond") {
+      const markerName = `_cdm${i}`
+      const instName = condInstanceName(i)
+
+      // const _cdmN = <path-to-comment-anchor>;
+      stmts.push(
+        t.variableDeclaration("const", [
+          t.variableDeclarator(
+            t.identifier(markerName),
+            buildPathExpr(t, "_root", slot.path),
+          ),
+        ]),
+      )
+      // const _cdN = _mountCond(<cond>, <Child>, () => ({...}), _cdmN);
+      stmts.push(
+        t.variableDeclaration("const", [
+          t.variableDeclarator(
+            t.identifier(instName),
+            t.callExpression(t.identifier("_mountCond"), [
+              maybeRetargetPropsName(t, slot.condExpr, propsName),
+              t.identifier(slot.componentRef),
+              buildCondMakePropsFn(t, slot, propsName),
+              t.identifier(markerName),
+            ]),
+          ),
+        ]),
+      )
+      stateProps.push(
+        t.objectProperty(t.identifier(instName), t.identifier(instName)),
+      )
+      registerSlotProps(slot, seenPropNames, stateProps, t, propsName)
+      continue
+    }
+
     if (slot.kind === "component") {
       const markerName = `_cm${i}`
       const instName = componentInstanceName(i)
@@ -833,6 +928,7 @@ function buildPatch(
     (s) =>
       s.kind === "component" ||
       s.kind === "list" ||
+      s.kind === "cond" ||
       ((s.kind === "text" || s.kind === "attr") && s.composite !== undefined),
   )
 
@@ -851,7 +947,13 @@ function buildPatchSimple(
   // a composite expression, so every slot has a single `.propName`.
   const grouped = new Map<string, { slot: Slot; index: number }[]>()
   slots.forEach((slot, index) => {
-    if (slot.kind === "component" || slot.kind === "list") return
+    if (
+      slot.kind === "component" ||
+      slot.kind === "list" ||
+      slot.kind === "cond"
+    ) {
+      return
+    }
     const arr = grouped.get(slot.propName) ?? []
     arr.push({ slot, index })
     grouped.set(slot.propName, arr)
@@ -1072,6 +1174,20 @@ function buildSlotWrite(
       ]),
     )
   }
+  if (slot.kind === "cond") {
+    // _patchCond(state._cdN, <cond>, Child, () => ({...}))
+    return t.expressionStatement(
+      t.callExpression(t.identifier("_patchCond"), [
+        t.memberExpression(
+          t.identifier("state"),
+          t.identifier(condInstanceName(index)),
+        ),
+        maybeRetargetPropsName(t, slot.condExpr, propsName),
+        t.identifier(slot.componentRef),
+        buildCondMakePropsFn(t, slot, propsName),
+      ]),
+    )
+  }
   // event slots: no DOM rebind needed; state mutation happens at the
   // bottom of the patch via the dirty-sync blocks (or the grouped if
   // body in the simple path).
@@ -1148,12 +1264,16 @@ type ImportLocal =
   | "_template"
   | "_mountList"
   | "_patchList"
+  | "_mountCond"
+  | "_patchCond"
 
 function importKey(local: ImportLocal): keyof PluginState["tachysImports"] {
   if (local === "markCompiled") return "markCompiled"
   if (local === "_template") return "template"
   if (local === "_mountList") return "mountList"
-  return "patchList"
+  if (local === "_patchList") return "patchList"
+  if (local === "_mountCond") return "mountCond"
+  return "patchCond"
 }
 
 function reserveImport(state: PluginState, local: ImportLocal): string {
