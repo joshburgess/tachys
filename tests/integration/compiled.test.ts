@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest"
 import {
+  _mountAlt,
   _mountCond,
   _mountList,
+  _patchAlt,
   _patchCond,
   _patchList,
   _template,
@@ -583,5 +585,138 @@ describe("_mountCond / _patchCond", () => {
     expect(nodes[idx - 1]?.textContent).toBe("before")
     expect(nodes[idx + 1]).toBe(anchor)
     expect(nodes[idx + 2]?.textContent).toBe("after")
+  })
+})
+
+describe("_mountAlt / _patchAlt (ternary)", () => {
+  const tpl = _template("<span> </span>")
+  let patchACalls = 0
+  let patchBCalls = 0
+  const makeBranch = (
+    tag: "A" | "B",
+    countFn: () => void,
+  ): ReturnType<typeof markCompiled> =>
+    markCompiled(
+      (props: Record<string, unknown>) => {
+        const dom = tpl.cloneNode(true) as Element
+        dom.setAttribute("data-branch", tag)
+        const text = dom.firstChild as Text
+        text.data = String(props["label"])
+        return { dom, state: { text, label: props["label"] } }
+      },
+      (state: Record<string, unknown>, props: Record<string, unknown>) => {
+        countFn()
+        if (state["label"] !== props["label"]) {
+          ;(state["text"] as Text).data = String(props["label"])
+          state["label"] = props["label"]
+        }
+      },
+      (prev, next) => prev["label"] === next["label"],
+    )
+
+  const A = makeBranch("A", () => {
+    patchACalls++
+  })
+  const B = makeBranch("B", () => {
+    patchBCalls++
+  })
+
+  function setupAlt(
+    cond: unknown,
+    makeA: () => Record<string, unknown>,
+    makeB: () => Record<string, unknown>,
+  ): { parent: HTMLDivElement; anchor: Comment; state: ReturnType<typeof _mountAlt> } {
+    patchACalls = 0
+    patchBCalls = 0
+    const parent = document.createElement("div")
+    const anchor = document.createComment("alt")
+    parent.appendChild(anchor)
+    const state = _mountAlt(cond, A, makeA, B, makeB, anchor)
+    return { parent, anchor, state }
+  }
+
+  it("mounts branch A when cond is truthy", () => {
+    const { parent, state } = setupAlt(
+      true,
+      () => ({ label: "a-text" }),
+      () => ({ label: "b-text" }),
+    )
+    expect(state.branch).toBe(0)
+    expect(parent.firstChild?.textContent).toBe("a-text")
+    expect((parent.firstChild as Element).getAttribute("data-branch")).toBe("A")
+  })
+
+  it("mounts branch B when cond is falsy", () => {
+    const { parent, state } = setupAlt(
+      false,
+      () => ({ label: "a-text" }),
+      () => ({ label: "b-text" }),
+    )
+    expect(state.branch).toBe(1)
+    expect(parent.firstChild?.textContent).toBe("b-text")
+    expect((parent.firstChild as Element).getAttribute("data-branch")).toBe("B")
+  })
+
+  it("swaps branches when cond flips and unmounts the previous", () => {
+    const makeA = (): Record<string, unknown> => ({ label: "a-text" })
+    const makeB = (): Record<string, unknown> => ({ label: "b-text" })
+    const { parent, state } = setupAlt(true, makeA, makeB)
+    const domBefore = state.inst.dom
+
+    _patchAlt(state, false, A, makeA, B, makeB)
+    expect(state.branch).toBe(1)
+    expect(parent.firstChild?.textContent).toBe("b-text")
+    expect((parent.firstChild as Element).getAttribute("data-branch")).toBe("B")
+    expect(parent.firstChild).not.toBe(domBefore)
+  })
+
+  it("patches in place when cond stays truthy", () => {
+    let label = "first"
+    const makeA = (): Record<string, unknown> => ({ label })
+    const makeB = (): Record<string, unknown> => ({ label: "b" })
+    const { parent, state } = setupAlt(true, makeA, makeB)
+    const domBefore = state.inst.dom
+
+    label = "second"
+    _patchAlt(state, true, A, makeA, B, makeB)
+    expect(patchACalls).toBe(1)
+    expect(patchBCalls).toBe(0)
+    expect(parent.firstChild).toBe(domBefore)
+    expect(parent.firstChild?.textContent).toBe("second")
+  })
+
+  it("honors compare on same-branch patch when props unchanged", () => {
+    const makeA = (): Record<string, unknown> => ({ label: "same" })
+    const makeB = (): Record<string, unknown> => ({ label: "b" })
+    const { state } = setupAlt(true, makeA, makeB)
+    _patchAlt(state, true, A, makeA, B, makeB)
+    expect(patchACalls).toBe(0)
+  })
+
+  it("mounts fresh child on each swap (no stale state leak)", () => {
+    let labelA = "a-1"
+    let labelB = "b-1"
+    const makeA = (): Record<string, unknown> => ({ label: labelA })
+    const makeB = (): Record<string, unknown> => ({ label: labelB })
+    const { parent, state } = setupAlt(true, makeA, makeB)
+
+    labelA = "a-2"
+    labelB = "b-2"
+    _patchAlt(state, false, A, makeA, B, makeB)
+    expect(parent.firstChild?.textContent).toBe("b-2")
+
+    _patchAlt(state, true, A, makeA, B, makeB)
+    expect(parent.firstChild?.textContent).toBe("a-2")
+  })
+
+  it("keeps anchor as last child through every transition", () => {
+    const makeA = (): Record<string, unknown> => ({ label: "a" })
+    const makeB = (): Record<string, unknown> => ({ label: "b" })
+    const { parent, anchor, state } = setupAlt(true, makeA, makeB)
+    expect(parent.lastChild).toBe(anchor)
+    _patchAlt(state, false, A, makeA, B, makeB)
+    expect(parent.lastChild).toBe(anchor)
+    _patchAlt(state, true, A, makeA, B, makeB)
+    expect(parent.lastChild).toBe(anchor)
   })
 })

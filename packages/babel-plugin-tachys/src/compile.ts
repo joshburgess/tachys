@@ -217,6 +217,39 @@ export interface CondSlot {
   allDeps: string[]
 }
 
+/**
+ * A ternary conditional child rendered from
+ * `{<cond> ? <A prop={...}/> : <B prop={...}/>}`. Exactly one of the two
+ * branches is mounted at any time; cond flips swap the subtree.
+ *
+ * Each branch stores its own componentRef and resolved props entry list;
+ * they may reference different compiled components or the same one with
+ * different props shapes. `allDeps` is the union over cond + both sides.
+ */
+export interface AltSlot {
+  kind: "alt"
+  path: number[]
+  /** Condition expression, parent prop names rewritten to `props.*`. */
+  condExpr: BabelCore.types.Expression
+  condDeps: string[]
+  /** Truthy branch component + props. */
+  refA: string
+  propsA: Array<{
+    name: string
+    valueExpr: BabelCore.types.Expression
+    deps: string[]
+  }>
+  /** Falsy branch component + props. */
+  refB: string
+  propsB: Array<{
+    name: string
+    valueExpr: BabelCore.types.Expression
+    deps: string[]
+  }>
+  /** Union of all parent prop deps across cond + both branches. */
+  allDeps: string[]
+}
+
 export type Slot =
   | TextSlot
   | AttrSlot
@@ -224,6 +257,7 @@ export type Slot =
   | ComponentSlot
   | ListSlot
   | CondSlot
+  | AltSlot
 
 export interface CompiledResult {
   html: string
@@ -486,49 +520,37 @@ function resolveListExpr(
 }
 
 /**
- * Detect `<cond> && <Compiled prop={...}/>` where `<cond>` is resolvable
- * via `resolveChildPropExpr` (literals, prop refs, member chains, template
- * literals, or conditional expressions whose leaves are valid) and the
- * right-hand side is a single PascalCase JSX element with no children.
- *
- * Attribute values follow the same grammar as ComponentSlot. Returns a
- * CondSlot without `path` (caller fills it in), or null for anything
- * outside the grammar.
+ * Resolve one branch of a conditional child JSX element into a
+ * `{ componentRef, props, deps }` triple, appending its deps into the
+ * caller's dedup tracker. Used by both CondSlot (single branch) and
+ * AltSlot (two branches sharing a dep set).
  */
-function resolveCondExpr(
-  expr:
-    | BabelCore.types.Expression
-    | BabelCore.types.JSXEmptyExpression,
+function resolveBranchElement(
+  el: BabelCore.types.JSXElement,
   ctx: CompileContext,
-): Omit<CondSlot, "path"> | null {
+  depsSet: Set<string>,
+  allDeps: string[],
+): {
+  componentRef: string
+  props: Array<{
+    name: string
+    valueExpr: BabelCore.types.Expression
+    deps: string[]
+  }>
+} | null {
   const t = ctx.t
-  if (!t.isLogicalExpression(expr)) return null
-  if (expr.operator !== "&&") return null
-
-  const leftResolved = resolveChildPropExpr(
-    expr.left as BabelCore.types.Expression,
-    ctx,
-  )
-  if (leftResolved === null) return null
-
-  const right = expr.right
-  if (!t.isJSXElement(right)) return null
-  const nameNode = right.openingElement.name
+  const nameNode = el.openingElement.name
   if (!t.isJSXIdentifier(nameNode)) return null
   const componentRef = nameNode.name
   if (isHostTag(componentRef)) return null
-  if (right.children.length > 0) return null
+  if (el.children.length > 0) return null
 
-  const depsSet = new Set<string>()
-  const allDeps: string[] = []
-  for (const d of leftResolved.deps) {
-    if (depsSet.has(d)) continue
-    depsSet.add(d)
-    allDeps.push(d)
-  }
-
-  const props: CondSlot["props"] = []
-  for (const attr of right.openingElement.attributes) {
+  const props: Array<{
+    name: string
+    valueExpr: BabelCore.types.Expression
+    deps: string[]
+  }> = []
+  for (const attr of el.openingElement.attributes) {
     if (!t.isJSXAttribute(attr)) return null
     if (!t.isJSXIdentifier(attr.name)) return null
     const propName = attr.name.name
@@ -556,13 +578,102 @@ function resolveCondExpr(
     }
     props.push({ name: propName, valueExpr, deps })
   }
+  return { componentRef, props }
+}
+
+/**
+ * Detect `<cond> && <Compiled prop={...}/>` where `<cond>` is resolvable
+ * via `resolveChildPropExpr` (literals, prop refs, member chains, template
+ * literals, or conditional expressions whose leaves are valid) and the
+ * right-hand side is a single PascalCase JSX element with no children.
+ *
+ * Attribute values follow the same grammar as ComponentSlot. Returns a
+ * CondSlot without `path` (caller fills it in), or null for anything
+ * outside the grammar.
+ */
+function resolveCondExpr(
+  expr:
+    | BabelCore.types.Expression
+    | BabelCore.types.JSXEmptyExpression,
+  ctx: CompileContext,
+): Omit<CondSlot, "path"> | null {
+  const t = ctx.t
+  if (!t.isLogicalExpression(expr)) return null
+  if (expr.operator !== "&&") return null
+
+  const leftResolved = resolveChildPropExpr(
+    expr.left as BabelCore.types.Expression,
+    ctx,
+  )
+  if (leftResolved === null) return null
+
+  const right = expr.right
+  if (!t.isJSXElement(right)) return null
+
+  const depsSet = new Set<string>()
+  const allDeps: string[] = []
+  for (const d of leftResolved.deps) {
+    if (depsSet.has(d)) continue
+    depsSet.add(d)
+    allDeps.push(d)
+  }
+
+  const branch = resolveBranchElement(right, ctx, depsSet, allDeps)
+  if (branch === null) return null
 
   return {
     kind: "cond",
-    componentRef,
+    componentRef: branch.componentRef,
     condExpr: leftResolved.expr,
     condDeps: leftResolved.deps,
-    props,
+    props: branch.props,
+    allDeps,
+  }
+}
+
+/**
+ * Detect `<cond> ? <A prop={...}/> : <B prop={...}/>`. Both branches must
+ * be PascalCase JSX elements with no children and only supported attribute
+ * shapes. Returns an AltSlot without `path` (caller fills it in), or null
+ * for anything outside the grammar.
+ */
+function resolveAltExpr(
+  expr:
+    | BabelCore.types.Expression
+    | BabelCore.types.JSXEmptyExpression,
+  ctx: CompileContext,
+): Omit<AltSlot, "path"> | null {
+  const t = ctx.t
+  if (!t.isConditionalExpression(expr)) return null
+
+  const testResolved = resolveChildPropExpr(expr.test, ctx)
+  if (testResolved === null) return null
+
+  const cons = expr.consequent
+  const alt = expr.alternate
+  if (!t.isJSXElement(cons) || !t.isJSXElement(alt)) return null
+
+  const depsSet = new Set<string>()
+  const allDeps: string[] = []
+  for (const d of testResolved.deps) {
+    if (depsSet.has(d)) continue
+    depsSet.add(d)
+    allDeps.push(d)
+  }
+
+  const branchA = resolveBranchElement(cons, ctx, depsSet, allDeps)
+  if (branchA === null) return null
+  const branchB = resolveBranchElement(alt, ctx, depsSet, allDeps)
+  if (branchB === null) return null
+
+  return {
+    kind: "alt",
+    condExpr: testResolved.expr,
+    condDeps: testResolved.deps,
+    refA: branchA.componentRef,
+    propsA: branchA.props,
+    refB: branchB.componentRef,
+    propsB: branchB.props,
     allDeps,
   }
 }
@@ -1030,6 +1141,23 @@ function renderChildren(
         if (isTextLike(prev) || isTextLike(next)) return null
         ctx.slots.push({
           ...cond,
+          path: [...parentPath, i],
+        })
+        out += "<!>"
+        continue
+      }
+
+      // `{cond ? <A/> : <B/>}` -- ternary conditional child. Same
+      // neighbor rule as cond/list.
+      const alt = resolveAltExpr(child.node.expression, ctx)
+      if (alt !== null) {
+        const prev = i > 0 ? effective[i - 1]! : null
+        const next = i < effective.length - 1 ? effective[i + 1]! : null
+        const isTextLike = (c: EffectiveChild | null): boolean =>
+          c !== null && c.kind !== "element"
+        if (isTextLike(prev) || isTextLike(next)) return null
+        ctx.slots.push({
+          ...alt,
           path: [...parentPath, i],
         })
         out += "<!>"

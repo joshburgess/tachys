@@ -160,6 +160,81 @@ export function _patchCond(
 }
 
 /**
+ * State kept between mount and patch for a compiled ternary conditional
+ * (`cond ? <A/> : <B/>`). Exactly one child is always mounted; `branch`
+ * tracks which side we last rendered so patches can detect cond flips.
+ */
+export interface CompiledAltState {
+  parent: Node
+  anchor: Comment
+  branch: 0 | 1
+  inst: CondInstance
+}
+
+/**
+ * Mount a compiled ternary child. The truthy branch (A) maps to branch 0;
+ * the falsy branch (B) maps to branch 1. Like `_mountCond`, `makeProps`
+ * closures observe live parent props so the emitter can share one shape
+ * across mount and patch.
+ */
+export function _mountAlt(
+  cond: unknown,
+  ChildA: CompiledComponent,
+  makePropsA: () => Record<string, unknown>,
+  ChildB: CompiledComponent,
+  makePropsB: () => Record<string, unknown>,
+  anchor: Comment,
+): CompiledAltState {
+  const parent = anchor.parentNode as Node
+  const branch: 0 | 1 = cond ? 0 : 1
+  const Child = branch === 0 ? ChildA : ChildB
+  const make = branch === 0 ? makePropsA : makePropsB
+  const props = make()
+  const mounted = Child(props)
+  parent.insertBefore(mounted.dom, anchor)
+  return {
+    parent,
+    anchor,
+    branch,
+    inst: { dom: mounted.dom, state: mounted.state, props },
+  }
+}
+
+/**
+ * Patch a compiled ternary child. Cond flip swaps the mounted subtree;
+ * same-branch patches forward to the child's .patch (honoring _compare).
+ */
+export function _patchAlt(
+  state: CompiledAltState,
+  cond: unknown,
+  ChildA: CompiledComponent,
+  makePropsA: () => Record<string, unknown>,
+  ChildB: CompiledComponent,
+  makePropsB: () => Record<string, unknown>,
+): void {
+  const nextBranch: 0 | 1 = cond ? 0 : 1
+  if (state.branch !== nextBranch) {
+    state.parent.removeChild(state.inst.dom)
+    const Child = nextBranch === 0 ? ChildA : ChildB
+    const make = nextBranch === 0 ? makePropsA : makePropsB
+    const props = make()
+    const mounted = Child(props)
+    state.parent.insertBefore(mounted.dom, state.anchor)
+    state.branch = nextBranch
+    state.inst = { dom: mounted.dom, state: mounted.state, props }
+    return
+  }
+  const Child = nextBranch === 0 ? ChildA : ChildB
+  const make = nextBranch === 0 ? makePropsA : makePropsB
+  const props = make()
+  const compare = Child._compare
+  if (compare === undefined || !compare(state.inst.props, props)) {
+    Child.patch(state.inst.state, props)
+    state.inst.props = props
+  }
+}
+
+/**
  * State kept between mount and patch for a compiled keyed list. The plugin
  * emits `state._list_N = _mountList(...)` once, then calls `_patchList`
  * with that same object on every subsequent render.

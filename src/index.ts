@@ -26,14 +26,17 @@ export {
 } from "./component"
 export type { EffectCleanup } from "./component"
 export {
+  _mountAlt,
   _mountCond,
   _mountList,
+  _patchAlt,
   _patchCond,
   _patchList,
   _template,
   markCompiled,
 } from "./compiled"
 export type {
+  CompiledAltState,
   CompiledComponent,
   CompiledCondState,
   CompiledListState,

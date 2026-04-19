@@ -1381,19 +1381,7 @@ describe("babel-plugin-tachys (v0.9 conditional compiled children)", () => {
     expect(out).toContain("props.user.name")
   })
 
-  it("bails on a ternary (cond ? <A/> : <B/>) -- not yet supported", () => {
-    const input = `
-      function A({}) { return <span>a</span>; }
-      function B({}) { return <span>b</span>; }
-      function Panel({ visible }) {
-        return <div>{visible ? <A /> : <B />}</div>;
-      }
-    `
-    const out = transform(input)
-    // The Panel itself should not compile; helper components A and B still do.
-    expect(out).toContain("function Panel(")
-    expect(out).not.toContain("const Panel = markCompiled")
-  })
+  // Ternary ({cond ? <A/> : <B/>}) is handled in the v1.0 alt-slot suite.
 
   it("bails on a host element on the right of &&", () => {
     const input = `
@@ -1531,6 +1519,155 @@ describe("babel-plugin-tachys (v0.9 conditional compiled children)", () => {
     expect(spanAfter).not.toBe(spanBefore)
     expect((inst.dom as Element).outerHTML).toBe(
       '<div><span class="badge">again</span><!----></div>',
+    )
+  })
+})
+
+describe("babel-plugin-tachys (v1.0 ternary alt slots)", () => {
+  it("compiles {cond ? <A/> : <B/>} into _mountAlt / _patchAlt", () => {
+    const input = `
+      function Yes({ label }) { return <span className="yes">{label}</span>; }
+      function No({ label }) { return <span className="no">{label}</span>; }
+      function Panel({ visible, label }) {
+        return <div>{visible ? <Yes label={label} /> : <No label={label} />}</div>;
+      }
+    `
+    const out = transform(input)
+    expect(out).toContain("_mountAlt")
+    expect(out).toContain("_patchAlt")
+    expect(out).toContain("const Panel = markCompiled")
+  })
+
+  it("memo compare covers cond + both branches' deps", () => {
+    const input = `
+      function Yes({ name }) { return <span>{name}</span>; }
+      function No({ count }) { return <span>{count}</span>; }
+      function Panel({ visible, name, count }) {
+        return <div>{visible ? <Yes name={name} /> : <No count={count} />}</div>;
+      }
+    `
+    const out = transform(input)
+    expect(out).toContain("prev.visible === next.visible")
+    expect(out).toContain("prev.name === next.name")
+    expect(out).toContain("prev.count === next.count")
+  })
+
+  it("bails when a branch is a host element", () => {
+    const input = `
+      function A({}) { return <span>a</span>; }
+      function Panel({ visible }) {
+        return <div>{visible ? <A /> : <span>fallback</span>}</div>;
+      }
+    `
+    const out = transform(input)
+    expect(out).toContain("function Panel(")
+    expect(out).not.toContain("const Panel = markCompiled")
+  })
+
+  it("bails when a branch has JSX children", () => {
+    const input = `
+      function Yes({ label }) { return <span>{label}</span>; }
+      function No({ label }) { return <span>{label}</span>; }
+      function Panel({ visible, label }) {
+        return <div>{visible ? <Yes label={label}>x</Yes> : <No label={label} />}</div>;
+      }
+    `
+    const out = transform(input)
+    expect(out).toContain("function Panel(")
+    expect(out).not.toContain("const Panel = markCompiled")
+  })
+
+  it("runs a ternary end-to-end in jsdom (branch swap + in-place patch)", async () => {
+    const { JSDOM } = await import("jsdom")
+    const dom = new JSDOM("<!doctype html><html><body></body></html>")
+    const doc = dom.window.document
+
+    const input = `
+      function Yes({ label }) { return <span className="yes">{label}</span>; }
+      function No({ label }) { return <span className="no">{label}</span>; }
+      function Panel({ visible, label }) {
+        return <div>{visible ? <Yes label={label} /> : <No label={label} />}</div>;
+      }
+    `
+    const out = transform(input)
+    const stubbed = out.replace(/import \{[^}]*\} from "tachys";?/g, "")
+
+    type MountResult = { dom: Element; state: Record<string, unknown> }
+
+    const markCompiled = (
+      mount: (p: Record<string, unknown>) => MountResult,
+      patch: (s: Record<string, unknown>, p: Record<string, unknown>) => void,
+      compare?: (
+        a: Record<string, unknown>,
+        b: Record<string, unknown>,
+      ) => boolean,
+    ): ((p: Record<string, unknown>) => MountResult) & {
+      patch: typeof patch
+      _compare?: typeof compare
+    } => {
+      const callable = mount as ((p: Record<string, unknown>) => MountResult) & {
+        patch: typeof patch
+        _compare?: typeof compare
+      }
+      callable.patch = patch
+      if (compare !== undefined) callable._compare = compare
+      return callable
+    }
+    const _template = (html: string): Element => {
+      const tpl = doc.createElement("template")
+      tpl.innerHTML = html
+      return tpl.content.firstElementChild as Element
+    }
+
+    const runtime = await import("../../../src/compiled")
+    const { _mountAlt, _patchAlt } = runtime
+
+    const fn = new Function(
+      "document",
+      "markCompiled",
+      "_template",
+      "_mountAlt",
+      "_patchAlt",
+      `${stubbed}; return { Panel };`,
+    )
+    const { Panel } = fn(
+      doc,
+      markCompiled,
+      _template,
+      _mountAlt,
+      _patchAlt,
+    ) as {
+      Panel: ((p: Record<string, unknown>) => MountResult) & {
+        patch: (s: Record<string, unknown>, p: Record<string, unknown>) => void
+      }
+    }
+
+    // Initial mount: visible=true -> Yes branch.
+    const inst = Panel({ visible: true, label: "hi" })
+    expect((inst.dom as Element).outerHTML).toBe(
+      '<div><span class="yes">hi</span><!----></div>',
+    )
+    const yesBefore = (inst.dom as Element).querySelector("span.yes")!
+
+    // Patch with same branch, new label: in-place update, identity preserved.
+    Panel.patch(inst.state, { visible: true, label: "hello" })
+    expect((inst.dom as Element).outerHTML).toBe(
+      '<div><span class="yes">hello</span><!----></div>',
+    )
+    expect((inst.dom as Element).querySelector("span.yes")).toBe(yesBefore)
+
+    // Flip cond: swap to No branch.
+    Panel.patch(inst.state, { visible: false, label: "hello" })
+    expect((inst.dom as Element).outerHTML).toBe(
+      '<div><span class="no">hello</span><!----></div>',
+    )
+
+    // Flip back: fresh Yes node (no stale state).
+    Panel.patch(inst.state, { visible: true, label: "again" })
+    const yesAfter = (inst.dom as Element).querySelector("span.yes")!
+    expect(yesAfter).not.toBe(yesBefore)
+    expect((inst.dom as Element).outerHTML).toBe(
+      '<div><span class="yes">again</span><!----></div>',
     )
   })
 })

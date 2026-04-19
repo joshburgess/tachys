@@ -30,6 +30,7 @@ import type * as BabelCore from "@babel/core"
 
 import {
   compileComponent,
+  type AltSlot,
   type AttrSlot,
   type ComponentSlot,
   type CondSlot,
@@ -49,6 +50,8 @@ interface PluginState extends PluginPass {
     patchList: string | null
     mountCond: string | null
     patchCond: string | null
+    mountAlt: string | null
+    patchAlt: string | null
   }
   templateCounter: number
   pendingTemplates: Array<{ id: string; html: string }>
@@ -82,6 +85,8 @@ const plugin = declareT<PluginState>((api) => {
         patchList: null,
         mountCond: null,
         patchCond: null,
+        mountAlt: null,
+        patchAlt: null,
       }
       this.templateCounter = 0
       this.pendingTemplates = []
@@ -106,6 +111,12 @@ const plugin = declareT<PluginState>((api) => {
           }
           if (state.tachysImports.patchCond !== null) {
             ensureImport(path, t, state, "_patchCond")
+          }
+          if (state.tachysImports.mountAlt !== null) {
+            ensureImport(path, t, state, "_mountAlt")
+          }
+          if (state.tachysImports.patchAlt !== null) {
+            ensureImport(path, t, state, "_patchAlt")
           }
 
           // List-helper module consts come right after the imports but
@@ -181,6 +192,10 @@ const plugin = declareT<PluginState>((api) => {
           if (slot.kind === "cond") {
             reserveImport(state, "_mountCond")
             reserveImport(state, "_patchCond")
+          }
+          if (slot.kind === "alt") {
+            reserveImport(state, "_mountAlt")
+            reserveImport(state, "_patchAlt")
           }
         })
 
@@ -426,6 +441,7 @@ function slotPropNames(slot: Slot): string[] {
   if (slot.kind === "component") return slot.allDeps
   if (slot.kind === "list") return [slot.arrayPropName]
   if (slot.kind === "cond") return slot.allDeps
+  if (slot.kind === "alt") return slot.allDeps
   if (
     (slot.kind === "text" || slot.kind === "attr") &&
     slot.composite !== undefined
@@ -512,6 +528,34 @@ function buildCondMakePropsFn(
   propsName: string,
 ): BabelCore.types.ArrowFunctionExpression {
   return t.arrowFunctionExpression([], buildCondPropsObject(t, slot, propsName))
+}
+
+/**
+ * Stable state-key name for an alt slot's runtime state object.
+ */
+function altInstanceName(index: number): string {
+  return `_al${index}`
+}
+
+/**
+ * Build a `() => ({...})` closure for one branch of an AltSlot.
+ */
+function buildAltMakePropsFn(
+  t: typeof BabelCore.types,
+  propsArr: AltSlot["propsA"],
+  propsName: string,
+): BabelCore.types.ArrowFunctionExpression {
+  return t.arrowFunctionExpression(
+    [],
+    t.objectExpression(
+      propsArr.map((p) =>
+        t.objectProperty(
+          t.identifier(p.name),
+          maybeRetargetPropsName(t, p.valueExpr, propsName),
+        ),
+      ),
+    ),
+  )
 }
 
 function buildMount(
@@ -766,6 +810,42 @@ function buildMount(
       continue
     }
 
+    if (slot.kind === "alt") {
+      const markerName = `_alm${i}`
+      const instName = altInstanceName(i)
+
+      // const _almN = <path-to-comment-anchor>;
+      stmts.push(
+        t.variableDeclaration("const", [
+          t.variableDeclarator(
+            t.identifier(markerName),
+            buildPathExpr(t, "_root", slot.path),
+          ),
+        ]),
+      )
+      // const _alN = _mountAlt(<cond>, A, () => ({...}), B, () => ({...}), _almN);
+      stmts.push(
+        t.variableDeclaration("const", [
+          t.variableDeclarator(
+            t.identifier(instName),
+            t.callExpression(t.identifier("_mountAlt"), [
+              maybeRetargetPropsName(t, slot.condExpr, propsName),
+              t.identifier(slot.refA),
+              buildAltMakePropsFn(t, slot.propsA, propsName),
+              t.identifier(slot.refB),
+              buildAltMakePropsFn(t, slot.propsB, propsName),
+              t.identifier(markerName),
+            ]),
+          ),
+        ]),
+      )
+      stateProps.push(
+        t.objectProperty(t.identifier(instName), t.identifier(instName)),
+      )
+      registerSlotProps(slot, seenPropNames, stateProps, t, propsName)
+      continue
+    }
+
     if (slot.kind === "component") {
       const markerName = `_cm${i}`
       const instName = componentInstanceName(i)
@@ -929,6 +1009,7 @@ function buildPatch(
       s.kind === "component" ||
       s.kind === "list" ||
       s.kind === "cond" ||
+      s.kind === "alt" ||
       ((s.kind === "text" || s.kind === "attr") && s.composite !== undefined),
   )
 
@@ -950,7 +1031,8 @@ function buildPatchSimple(
     if (
       slot.kind === "component" ||
       slot.kind === "list" ||
-      slot.kind === "cond"
+      slot.kind === "cond" ||
+      slot.kind === "alt"
     ) {
       return
     }
@@ -1188,6 +1270,22 @@ function buildSlotWrite(
       ]),
     )
   }
+  if (slot.kind === "alt") {
+    // _patchAlt(state._alN, <cond>, A, makeA, B, makeB)
+    return t.expressionStatement(
+      t.callExpression(t.identifier("_patchAlt"), [
+        t.memberExpression(
+          t.identifier("state"),
+          t.identifier(altInstanceName(index)),
+        ),
+        maybeRetargetPropsName(t, slot.condExpr, propsName),
+        t.identifier(slot.refA),
+        buildAltMakePropsFn(t, slot.propsA, propsName),
+        t.identifier(slot.refB),
+        buildAltMakePropsFn(t, slot.propsB, propsName),
+      ]),
+    )
+  }
   // event slots: no DOM rebind needed; state mutation happens at the
   // bottom of the patch via the dirty-sync blocks (or the grouped if
   // body in the simple path).
@@ -1266,6 +1364,8 @@ type ImportLocal =
   | "_patchList"
   | "_mountCond"
   | "_patchCond"
+  | "_mountAlt"
+  | "_patchAlt"
 
 function importKey(local: ImportLocal): keyof PluginState["tachysImports"] {
   if (local === "markCompiled") return "markCompiled"
@@ -1273,7 +1373,9 @@ function importKey(local: ImportLocal): keyof PluginState["tachysImports"] {
   if (local === "_mountList") return "mountList"
   if (local === "_patchList") return "patchList"
   if (local === "_mountCond") return "mountCond"
-  return "patchCond"
+  if (local === "_patchCond") return "patchCond"
+  if (local === "_mountAlt") return "mountAlt"
+  return "patchAlt"
 }
 
 function reserveImport(state: PluginState, local: ImportLocal): string {
