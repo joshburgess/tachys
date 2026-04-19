@@ -39,6 +39,18 @@ const VOID_ELEMENTS = new Set([
 ])
 
 /**
+ * Composite slot value: a template literal whose expressions have all been
+ * normalized so bare destructured identifiers become `props.<name>`. Carries
+ * the list of reactive prop refs so patch knows which props to diff before
+ * re-evaluating the expression.
+ */
+export interface CompositeExpr {
+  expr: BabelCore.types.TemplateLiteral
+  /** Unique prop names referenced, in stable order. */
+  propNames: string[]
+}
+
+/**
  * A dynamic insertion point in the compiled template. `path` is a chain of
  * DOM child indices from the root element; the mount code walks this path
  * at instance creation to locate the placeholder node.
@@ -47,8 +59,18 @@ export interface TextSlot {
   kind: "text"
   /** DOM child-index path from the template root. */
   path: number[]
-  /** Name on `props` to read (post-normalization of destructured params). */
+  /**
+   * Name on `props` to read (post-normalization of destructured params).
+   * For composite slots this is the first prop name referenced -- kept as
+   * the primary grouping key.
+   */
   propName: string
+  /**
+   * Present when the slot value is a template literal that reads one or
+   * more props. Mount emits the template literal inline; patch diffs all
+   * referenced props together.
+   */
+  composite?: CompositeExpr
   /**
    * How the template carries the placeholder:
    *   - "marker": the template emits `<!>` and mount swaps it for a
@@ -83,6 +105,11 @@ export interface AttrSlot {
    * Krausest pattern.
    */
   ternary?: { ifTrue: string; ifFalse: string }
+  /**
+   * Present when the value is a template literal reading one or more props.
+   * Takes precedence over `ternary`.
+   */
+  composite?: CompositeExpr
 }
 
 /**
@@ -234,6 +261,19 @@ function renderAttributes(
 
     if (t.isJSXExpressionContainer(value)) {
       const expr = value.expression
+
+      // Literal expressions with no prop dependency bake directly into
+      // the template HTML at compile time, matching what a plain string
+      // attribute would do. Event attrs reject literals (nonsensical).
+      if (t.isStringLiteral(expr) || t.isNumericLiteral(expr)) {
+        if (isEventAttrName(jsxName)) return null
+        const literal = t.isStringLiteral(expr)
+          ? expr.value
+          : String(expr.value)
+        out += ` ${htmlName}="${escapeAttr(literal)}"`
+        continue
+      }
+
       const ternary = resolveTernaryAttr(expr, ctx)
       if (ternary !== null) {
         if (isEventAttrName(jsxName)) return null
@@ -248,6 +288,24 @@ function renderAttributes(
           strategy,
           propName: ternary.propName,
           ternary: { ifTrue: ternary.ifTrue, ifFalse: ternary.ifFalse },
+        })
+        continue
+      }
+
+      const composite = resolveTemplateExpr(expr, ctx)
+      if (composite !== null) {
+        if (isEventAttrName(jsxName)) return null
+        const strategy: "className" | "setAttribute" =
+          jsxName === "className" || jsxName === "class"
+            ? "className"
+            : "setAttribute"
+        ctx.slots.push({
+          kind: "attr",
+          path: elementPath,
+          attrName: htmlName,
+          strategy,
+          propName: composite.propNames[0]!,
+          composite,
         })
         continue
       }
@@ -365,7 +423,11 @@ function renderChildren(
     }
 
     if (child.kind === "expr") {
-      const propName = resolvePropExpr(child.node.expression, ctx)
+      const composite = resolveTemplateExpr(child.node.expression, ctx)
+      const propName =
+        composite !== null
+          ? composite.propNames[0]!
+          : resolvePropExpr(child.node.expression, ctx)
       if (propName === null) return null
 
       const prev = i > 0 ? effective[i - 1]! : null
@@ -387,6 +449,7 @@ function renderChildren(
           path: [...parentPath, i],
           propName,
           placeholder: "prealloc",
+          ...(composite !== null ? { composite } : {}),
         })
         out += " "
       } else {
@@ -396,6 +459,7 @@ function renderChildren(
           path: [...parentPath, i],
           propName,
           placeholder: "marker",
+          ...(composite !== null ? { composite } : {}),
         })
         out += "<!>"
       }
@@ -428,6 +492,51 @@ function resolveTernaryAttr(
     ifTrue: consequent.value,
     ifFalse: alternate.value,
   }
+}
+
+/**
+ * Detect a template literal whose embedded expressions are all prop refs.
+ * Returns a normalized TemplateLiteral node (destructured names rewritten
+ * to `props.<name>`) plus the list of referenced prop names. Returns null
+ * for anything outside that shape so the caller can fall through to the
+ * simple single-prop path or bail.
+ */
+function resolveTemplateExpr(
+  expr:
+    | BabelCore.types.Expression
+    | BabelCore.types.JSXEmptyExpression,
+  ctx: CompileContext,
+): CompositeExpr | null {
+  const t = ctx.t
+  if (!t.isTemplateLiteral(expr)) return null
+
+  const propNames: string[] = []
+  const seen = new Set<string>()
+  const normalizedExprs: BabelCore.types.Expression[] = []
+  for (const sub of expr.expressions) {
+    if (t.isTSType(sub)) return null
+    const propName = resolvePropExpr(
+      sub as BabelCore.types.Expression,
+      ctx,
+    )
+    if (propName === null) return null
+    if (!seen.has(propName)) {
+      seen.add(propName)
+      propNames.push(propName)
+    }
+    // Normalize bare destructured identifier to `props.<name>`. Member
+    // expression (`props.x`) can be reused as-is.
+    if (t.isIdentifier(sub)) {
+      normalizedExprs.push(
+        t.memberExpression(t.identifier("props"), t.identifier(propName)),
+      )
+    } else {
+      normalizedExprs.push(sub as BabelCore.types.Expression)
+    }
+  }
+
+  const tpl = t.templateLiteral(expr.quasis, normalizedExprs)
+  return { expr: tpl, propNames }
 }
 
 function resolvePropExpr(

@@ -26,7 +26,7 @@ import { declare } from "@babel/helper-plugin-utils"
 import syntaxJsxRaw from "@babel/plugin-syntax-jsx"
 import type * as BabelCore from "@babel/core"
 
-import { compileComponent, type AttrSlot, type Slot } from "./compile"
+import { compileComponent, type AttrSlot, type Slot, type TextSlot } from "./compile"
 
 const syntaxJsx =
   (syntaxJsxRaw as { default?: unknown }).default ?? syntaxJsxRaw
@@ -161,13 +161,18 @@ function pathKey(path: number[]): string {
  * For a plain prop reference we emit `String(props.x)` so any non-string
  * value coerces safely. When the JSX source was a ConditionalExpression
  * with StringLiteral branches we emit that ternary inline, skipping the
- * String() wrap (both branches are already strings).
+ * String() wrap (both branches are already strings). Template literals
+ * carrying `${props.x}` expressions are emitted inline; patch/mount reuse
+ * the normalized AST stored on the slot.
  */
 function buildAttrValueExpr(
   t: typeof BabelCore.types,
   slot: AttrSlot,
   propsName: string,
 ): BabelCore.types.Expression {
+  if (slot.composite !== undefined) {
+    return substituteProps(t, slot.composite.expr, propsName)
+  }
   const propRef = t.memberExpression(
     t.identifier(propsName),
     t.identifier(slot.propName),
@@ -180,6 +185,120 @@ function buildAttrValueExpr(
     )
   }
   return t.callExpression(t.identifier("String"), [propRef])
+}
+
+/**
+ * Build the text-node value expression. Composite slots emit the template
+ * literal directly (template literals stringify their interpolations, so
+ * no outer String() wrap is needed). Simple slots emit `String(props.x)`.
+ */
+function buildTextValueExpr(
+  t: typeof BabelCore.types,
+  slot: TextSlot,
+  propsName: string,
+): BabelCore.types.Expression {
+  if (slot.composite !== undefined) {
+    return substituteProps(t, slot.composite.expr, propsName)
+  }
+  return t.callExpression(t.identifier("String"), [
+    t.memberExpression(
+      t.identifier(propsName),
+      t.identifier(slot.propName),
+    ),
+  ])
+}
+
+/**
+ * The composite expression is stored with `props` as the object name. If
+ * the caller renamed the props param (currently always "props", but kept
+ * in case it diverges), swap the object identifier on each `props.*`
+ * MemberExpression that sits at top level inside the template literal.
+ */
+function substituteProps(
+  t: typeof BabelCore.types,
+  expr: BabelCore.types.TemplateLiteral,
+  propsName: string,
+): BabelCore.types.TemplateLiteral {
+  if (propsName === "props") return expr
+  const rewritten = expr.expressions.map((e) => {
+    if (
+      t.isMemberExpression(e) &&
+      t.isIdentifier(e.object) &&
+      e.object.name === "props"
+    ) {
+      return t.memberExpression(
+        t.identifier(propsName),
+        e.property as BabelCore.types.Identifier,
+      )
+    }
+    return e as BabelCore.types.Expression
+  })
+  return t.templateLiteral(expr.quasis, rewritten)
+}
+
+/**
+ * Record every prop the slot references in the component's `state` object,
+ * skipping any prop already seen. Composite slots reference multiple props
+ * via the template literal's expression list; simple slots reference just
+ * `slot.propName`.
+ */
+function registerSlotProps(
+  slot: Slot,
+  seenPropNames: Set<string>,
+  stateProps: BabelCore.types.ObjectProperty[],
+  t: typeof BabelCore.types,
+  propsName: string,
+): void {
+  const names =
+    (slot.kind === "text" || slot.kind === "attr") &&
+    slot.composite !== undefined
+      ? slot.composite.propNames
+      : [slot.propName]
+  for (const name of names) {
+    if (seenPropNames.has(name)) continue
+    seenPropNames.add(name)
+    stateProps.push(
+      t.objectProperty(
+        t.identifier(name),
+        t.memberExpression(t.identifier(propsName), t.identifier(name)),
+      ),
+    )
+  }
+}
+
+/**
+ * Collect every reactive prop name referenced across all slots, preserving
+ * first-seen order. Composite slots contribute their full propNames list.
+ */
+function collectReactiveProps(slots: Slot[]): string[] {
+  const seen = new Set<string>()
+  const names: string[] = []
+  for (const slot of slots) {
+    const list =
+      (slot.kind === "text" || slot.kind === "attr") &&
+      slot.composite !== undefined
+        ? slot.composite.propNames
+        : [slot.propName]
+    for (const name of list) {
+      if (seen.has(name)) continue
+      seen.add(name)
+      names.push(name)
+    }
+  }
+  return names
+}
+
+/**
+ * Return the list of prop names a slot depends on (for dirty-check).
+ */
+function slotPropNames(slot: Slot): string[] {
+  if (
+    (slot.kind === "text" || slot.kind === "attr") &&
+    slot.composite !== undefined
+  ) {
+    return slot.composite.propNames
+  }
+  return [slot.propName]
 }
 
 function buildMount(
@@ -249,7 +368,7 @@ function buildMount(
             ),
           ]),
         )
-        // _tN.data = String(props.x);
+        // _tN.data = <value>;
         stmts.push(
           t.expressionStatement(
             t.assignmentExpression(
@@ -258,12 +377,7 @@ function buildMount(
                 t.identifier(refName),
                 t.identifier("data"),
               ),
-              t.callExpression(t.identifier("String"), [
-                t.memberExpression(
-                  t.identifier(propsName),
-                  t.identifier(slot.propName),
-                ),
-              ]),
+              buildTextValueExpr(t, slot, propsName),
             ),
           ),
         )
@@ -287,14 +401,7 @@ function buildMount(
                   t.identifier("document"),
                   t.identifier("createTextNode"),
                 ),
-                [
-                  t.callExpression(t.identifier("String"), [
-                    t.memberExpression(
-                      t.identifier(propsName),
-                      t.identifier(slot.propName),
-                    ),
-                  ]),
-                ],
+                [buildTextValueExpr(t, slot, propsName)],
               ),
             ),
           ]),
@@ -318,18 +425,7 @@ function buildMount(
       stateProps.push(
         t.objectProperty(t.identifier(refName), t.identifier(refName)),
       )
-      if (!seenPropNames.has(slot.propName)) {
-        seenPropNames.add(slot.propName)
-        stateProps.push(
-          t.objectProperty(
-            t.identifier(slot.propName),
-            t.memberExpression(
-              t.identifier(propsName),
-              t.identifier(slot.propName),
-            ),
-          ),
-        )
-      }
+      registerSlotProps(slot, seenPropNames, stateProps, t, propsName)
       continue
     }
 
@@ -364,18 +460,7 @@ function buildMount(
         )
       }
 
-      if (!seenPropNames.has(slot.propName)) {
-        seenPropNames.add(slot.propName)
-        stateProps.push(
-          t.objectProperty(
-            t.identifier(slot.propName),
-            t.memberExpression(
-              t.identifier(propsName),
-              t.identifier(slot.propName),
-            ),
-          ),
-        )
-      }
+      registerSlotProps(slot, seenPropNames, stateProps, t, propsName)
       continue
     }
 
@@ -384,18 +469,7 @@ function buildMount(
       // listener assignment happens after the `state` variable exists so
       // the wrapper function can close over it.
       ensureElementRef(slot.path)
-      if (!seenPropNames.has(slot.propName)) {
-        seenPropNames.add(slot.propName)
-        stateProps.push(
-          t.objectProperty(
-            t.identifier(slot.propName),
-            t.memberExpression(
-              t.identifier(propsName),
-              t.identifier(slot.propName),
-            ),
-          ),
-        )
-      }
+      registerSlotProps(slot, seenPropNames, stateProps, t, propsName)
     }
   }
 
@@ -479,9 +553,20 @@ function buildMount(
 }
 
 /**
- * Build patch body. Groups slots by `propName` so each prop's compare
- * happens exactly once per patch call, and all writes that depend on
- * that prop sit inside the same `if` body.
+ * Build patch body.
+ *
+ * Simple path (no composite slots): group slots by their single `propName`
+ * and emit one `if (state.x !== props.x) { writes...; state.x = props.x }`
+ * per prop. Writes for the same prop share one compare + one state update.
+ *
+ * Composite path: when any slot depends on more than one prop (template
+ * literal), we can't fold writes + state updates into one block -- the
+ * state update for a shared prop would poison later checks. Instead emit:
+ *   const _dX = state.x !== props.x;       // one per reactive prop
+ *   if (<OR of deps>) { write }            // one per slot
+ *   if (_dX) state.x = props.x;            // one per reactive prop
+ * This keeps every per-prop compare at O(1) while letting multi-prop
+ * writes observe the correct staleness for all deps.
  */
 function buildPatch(
   t: typeof BabelCore.types,
@@ -492,6 +577,21 @@ function buildPatch(
     return t.arrowFunctionExpression([], t.blockStatement([]))
   }
 
+  const hasComposite = slots.some(
+    (s) =>
+      (s.kind === "text" || s.kind === "attr") && s.composite !== undefined,
+  )
+
+  return hasComposite
+    ? buildPatchComposite(t, slots, propsName)
+    : buildPatchSimple(t, slots, propsName)
+}
+
+function buildPatchSimple(
+  t: typeof BabelCore.types,
+  slots: Slot[],
+  propsName: string,
+): BabelCore.types.ArrowFunctionExpression {
   const grouped = new Map<string, { slot: Slot; index: number }[]>()
   slots.forEach((slot, index) => {
     const arr = grouped.get(slot.propName) ?? []
@@ -504,59 +604,8 @@ function buildPatch(
   for (const [propName, group] of grouped) {
     const writes: BabelCore.types.Statement[] = []
     for (const { slot, index } of group) {
-      const refName = slotRefName(index)
-
-      if (slot.kind === "text") {
-        const textExpr = t.callExpression(t.identifier("String"), [
-          t.memberExpression(
-            t.identifier(propsName),
-            t.identifier(slot.propName),
-          ),
-        ])
-        writes.push(
-          t.expressionStatement(
-            t.assignmentExpression(
-              "=",
-              t.memberExpression(
-                t.memberExpression(
-                  t.identifier("state"),
-                  t.identifier(refName),
-                ),
-                t.identifier("data"),
-              ),
-              textExpr,
-            ),
-          ),
-        )
-      } else if (slot.kind === "attr") {
-        const elExpr = stateElementExpr(t, slots, slot.path)
-        const valueExpr = buildAttrValueExpr(t, slot, propsName)
-
-        if (slot.strategy === "className") {
-          writes.push(
-            t.expressionStatement(
-              t.assignmentExpression(
-                "=",
-                t.memberExpression(elExpr, t.identifier("className")),
-                valueExpr,
-              ),
-            ),
-          )
-        } else {
-          writes.push(
-            t.expressionStatement(
-              t.callExpression(
-                t.memberExpression(elExpr, t.identifier("setAttribute")),
-                [t.stringLiteral(slot.attrName), valueExpr],
-              ),
-            ),
-          )
-        }
-      } else if (slot.kind === "event") {
-        // Mount installed a state-closure wrapper that reads
-        // `state.<prop>` at dispatch time. Patch just keeps state in
-        // sync — no DOM listener rebind needed.
-      }
+      const write = buildSlotWrite(t, slot, index, slots, propsName)
+      if (write !== null) writes.push(write)
     }
 
     // state.<prop> = props.<prop>
@@ -588,6 +637,129 @@ function buildPatch(
   )
 }
 
+function buildPatchComposite(
+  t: typeof BabelCore.types,
+  slots: Slot[],
+  propsName: string,
+): BabelCore.types.ArrowFunctionExpression {
+  const propNames = collectReactiveProps(slots)
+  const dirtyLocals = new Map<string, string>()
+
+  const stmts: BabelCore.types.Statement[] = []
+
+  // const _d<i> = state.<p> !== props.<p>
+  propNames.forEach((name, i) => {
+    const local = `_d${i}`
+    dirtyLocals.set(name, local)
+    stmts.push(
+      t.variableDeclaration("const", [
+        t.variableDeclarator(
+          t.identifier(local),
+          t.binaryExpression(
+            "!==",
+            t.memberExpression(t.identifier("state"), t.identifier(name)),
+            t.memberExpression(t.identifier(propsName), t.identifier(name)),
+          ),
+        ),
+      ]),
+    )
+  })
+
+  // For each slot: emit the write guarded by OR of its dirty deps.
+  slots.forEach((slot, index) => {
+    const deps = slotPropNames(slot)
+    const write = buildSlotWrite(t, slot, index, slots, propsName)
+    if (write === null) return
+    let test: BabelCore.types.Expression = t.identifier(dirtyLocals.get(deps[0]!)!)
+    for (let i = 1; i < deps.length; i++) {
+      test = t.logicalExpression(
+        "||",
+        test,
+        t.identifier(dirtyLocals.get(deps[i]!)!),
+      )
+    }
+    stmts.push(t.ifStatement(test, t.blockStatement([write])))
+  })
+
+  // if (_d<i>) state.<p> = props.<p>
+  propNames.forEach((name) => {
+    const local = dirtyLocals.get(name)!
+    stmts.push(
+      t.ifStatement(
+        t.identifier(local),
+        t.blockStatement([
+          t.expressionStatement(
+            t.assignmentExpression(
+              "=",
+              t.memberExpression(t.identifier("state"), t.identifier(name)),
+              t.memberExpression(t.identifier(propsName), t.identifier(name)),
+            ),
+          ),
+        ]),
+      ),
+    )
+  })
+
+  return t.arrowFunctionExpression(
+    [t.identifier("state"), t.identifier(propsName)],
+    t.blockStatement(stmts),
+  )
+}
+
+/**
+ * Emit a single DOM write for a slot in the patch body. Returns null for
+ * event slots (the state-closure wrapper installed at mount-time already
+ * observes the latest `state.<prop>` at dispatch).
+ */
+function buildSlotWrite(
+  t: typeof BabelCore.types,
+  slot: Slot,
+  index: number,
+  slots: Slot[],
+  propsName: string,
+): BabelCore.types.Statement | null {
+  if (slot.kind === "text") {
+    const refName = slotRefName(index)
+    const textExpr = buildTextValueExpr(t, slot, propsName)
+    return t.expressionStatement(
+      t.assignmentExpression(
+        "=",
+        t.memberExpression(
+          t.memberExpression(
+            t.identifier("state"),
+            t.identifier(refName),
+          ),
+          t.identifier("data"),
+        ),
+        textExpr,
+      ),
+    )
+  }
+  if (slot.kind === "attr") {
+    const elExpr = stateElementExpr(t, slots, slot.path)
+    const valueExpr = buildAttrValueExpr(t, slot, propsName)
+    if (slot.strategy === "className") {
+      return t.expressionStatement(
+        t.assignmentExpression(
+          "=",
+          t.memberExpression(elExpr, t.identifier("className")),
+          valueExpr,
+        ),
+      )
+    }
+    return t.expressionStatement(
+      t.callExpression(
+        t.memberExpression(elExpr, t.identifier("setAttribute")),
+        [t.stringLiteral(slot.attrName), valueExpr],
+      ),
+    )
+  }
+  // event slots: no DOM rebind needed; state mutation happens at the
+  // bottom of the patch via the dirty-sync blocks (or the grouped if
+  // body in the simple path).
+  return null
+}
+
 /**
  * Build the optional `compare(prev, next)` passed as the third arg to
  * markCompiled. When every slot-referenced prop is reference-equal between
@@ -600,13 +772,7 @@ function buildCompare(
   t: typeof BabelCore.types,
   slots: Slot[],
 ): BabelCore.types.ArrowFunctionExpression | null {
-  const names: string[] = []
-  const seen = new Set<string>()
-  for (const slot of slots) {
-    if (seen.has(slot.propName)) continue
-    seen.add(slot.propName)
-    names.push(slot.propName)
-  }
+  const names = collectReactiveProps(slots)
   if (names.length === 0) return null
 
   const comparisons = names.map((name) =>

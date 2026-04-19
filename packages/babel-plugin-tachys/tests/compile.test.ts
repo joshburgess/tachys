@@ -675,3 +675,209 @@ describe("babel-plugin-tachys (runtime smoke)", () => {
     expect(selectFired).toBe(2)
   })
 })
+
+describe("babel-plugin-tachys (v0.5 template literal slots)", () => {
+  it("compiles a template literal className with one prop", () => {
+    const input = `
+      function Row({ variant }) {
+        return <div className={\`row-\${variant}\`} />;
+      }
+    `
+    const out = transform(input)
+    expect(out).toContain('_template("<div></div>")')
+    // Mount emits the template literal directly -- no String() wrap.
+    expect(out).toMatch(/_root\.className\s*=\s*`row-\$\{props\.variant\}`/)
+    expect(out).not.toMatch(/String\(props\.variant\)/)
+    // Patch still guards by the single prop.
+    expect(out).toContain("state.variant !== props.variant")
+    expect(out).toContain("state.variant = props.variant")
+  })
+
+  it("compiles a template literal referencing multiple props", () => {
+    const input = `
+      function Row({ first, last }) {
+        return <div className={\`\${first}-\${last}\`} />;
+      }
+    `
+    const out = transform(input)
+    // Patch uses the dirty-locals composite path:
+    expect(out).toContain("const _d0 = state.first !== props.first")
+    expect(out).toContain("const _d1 = state.last !== props.last")
+    // One write guarded by OR of both dirty flags.
+    expect(out).toMatch(/if \(_d0 \|\| _d1\) \{/)
+    // State syncs are conditional and separate.
+    expect(out).toContain("if (_d0) {")
+    expect(out).toContain("state.first = props.first")
+    expect(out).toContain("state.last = props.last")
+  })
+
+  it("compiles a template literal as a text child", () => {
+    const input = `
+      function Greet({ first, last }) {
+        return <span>{\`hello \${first} \${last}!\`}</span>;
+      }
+    `
+    const out = transform(input)
+    expect(out).toContain('_template("<span> </span>")')
+    // Mount writes .data with the template literal directly.
+    expect(out).toMatch(/\.data\s*=\s*`hello \$\{props\.first\} \$\{props\.last\}!`/)
+  })
+
+  it("supports mixing simple and composite slots on the same component", () => {
+    const input = `
+      function Row({ cls, name }) {
+        return <div className={\`row-\${cls}\`}><span>{name}</span></div>;
+      }
+    `
+    const out = transform(input)
+    // Composite path kicks in (any composite forces whole patch to it).
+    expect(out).toContain("const _d0 = state.cls !== props.cls")
+    expect(out).toContain("const _d1 = state.name !== props.name")
+    // The simple text slot gets its own guarded write.
+    expect(out).toMatch(/if \(_d1\) \{[\s\S]*?\.data\s*=\s*String\(props\.name\)/)
+    // The composite attr slot gets its single-dep guard.
+    expect(out).toMatch(/if \(_d0\) \{[\s\S]*?\.className\s*=\s*`row-\$\{props\.cls\}`/)
+  })
+
+  it("memo compare includes all props used by composite slots", () => {
+    const input = `
+      function Row({ a, b }) {
+        return <div className={\`\${a}-\${b}\`} />;
+      }
+    `
+    const out = transform(input)
+    expect(out).toContain("prev.a === next.a")
+    expect(out).toContain("prev.b === next.b")
+    expect(out).toMatch(/&&/)
+  })
+
+  it("runs composite slots end-to-end in jsdom", async () => {
+    const { JSDOM } = await import("jsdom")
+    const dom = new JSDOM("<!doctype html><html><body></body></html>")
+    const doc = dom.window.document
+
+    const input = `
+      function Row({ cls, first, last }) {
+        return <div className={\`row-\${cls}\`}><span>{\`\${first} \${last}\`}</span></div>;
+      }
+    `
+    const out = transform(input)
+    const stubbed = out.replace(/import \{[^}]*\} from "tachys";?/g, "")
+
+    const markCompiled = (
+      mount: (p: Record<string, unknown>) => { dom: Element; state: Record<string, unknown> },
+      patch: (s: Record<string, unknown>, p: Record<string, unknown>) => void,
+    ): unknown => ({ mount, patch })
+    const _template = (html: string): Element => {
+      const tpl = doc.createElement("template")
+      tpl.innerHTML = html
+      return tpl.content.firstElementChild as Element
+    }
+    const fn = new Function(
+      "document",
+      "markCompiled",
+      "_template",
+      `${stubbed}; return Row;`,
+    )
+    const Row = fn(doc, markCompiled, _template) as {
+      mount: (p: Record<string, unknown>) => { dom: Element; state: Record<string, unknown> }
+      patch: (s: Record<string, unknown>, p: Record<string, unknown>) => void
+    }
+
+    const inst = Row.mount({ cls: "lit", first: "ada", last: "lovelace" })
+    expect((inst.dom as Element).outerHTML).toBe(
+      '<div class="row-lit"><span>ada lovelace</span></div>',
+    )
+
+    // Patch only the composite attr's dep:
+    Row.patch(inst.state, { cls: "bold", first: "ada", last: "lovelace" })
+    expect((inst.dom as Element).outerHTML).toBe(
+      '<div class="row-bold"><span>ada lovelace</span></div>',
+    )
+
+    // Patch only one of the text slot's deps:
+    Row.patch(inst.state, { cls: "bold", first: "grace", last: "lovelace" })
+    expect((inst.dom as Element).outerHTML).toBe(
+      '<div class="row-bold"><span>grace lovelace</span></div>',
+    )
+
+    // No-op patch must not change state/data identity.
+    const textNode = inst.state["_t1"] as Text
+    const dataBefore = textNode.data
+    Row.patch(inst.state, { cls: "bold", first: "grace", last: "lovelace" })
+    expect(textNode.data).toBe(dataBefore)
+  })
+
+  it("bails on a template literal whose expression is not a prop ref", () => {
+    const input = `
+      function Row({ x }) {
+        const y = 1;
+        return <div className={\`\${y}\`} />;
+      }
+    `
+    const out = transform(input)
+    // Multi-statement body falls through the compiler grammar, so this
+    // also exercises the top-level bail; more importantly: no _template
+    // should be emitted for this function.
+    expect(out).not.toContain("markCompiled")
+  })
+
+  it("bails on a template literal that tags a function", () => {
+    const input = `
+      function Row({ x }) {
+        return <div className={tagged\`\${x}\`} />;
+      }
+    `
+    const out = transform(input)
+    // Tagged template -> not handled -> fall through, no compile.
+    expect(out).not.toContain("markCompiled")
+  })
+})
+
+describe("babel-plugin-tachys (v0.6 literal attr expressions)", () => {
+  it("compiles a numeric attr literal directly into the template", () => {
+    const input = `
+      function Box() {
+        return <div tabindex={0} />;
+      }
+    `
+    const out = transform(input)
+    expect(out).toContain('_template("<div tabindex=\\"0\\"></div>")')
+    // No slot -> no markCompiled call needed for reactivity.
+    expect(out).not.toContain("state.tabindex")
+  })
+
+  it("compiles a string-literal expression attr into the template", () => {
+    const input = `
+      function Box() {
+        return <div className={"foo"} />;
+      }
+    `
+    const out = transform(input)
+    expect(out).toContain('_template("<div class=\\"foo\\"></div>")')
+    expect(out).not.toContain("_root.className")
+  })
+
+  it("does not treat event attrs with literal values as static", () => {
+    const input = `
+      function Row({ x }) {
+        return <div onClick={42}>{x}</div>;
+      }
+    `
+    const out = transform(input)
+    // Event attr with non-function literal is nonsensical -> bail.
+    expect(out).not.toContain("markCompiled")
+  })
+
+  it("coexists with dynamic attrs on the same element", () => {
+    const input = `
+      function Row({ id }) {
+        return <div tabindex={0} id={id} />;
+      }
+    `
+    const out = transform(input)
+    // Static tabindex gets baked in; dynamic id stays in the slot table.
+    expect(out).toContain('_template("<div tabindex=\\"0\\"></div>")')
+    expect(out).toMatch(/setAttribute\("id",\s*String\(props\.id\)\)/)
+  })
+})
