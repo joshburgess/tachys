@@ -26,7 +26,13 @@ import { declare } from "@babel/helper-plugin-utils"
 import syntaxJsxRaw from "@babel/plugin-syntax-jsx"
 import type * as BabelCore from "@babel/core"
 
-import { compileComponent, type AttrSlot, type Slot, type TextSlot } from "./compile"
+import {
+  compileComponent,
+  type AttrSlot,
+  type ComponentSlot,
+  type Slot,
+  type TextSlot,
+} from "./compile"
 
 const syntaxJsx =
   (syntaxJsxRaw as { default?: unknown }).default ?? syntaxJsxRaw
@@ -249,11 +255,7 @@ function registerSlotProps(
   t: typeof BabelCore.types,
   propsName: string,
 ): void {
-  const names =
-    (slot.kind === "text" || slot.kind === "attr") &&
-    slot.composite !== undefined
-      ? slot.composite.propNames
-      : [slot.propName]
+  const names = slotPropNames(slot)
   for (const name of names) {
     if (seenPropNames.has(name)) continue
     seenPropNames.add(name)
@@ -274,12 +276,7 @@ function collectReactiveProps(slots: Slot[]): string[] {
   const seen = new Set<string>()
   const names: string[] = []
   for (const slot of slots) {
-    const list =
-      (slot.kind === "text" || slot.kind === "attr") &&
-      slot.composite !== undefined
-        ? slot.composite.propNames
-        : [slot.propName]
-    for (const name of list) {
+    for (const name of slotPropNames(slot)) {
       if (seen.has(name)) continue
       seen.add(name)
       names.push(name)
@@ -289,9 +286,53 @@ function collectReactiveProps(slots: Slot[]): string[] {
 }
 
 /**
+ * Stable state-key name for the mount result of a nested component slot.
+ */
+function componentInstanceName(index: number): string {
+  return `_cs${index}`
+}
+
+/**
+ * Build the object expression passed to a child component as its props.
+ * Each entry uses the ComponentSlot's pre-resolved value expression.
+ */
+function buildChildPropsObject(
+  t: typeof BabelCore.types,
+  slot: ComponentSlot,
+  propsName: string,
+): BabelCore.types.ObjectExpression {
+  const props: BabelCore.types.ObjectProperty[] = []
+  for (const p of slot.props) {
+    props.push(
+      t.objectProperty(
+        t.identifier(p.name),
+        maybeRetargetPropsName(t, p.valueExpr, propsName),
+      ),
+    )
+  }
+  return t.objectExpression(props)
+}
+
+/**
+ * If the surrounding component's props param is not literally `props`
+ * (reserved for future renaming), retarget root `props.*` member reads
+ * to the caller-chosen name. No-op today; keeps the emitter future-proof.
+ */
+function maybeRetargetPropsName(
+  t: typeof BabelCore.types,
+  expr: BabelCore.types.Expression,
+  propsName: string,
+): BabelCore.types.Expression {
+  if (propsName === "props") return expr
+  // TODO: full walker if/when we support renamed props params.
+  return expr
+}
+
+/**
  * Return the list of prop names a slot depends on (for dirty-check).
  */
 function slotPropNames(slot: Slot): string[] {
+  if (slot.kind === "component") return slot.allDeps
   if (
     (slot.kind === "text" || slot.kind === "attr") &&
     slot.composite !== undefined
@@ -470,6 +511,59 @@ function buildMount(
       // the wrapper function can close over it.
       ensureElementRef(slot.path)
       registerSlotProps(slot, seenPropNames, stateProps, t, propsName)
+      continue
+    }
+
+    if (slot.kind === "component") {
+      const markerName = `_cm${i}`
+      const instName = componentInstanceName(i)
+
+      // const _cmN = <marker path>;
+      stmts.push(
+        t.variableDeclaration("const", [
+          t.variableDeclarator(
+            t.identifier(markerName),
+            buildPathExpr(t, "_root", slot.path),
+          ),
+        ]),
+      )
+      // const _csN = Child(<props obj>);
+      stmts.push(
+        t.variableDeclaration("const", [
+          t.variableDeclarator(
+            t.identifier(instName),
+            t.callExpression(t.identifier(slot.componentRef), [
+              buildChildPropsObject(t, slot, propsName),
+            ]),
+          ),
+        ]),
+      )
+      // _cmN.parentNode.replaceChild(_csN.dom, _cmN);
+      stmts.push(
+        t.expressionStatement(
+          t.callExpression(
+            t.memberExpression(
+              t.memberExpression(
+                t.identifier(markerName),
+                t.identifier("parentNode"),
+              ),
+              t.identifier("replaceChild"),
+            ),
+            [
+              t.memberExpression(
+                t.identifier(instName),
+                t.identifier("dom"),
+              ),
+              t.identifier(markerName),
+            ],
+          ),
+        ),
+      )
+      // state._csN = _csN
+      stateProps.push(
+        t.objectProperty(t.identifier(instName), t.identifier(instName)),
+      )
+      registerSlotProps(slot, seenPropNames, stateProps, t, propsName)
     }
   }
 
@@ -579,7 +673,8 @@ function buildPatch(
 
   const hasComposite = slots.some(
     (s) =>
-      (s.kind === "text" || s.kind === "attr") && s.composite !== undefined,
+      s.kind === "component" ||
+      ((s.kind === "text" || s.kind === "attr") && s.composite !== undefined),
   )
 
   return hasComposite
@@ -592,8 +687,11 @@ function buildPatchSimple(
   slots: Slot[],
   propsName: string,
 ): BabelCore.types.ArrowFunctionExpression {
+  // Simple path is only entered when no slot is a ComponentSlot or has
+  // a composite expression, so every slot has a single `.propName`.
   const grouped = new Map<string, { slot: Slot; index: number }[]>()
   slots.forEach((slot, index) => {
+    if (slot.kind === "component") return
     const arr = grouped.get(slot.propName) ?? []
     arr.push({ slot, index })
     grouped.set(slot.propName, arr)
@@ -666,8 +764,10 @@ function buildPatchComposite(
   })
 
   // For each slot: emit the write guarded by OR of its dirty deps.
+  // Slots with zero deps (e.g. a static <Child/>) never need re-running.
   slots.forEach((slot, index) => {
     const deps = slotPropNames(slot)
+    if (deps.length === 0) return
     const write = buildSlotWrite(t, slot, index, slots, propsName)
     if (write === null) return
     let test: BabelCore.types.Expression = t.identifier(dirtyLocals.get(deps[0]!)!)
@@ -751,6 +851,29 @@ function buildSlotWrite(
       t.callExpression(
         t.memberExpression(elExpr, t.identifier("setAttribute")),
         [t.stringLiteral(slot.attrName), valueExpr],
+      ),
+    )
+  }
+  if (slot.kind === "component") {
+    // Call the child's .patch with a rebuilt props object. The parent's
+    // dirty-check (one OR per dep) has already decided we actually need
+    // to re-enter the child; the child's own compare can still short out.
+    return t.expressionStatement(
+      t.callExpression(
+        t.memberExpression(
+          t.identifier(slot.componentRef),
+          t.identifier("patch"),
+        ),
+        [
+          t.memberExpression(
+            t.memberExpression(
+              t.identifier("state"),
+              t.identifier(componentInstanceName(index)),
+            ),
+            t.identifier("state"),
+          ),
+          buildChildPropsObject(t, slot, propsName),
+        ],
       ),
     )
   }

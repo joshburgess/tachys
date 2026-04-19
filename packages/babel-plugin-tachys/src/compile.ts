@@ -124,7 +124,33 @@ export interface EventSlot {
   propName: string
 }
 
-export type Slot = TextSlot | AttrSlot | EventSlot
+/**
+ * A child compiled component slot. The parent's template carries a `<!>`
+ * marker at the child's position; mount replaces it with the child's
+ * mounted root. The child's own `.patch` handles per-render updates.
+ *
+ * Each prop is stored as the resolved expression (destructured params
+ * rewritten to `props.<name>`) plus the list of parent prop names it
+ * reads, so the parent can dirty-check before rebuilding the child props
+ * object and calling `Child.patch`.
+ */
+export interface ComponentSlot {
+  kind: "component"
+  path: number[]
+  /** Local name of the component being rendered (e.g. "Row"). */
+  componentRef: string
+  /** Ordered prop entries to pass to the child on mount/patch. */
+  props: Array<{
+    name: string
+    valueExpr: BabelCore.types.Expression
+    /** Parent prop names this value reads; empty for literals. */
+    deps: string[]
+  }>
+  /** Union of all prop deps, deduped and in first-seen order. */
+  allDeps: string[]
+}
+
+export type Slot = TextSlot | AttrSlot | EventSlot | ComponentSlot
 
 export interface CompiledResult {
   html: string
@@ -213,6 +239,222 @@ function renderElement(
   if (children === null) return null
 
   return `<${name}${attrs}>${children}</${name}>`
+}
+
+/**
+ * Build a ComponentSlot for a PascalCase JSX child. Returns null if any
+ * attribute is a spread, a non-literal non-prop-ref expression, or an
+ * unsupported shape; the caller then falls back to the bail path.
+ */
+function buildComponentSlot(
+  el: BabelCore.types.JSXElement,
+  ctx: CompileContext,
+  path: number[],
+): ComponentSlot | null {
+  const t = ctx.t
+  const nameNode = el.openingElement.name
+  if (!t.isJSXIdentifier(nameNode)) return null
+  if (el.children.length > 0) return null
+
+  const props: ComponentSlot["props"] = []
+  const depsSet = new Set<string>()
+  const allDeps: string[] = []
+
+  for (const attr of el.openingElement.attributes) {
+    if (!t.isJSXAttribute(attr)) return null
+    const attrName = attr.name
+    if (!t.isJSXIdentifier(attrName)) return null
+    const propName = attrName.name
+
+    const value = attr.value
+    let valueExpr: BabelCore.types.Expression | null = null
+    let deps: string[] = []
+
+    if (value === null || value === undefined) {
+      valueExpr = t.booleanLiteral(true)
+    } else if (t.isStringLiteral(value)) {
+      valueExpr = t.stringLiteral(value.value)
+    } else if (t.isJSXExpressionContainer(value)) {
+      const expr = value.expression
+      if (t.isJSXEmptyExpression(expr)) return null
+      const resolved = resolveChildPropExpr(expr, ctx)
+      if (resolved === null) return null
+      valueExpr = resolved.expr
+      deps = resolved.deps
+    } else {
+      return null
+    }
+
+    for (const dep of deps) {
+      if (depsSet.has(dep)) continue
+      depsSet.add(dep)
+      allDeps.push(dep)
+    }
+    props.push({ name: propName, valueExpr: valueExpr, deps })
+  }
+
+  return {
+    kind: "component",
+    path,
+    componentRef: nameNode.name,
+    props,
+    allDeps,
+  }
+}
+
+/**
+ * Resolve an expression used as a child-component prop value. Accepts
+ * literals, bare prop identifiers, `props.*` member chains (arbitrary
+ * depth), template literals, and conditional expressions whose branches
+ * are themselves valid. Returns the normalized expression plus the list
+ * of parent prop names it reads.
+ *
+ * Returns null for anything outside this grammar.
+ */
+function resolveChildPropExpr(
+  expr: BabelCore.types.Expression,
+  ctx: CompileContext,
+): { expr: BabelCore.types.Expression; deps: string[] } | null {
+  const t = ctx.t
+
+  if (
+    t.isStringLiteral(expr) ||
+    t.isNumericLiteral(expr) ||
+    t.isBooleanLiteral(expr) ||
+    t.isNullLiteral(expr)
+  ) {
+    return { expr, deps: [] }
+  }
+
+  if (t.isIdentifier(expr)) {
+    if (ctx.destructuredNames === null) return null
+    if (!ctx.destructuredNames.has(expr.name)) return null
+    return {
+      expr: t.memberExpression(t.identifier("props"), t.identifier(expr.name)),
+      deps: [expr.name],
+    }
+  }
+
+  if (t.isMemberExpression(expr)) {
+    // Walk to the root of a MemberExpression chain. Root must be either
+    // `props` (kept as-is) or a destructured identifier (rewritten to
+    // `props.<name>`).
+    let cursor: BabelCore.types.Expression = expr
+    while (t.isMemberExpression(cursor)) {
+      if (cursor.computed) return null
+      cursor = cursor.object
+    }
+    if (t.isIdentifier(cursor)) {
+      if (cursor.name === "props") {
+        const root = collectMemberRootDep(expr, t)
+        return root === null ? null : { expr, deps: [root] }
+      }
+      if (
+        ctx.destructuredNames !== null &&
+        ctx.destructuredNames.has(cursor.name)
+      ) {
+        const depName = cursor.name
+        const rewritten = rewriteMemberRoot(expr, t, depName)
+        return { expr: rewritten, deps: [depName] }
+      }
+    }
+    return null
+  }
+
+  if (t.isTemplateLiteral(expr)) {
+    const parts: BabelCore.types.Expression[] = []
+    const deps: string[] = []
+    const seen = new Set<string>()
+    for (const sub of expr.expressions) {
+      if (t.isTSType(sub)) return null
+      const r = resolveChildPropExpr(sub as BabelCore.types.Expression, ctx)
+      if (r === null) return null
+      parts.push(r.expr)
+      for (const d of r.deps) {
+        if (!seen.has(d)) {
+          seen.add(d)
+          deps.push(d)
+        }
+      }
+    }
+    return { expr: t.templateLiteral(expr.quasis, parts), deps }
+  }
+
+  if (t.isConditionalExpression(expr)) {
+    const test = resolveChildPropExpr(expr.test, ctx)
+    const cons = resolveChildPropExpr(expr.consequent, ctx)
+    const alt = resolveChildPropExpr(expr.alternate, ctx)
+    if (test === null || cons === null || alt === null) return null
+    const deps: string[] = []
+    const seen = new Set<string>()
+    for (const d of [...test.deps, ...cons.deps, ...alt.deps]) {
+      if (!seen.has(d)) {
+        seen.add(d)
+        deps.push(d)
+      }
+    }
+    return {
+      expr: t.conditionalExpression(test.expr, cons.expr, alt.expr),
+      deps,
+    }
+  }
+
+  return null
+}
+
+/**
+ * Collect the single parent prop name a `props.<name>...` member chain
+ * reads. Returns null if the chain roots on `props` but the first
+ * property access is computed (shouldn't happen given the caller-side
+ * checks, but kept as a safety net).
+ */
+function collectMemberRootDep(
+  expr: BabelCore.types.Expression,
+  t: T,
+): string | null {
+  let cursor: BabelCore.types.Expression = expr
+  while (t.isMemberExpression(cursor)) {
+    const next = cursor.object
+    if (
+      t.isIdentifier(next) &&
+      next.name === "props" &&
+      t.isIdentifier(cursor.property) &&
+      !cursor.computed
+    ) {
+      return cursor.property.name
+    }
+    cursor = next
+  }
+  return null
+}
+
+/**
+ * Clone a MemberExpression chain, replacing its root identifier with
+ * `props.<rootName>`. Used to rewrite `row.id` to `props.row.id` when
+ * `row` is a destructured param.
+ */
+function rewriteMemberRoot(
+  expr: BabelCore.types.MemberExpression,
+  t: T,
+  rootName: string,
+): BabelCore.types.MemberExpression {
+  const parts: Array<{
+    property: BabelCore.types.Expression | BabelCore.types.Identifier | BabelCore.types.PrivateName
+    computed: boolean
+  }> = []
+  let cursor: BabelCore.types.Expression = expr
+  while (t.isMemberExpression(cursor)) {
+    parts.unshift({ property: cursor.property, computed: cursor.computed })
+    cursor = cursor.object
+  }
+  let out: BabelCore.types.Expression = t.memberExpression(
+    t.identifier("props"),
+    t.identifier(rootName),
+  )
+  for (const p of parts) {
+    out = t.memberExpression(out, p.property, p.computed)
+  }
+  return out as BabelCore.types.MemberExpression
 }
 
 function getTagName(
@@ -416,6 +658,23 @@ function renderChildren(
     }
 
     if (child.kind === "element") {
+      const childName = ctx.t.isJSXIdentifier(child.node.openingElement.name)
+        ? child.node.openingElement.name.name
+        : null
+      if (childName !== null && !isHostTag(childName)) {
+        // Capitalized child = nested component. Emit a marker and record
+        // a ComponentSlot; the parent's mount/patch call the child's
+        // mount/patch at this position.
+        const slot = buildComponentSlot(child.node, ctx, [...parentPath, i])
+        if (slot === null) return null
+        // Marker requires at least one adjacent non-text neighbor to avoid
+        // merging with surrounding whitespace; the comment node itself
+        // survives HTML parsing regardless of neighbors, so no prealloc
+        // decision is needed here.
+        ctx.slots.push(slot)
+        out += "<!>"
+        continue
+      }
       const nested = renderElement(child.node, ctx, [...parentPath, i])
       if (nested === null) return null
       out += nested

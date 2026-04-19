@@ -105,14 +105,19 @@ describe("babel-plugin-tachys (v0.1 static JSX)", () => {
     expect(out).not.toContain("markCompiled")
   })
 
-  it("bails on capitalized child tags (nested components)", () => {
+  it("compiles a capitalized child tag as a nested compiled component", () => {
     const input = `
       function Outer() {
         return <div><Inner /></div>;
       }
     `
     const out = transform(input)
-    expect(out).not.toContain("markCompiled")
+    expect(out).toContain("markCompiled")
+    // Template carries a marker at the nested component's position.
+    expect(out).toContain('_template("<div><!></div>")')
+    // Mount calls Inner and replaces the marker with its dom.
+    expect(out).toMatch(/_cs\d+ = Inner\(\{\}\)/)
+    expect(out).toMatch(/replaceChild\(_cs\d+\.dom,/)
   })
 
   it("compiles multiple components in one file with unique template ids", () => {
@@ -831,6 +836,185 @@ describe("babel-plugin-tachys (v0.5 template literal slots)", () => {
     const out = transform(input)
     // Tagged template -> not handled -> fall through, no compile.
     expect(out).not.toContain("markCompiled")
+  })
+})
+
+describe("babel-plugin-tachys (v0.7 nested compiled components)", () => {
+  it("compiles a child with a prop-ref prop", () => {
+    const input = `
+      function App({ label }) {
+        return <div><Badge label={label} /></div>;
+      }
+    `
+    const out = transform(input)
+    // Parent template carries a marker for Badge's position.
+    expect(out).toContain('_template("<div><!></div>")')
+    // Mount passes the resolved props to Badge.
+    expect(out).toMatch(/_cs\d+ = Badge\(\{\s*label:\s*props\.label\s*\}\)/)
+    // Patch guards the child.patch call by the dep's dirty flag.
+    expect(out).toContain("const _d0 = state.label !== props.label")
+    expect(out).toMatch(/if \(_d0\) \{[\s\S]*?Badge\.patch\(state\._cs\d+\.state,\s*\{\s*label:\s*props\.label/)
+    // State sync happens after all writes.
+    expect(out).toContain("state.label = props.label")
+  })
+
+  it("compiles a child with a nested member-access prop", () => {
+    const input = `
+      function App({ row }) {
+        return <div><Row id={row.id} label={row.label} /></div>;
+      }
+    `
+    const out = transform(input)
+    // Both passed to Row; rewritten as props.row.id / props.row.label.
+    expect(out).toMatch(/Row\(\{\s*id:\s*props\.row\.id,\s*label:\s*props\.row\.label\s*\}\)/)
+    // One shared parent dep because both nested reads go through `row`.
+    expect(out).toContain("const _d0 = state.row !== props.row")
+  })
+
+  it("compiles a static child (no deps) with no patch call", () => {
+    const input = `
+      function Wrapper() {
+        return <div><Header /></div>;
+      }
+    `
+    const out = transform(input)
+    expect(out).toContain("markCompiled")
+    // No reactive deps -> no compare, no patch work.
+    expect(out).not.toContain("(prev, next)")
+    expect(out).not.toContain("Header.patch")
+  })
+
+  it("compiles a child alongside a text slot on the parent", () => {
+    const input = `
+      function App({ title, badge }) {
+        return <section><h1>{title}</h1><Badge label={badge} /></section>;
+      }
+    `
+    const out = transform(input)
+    expect(out).toContain('_template("<section><h1> </h1><!></section>")')
+    // Composite path kicks in (has a component slot).
+    expect(out).toContain("const _d0 = state.title !== props.title")
+    expect(out).toContain("const _d1 = state.badge !== props.badge")
+    // Text slot guarded by its single dep.
+    expect(out).toMatch(/if \(_d0\) \{[\s\S]*?\.data\s*=\s*String\(props\.title\)/)
+    // Component slot guarded by its single dep.
+    expect(out).toMatch(/if \(_d1\) \{[\s\S]*?Badge\.patch/)
+  })
+
+  it("compiles a child with a literal prop (no dep)", () => {
+    const input = `
+      function App({ name }) {
+        return <div><Row kind="admin" name={name} /></div>;
+      }
+    `
+    const out = transform(input)
+    expect(out).toMatch(/Row\(\{\s*kind:\s*"admin",\s*name:\s*props\.name\s*\}\)/)
+    // Only `name` is reactive.
+    expect(out).toContain("const _d0 = state.name !== props.name")
+    // The kind literal is still re-emitted on patch (cheap object build).
+    expect(out).toMatch(/if \(_d0\) \{[\s\S]*?Row\.patch\([\s\S]*?kind:\s*"admin"/)
+  })
+
+  it("compiles a boolean-shorthand child prop", () => {
+    const input = `
+      function App() {
+        return <div><Row disabled /></div>;
+      }
+    `
+    const out = transform(input)
+    // Boolean-shorthand attr becomes `disabled: true`.
+    expect(out).toMatch(/Row\(\{\s*disabled:\s*true\s*\}\)/)
+  })
+
+  it("bails on a child with a spread prop", () => {
+    const input = `
+      function App({ row }) {
+        return <div><Row {...row} /></div>;
+      }
+    `
+    const out = transform(input)
+    expect(out).not.toContain("markCompiled")
+  })
+
+  it("bails on a child with an unresolvable expression prop", () => {
+    const input = `
+      function App({ x }) {
+        return <div><Row handler={() => x + 1} /></div>;
+      }
+    `
+    const out = transform(input)
+    // Arrow function isn't in our child-prop grammar -> bail.
+    expect(out).not.toContain("markCompiled")
+  })
+
+  it("memo compare includes all child deps", () => {
+    const input = `
+      function App({ a, b }) {
+        return <div><Row x={a} y={b} /></div>;
+      }
+    `
+    const out = transform(input)
+    expect(out).toContain("prev.a === next.a")
+    expect(out).toContain("prev.b === next.b")
+    expect(out).toMatch(/&&/)
+  })
+
+  it("runs nested compiled component end-to-end in jsdom", async () => {
+    const { JSDOM } = await import("jsdom")
+    const dom = new JSDOM("<!doctype html><html><body></body></html>")
+    const doc = dom.window.document
+
+    // Two functions: child Row and parent App that nests it.
+    const input = `
+      function Row({ label }) { return <span className="r">{label}</span>; }
+      function App({ badge }) { return <div><Row label={badge} /></div>; }
+    `
+    const out = transform(input)
+    const stubbed = out.replace(/import \{[^}]*\} from "tachys";?/g, "")
+
+    const markCompiled = (
+      mount: (p: Record<string, unknown>) => { dom: Element; state: Record<string, unknown> },
+      patch: (s: Record<string, unknown>, p: Record<string, unknown>) => void,
+    ): ((p: Record<string, unknown>) => { dom: Element; state: Record<string, unknown> }) => {
+      const callable = mount as ((p: Record<string, unknown>) => { dom: Element; state: Record<string, unknown> }) & {
+        patch: typeof patch
+      }
+      callable.patch = patch
+      return callable
+    }
+    const _template = (html: string): Element => {
+      const tpl = doc.createElement("template")
+      tpl.innerHTML = html
+      return tpl.content.firstElementChild as Element
+    }
+    const fn = new Function(
+      "document",
+      "markCompiled",
+      "_template",
+      `${stubbed}; return { Row, App };`,
+    )
+    const { App } = fn(doc, markCompiled, _template) as {
+      App: ((p: Record<string, unknown>) => { dom: Element; state: Record<string, unknown> }) & {
+        patch: (s: Record<string, unknown>, p: Record<string, unknown>) => void
+      }
+      Row: unknown
+    }
+
+    const inst = App({ badge: "one" })
+    expect((inst.dom as Element).outerHTML).toBe(
+      '<div><span class="r">one</span></div>',
+    )
+
+    App.patch(inst.state, { badge: "two" })
+    expect((inst.dom as Element).outerHTML).toBe(
+      '<div><span class="r">two</span></div>',
+    )
+
+    // No-op patch: same ref -> neither parent dirty nor child.patch fires.
+    App.patch(inst.state, { badge: "two" })
+    expect((inst.dom as Element).outerHTML).toBe(
+      '<div><span class="r">two</span></div>',
+    )
   })
 })
 
