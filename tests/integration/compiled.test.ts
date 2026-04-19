@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest"
-import { _template, h, markCompiled, mount, patch, unmount } from "../../src/index"
+import {
+  _mountList,
+  _patchList,
+  _template,
+  h,
+  markCompiled,
+  mount,
+  patch,
+  unmount,
+} from "../../src/index"
 import type { VNode } from "../../src/vnode"
 
 function flushMicrotasks(): Promise<void> {
@@ -172,5 +181,280 @@ describe("compiled components", () => {
     expect(lis2[0]).toBe(lis1[2])
     expect(lis2[1]).toBe(lis1[1])
     expect(lis2[2]).toBe(lis1[0])
+  })
+})
+
+describe("_mountList / _patchList (LIS reconcile)", () => {
+  const tpl = _template("<li> </li>")
+  const Item = markCompiled(
+    (props: Record<string, unknown>) => {
+      const dom = tpl.cloneNode(true) as Element
+      const text = dom.firstChild as Text
+      text.data = String(props["label"])
+      return { dom, state: { text, id: props["id"], label: props["label"] } }
+    },
+    (state: Record<string, unknown>, props: Record<string, unknown>) => {
+      if (state["label"] !== props["label"]) {
+        ;(state["text"] as Text).data = String(props["label"])
+        state["label"] = props["label"]
+      }
+    },
+    (prev, next) => prev["id"] === next["id"] && prev["label"] === next["label"],
+  )
+
+  interface Row {
+    id: number
+    label: string
+  }
+  const makeProps = (r: Row): Record<string, unknown> => ({ id: r.id, label: r.label })
+  const keyOf = (r: Row): unknown => r.id
+
+  function setupList(rows: Row[]): {
+    parent: HTMLUListElement
+    anchor: Comment
+    list: ReturnType<typeof _mountList>
+  } {
+    const parent = document.createElement("ul")
+    const anchor = document.createComment("list")
+    parent.appendChild(anchor)
+    const list = _mountList(rows, Item, makeProps, keyOf, anchor)
+    return { parent, anchor, list }
+  }
+
+  function labelsOf(parent: Element): string[] {
+    return Array.from(parent.children).map((el) => el.textContent ?? "")
+  }
+
+  function nodesOf(parent: Element): Element[] {
+    return Array.from(parent.children)
+  }
+
+  it("mounts empty list and anchor stays in place", () => {
+    const { parent, anchor, list } = setupList([])
+    expect(parent.firstChild).toBe(anchor)
+    expect(list.instances).toHaveLength(0)
+  })
+
+  it("handles pure insertion at tail", () => {
+    const rows: Row[] = [
+      { id: 1, label: "a" },
+      { id: 2, label: "b" },
+    ]
+    const { parent, list } = setupList(rows)
+    const before = nodesOf(parent)
+
+    _patchList(
+      list,
+      [...rows, { id: 3, label: "c" }, { id: 4, label: "d" }],
+      Item,
+      makeProps,
+      keyOf,
+    )
+
+    expect(labelsOf(parent)).toEqual(["a", "b", "c", "d"])
+    expect(parent.children[0]).toBe(before[0])
+    expect(parent.children[1]).toBe(before[1])
+  })
+
+  it("handles pure insertion at head", () => {
+    const rows: Row[] = [
+      { id: 3, label: "c" },
+      { id: 4, label: "d" },
+    ]
+    const { parent, list } = setupList(rows)
+    const before = nodesOf(parent)
+
+    _patchList(
+      list,
+      [{ id: 1, label: "a" }, { id: 2, label: "b" }, ...rows],
+      Item,
+      makeProps,
+      keyOf,
+    )
+
+    expect(labelsOf(parent)).toEqual(["a", "b", "c", "d"])
+    expect(parent.children[2]).toBe(before[0])
+    expect(parent.children[3]).toBe(before[1])
+  })
+
+  it("handles pure removal from middle", () => {
+    const rows: Row[] = [
+      { id: 1, label: "a" },
+      { id: 2, label: "b" },
+      { id: 3, label: "c" },
+      { id: 4, label: "d" },
+    ]
+    const { parent, list } = setupList(rows)
+    const before = nodesOf(parent)
+
+    _patchList(list, [rows[0], rows[3]], Item, makeProps, keyOf)
+
+    expect(labelsOf(parent)).toEqual(["a", "d"])
+    expect(parent.children[0]).toBe(before[0])
+    expect(parent.children[1]).toBe(before[3])
+  })
+
+  it("handles reverse order (LIS length 1, every middle element moves)", () => {
+    const rows: Row[] = [
+      { id: 1, label: "a" },
+      { id: 2, label: "b" },
+      { id: 3, label: "c" },
+      { id: 4, label: "d" },
+      { id: 5, label: "e" },
+    ]
+    const { parent, list } = setupList(rows)
+    const before = nodesOf(parent)
+
+    _patchList(list, [...rows].reverse(), Item, makeProps, keyOf)
+
+    expect(labelsOf(parent)).toEqual(["e", "d", "c", "b", "a"])
+    expect(parent.children[0]).toBe(before[4])
+    expect(parent.children[4]).toBe(before[0])
+  })
+
+  it("performs a 2-element swap with minimal DOM moves", () => {
+    const rows: Row[] = Array.from({ length: 10 }, (_, i) => ({
+      id: i,
+      label: `item-${i}`,
+    }))
+    const { parent, list } = setupList(rows)
+    const before = nodesOf(parent)
+
+    const insertCounts = new Map<Node, number>()
+    const origInsertBefore = parent.insertBefore.bind(parent)
+    parent.insertBefore = function (newNode: Node, refNode: Node | null): Node {
+      insertCounts.set(newNode, (insertCounts.get(newNode) ?? 0) + 1)
+      return origInsertBefore(newNode, refNode)
+    } as typeof parent.insertBefore
+
+    const swapped = [...rows]
+    const tmp = swapped[1]!
+    swapped[1] = swapped[8]!
+    swapped[8] = tmp
+    _patchList(list, swapped, Item, makeProps, keyOf)
+
+    expect(labelsOf(parent)).toEqual([
+      "item-0",
+      "item-8",
+      "item-2",
+      "item-3",
+      "item-4",
+      "item-5",
+      "item-6",
+      "item-7",
+      "item-1",
+      "item-9",
+    ])
+    // Only the two swapped nodes should need to move. LIS picks the stable
+    // middle and leaves it alone.
+    expect(insertCounts.get(before[1]!) ?? 0).toBeGreaterThan(0)
+    expect(insertCounts.get(before[8]!) ?? 0).toBeGreaterThan(0)
+    let totalMoves = 0
+    for (const [, n] of insertCounts) totalMoves += n
+    expect(totalMoves).toBeLessThanOrEqual(2)
+  })
+
+  it("handles mixed insert, remove, and reorder", () => {
+    const rows: Row[] = [
+      { id: 1, label: "a" },
+      { id: 2, label: "b" },
+      { id: 3, label: "c" },
+      { id: 4, label: "d" },
+      { id: 5, label: "e" },
+    ]
+    const { parent, list } = setupList(rows)
+    const before = nodesOf(parent)
+
+    // Remove id=3, move id=5 to front, insert id=99 in the middle.
+    _patchList(
+      list,
+      [
+        { id: 5, label: "e" },
+        { id: 1, label: "a" },
+        { id: 99, label: "new" },
+        { id: 2, label: "b" },
+        { id: 4, label: "d" },
+      ],
+      Item,
+      makeProps,
+      keyOf,
+    )
+
+    expect(labelsOf(parent)).toEqual(["e", "a", "new", "b", "d"])
+    expect(parent.children[0]).toBe(before[4])
+    expect(parent.children[1]).toBe(before[0])
+    expect(parent.children[3]).toBe(before[1])
+    expect(parent.children[4]).toBe(before[3])
+  })
+
+  it("handles transition from non-empty to empty", () => {
+    const { parent, list, anchor } = setupList([
+      { id: 1, label: "a" },
+      { id: 2, label: "b" },
+    ])
+    _patchList(list, [], Item, makeProps, keyOf)
+    expect(parent.childNodes.length).toBe(1)
+    expect(parent.firstChild).toBe(anchor)
+  })
+
+  it("handles transition from empty to non-empty", () => {
+    const { parent, list, anchor } = setupList([])
+    _patchList(
+      list,
+      [
+        { id: 1, label: "a" },
+        { id: 2, label: "b" },
+      ],
+      Item,
+      makeProps,
+      keyOf,
+    )
+    expect(labelsOf(parent)).toEqual(["a", "b"])
+    expect(parent.lastChild).toBe(anchor)
+  })
+
+  it("patches in place when keys match but props change", () => {
+    const { parent, list } = setupList([
+      { id: 1, label: "a" },
+      { id: 2, label: "b" },
+    ])
+    const before = nodesOf(parent)
+
+    _patchList(
+      list,
+      [
+        { id: 1, label: "A!" },
+        { id: 2, label: "B!" },
+      ],
+      Item,
+      makeProps,
+      keyOf,
+    )
+
+    expect(labelsOf(parent)).toEqual(["A!", "B!"])
+    expect(parent.children[0]).toBe(before[0])
+    expect(parent.children[1]).toBe(before[1])
+  })
+
+  it("preserves node identity across two consecutive patches (swap then swap back)", () => {
+    const rows: Row[] = Array.from({ length: 6 }, (_, i) => ({
+      id: i,
+      label: `i${i}`,
+    }))
+    const { parent, list } = setupList(rows)
+    const original = nodesOf(parent)
+
+    const swapped = [...rows]
+    const tmp = swapped[1]!
+    swapped[1] = swapped[4]!
+    swapped[4] = tmp
+    _patchList(list, swapped, Item, makeProps, keyOf)
+
+    _patchList(list, rows, Item, makeProps, keyOf)
+
+    expect(labelsOf(parent)).toEqual(["i0", "i1", "i2", "i3", "i4", "i5"])
+    for (let i = 0; i < rows.length; i++) {
+      expect(parent.children[i]).toBe(original[i])
+    }
   })
 })

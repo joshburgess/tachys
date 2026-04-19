@@ -191,14 +191,19 @@ test("Tachys vs Inferno browser benchmark", async ({ page }) => {
     expect(results.tachys).toHaveLength(8)
     expect(results.tachysCompiled).toHaveLength(8)
     expect(results.inferno).toHaveLength(8)
+    // Timing floor: fast compiled ops can drop below performance.now()
+    // resolution (0ms median). Accept 0 as valid but ensure runs happened.
     for (const r of results.tachys) {
-      expect(r.median).toBeGreaterThan(0)
+      expect(r.median).toBeGreaterThanOrEqual(0)
+      expect(r.max).toBeGreaterThan(0)
     }
     for (const r of results.tachysCompiled) {
-      expect(r.median).toBeGreaterThan(0)
+      expect(r.median).toBeGreaterThanOrEqual(0)
+      expect(r.max).toBeGreaterThan(0)
     }
     for (const r of results.inferno) {
-      expect(r.median).toBeGreaterThan(0)
+      expect(r.median).toBeGreaterThanOrEqual(0)
+      expect(r.max).toBeGreaterThan(0)
     }
   } finally {
     server.close()
