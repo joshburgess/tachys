@@ -41,6 +41,7 @@
  */
 
 import type { ComponentInstance } from "./component"
+import { drainPassiveEffects, hasPendingPassiveEffects } from "./component"
 import {
   beginCollecting,
   clearTransitionRestorers,
@@ -176,6 +177,16 @@ if (typeof MessageChannel !== "undefined") {
     queueMicrotask(fn)
   }
   scheduleAfterPaint = scheduleCallback
+}
+
+/**
+ * Schedule a callback to run after the browser has had a chance to paint.
+ * Used by the component passive-effect queue so useEffect callbacks fire
+ * after paint (matching React semantics). In non-browser environments
+ * (SSR / tests without MessageChannel), falls through to a microtask.
+ */
+export function runAfterPaint(cb: () => void): void {
+  scheduleAfterPaint(cb)
 }
 
 // --- Public API ---
@@ -537,7 +548,30 @@ export function flushUpdates(): void {
 
   processAllLanes()
 
+  // Drain any passive (useEffect) callbacks that layout effects deferred.
+  // In real browser use they'd fire in a post-paint MessageChannel task;
+  // flushUpdates is the synchronous entry point tests rely on, so we
+  // drain inline here and re-enter the lane loop if passives schedule
+  // new work, so callers observe a quiescent state on return.
+  while (hasPendingPassiveEffects() || laneWorkPending()) {
+    while (hasPendingPassiveEffects()) {
+      drainPassiveEffects()
+    }
+    if (laneWorkPending()) {
+      processAllLanes()
+    }
+  }
+
   isFlushing = false
+}
+
+function laneWorkPending(): boolean {
+  return (
+    laneQueues[Lane.Sync]!.length > 0 ||
+    laneQueues[Lane.Default]!.length > 0 ||
+    laneQueues[Lane.Transition]!.length > 0 ||
+    R.pending
+  )
 }
 
 function processAllLanes(): void {

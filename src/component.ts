@@ -32,7 +32,14 @@ import { acquireVNode, releaseVNode } from "./pool"
 import type { PortalFn } from "./portal"
 import type { CompiledComponent } from "./compiled"
 import type { RefObject } from "./ref"
-import { scheduleUpdate, Lane, setCurrentLane, getCurrentLane, signalTransitionSuspended } from "./scheduler"
+import {
+  getCurrentLane,
+  Lane,
+  runAfterPaint,
+  scheduleUpdate,
+  setCurrentLane,
+  signalTransitionSuspended,
+} from "./scheduler"
 import {
   isThenable,
   popSuspendHandler,
@@ -79,6 +86,8 @@ export interface ComponentInstance {
   _contexts: ContextDep[] | null
   /** Expected hook count (set on first render, checked on re-renders in dev) */
   _hookCount: number
+  /** True while this instance is queued in the pending passive effects list. */
+  _passiveQueued: boolean
 }
 
 interface HookState {
@@ -250,6 +259,7 @@ export function mountComponent(vnode: VNode, parentDom: Element, isSvg: boolean)
     _mounted: false,
     _contexts: null,
     _hookCount: -1,
+    _passiveQueued: false,
   }
 
   vnode.instance = instance
@@ -395,6 +405,7 @@ export function hydrateComponentInstance(
     _mounted: false,
     _contexts: null,
     _hookCount: -1,
+    _passiveQueued: false,
   }
 
   vnode.instance = instance
@@ -457,6 +468,7 @@ export function hydrateSuspenseInstance(
     _mounted: false,
     _contexts: null,
     _hookCount: -1,
+    _passiveQueued: false,
   }
 
   vnode.instance = instance
@@ -700,12 +712,16 @@ export function unmountComponent(vnode: VNode, parentDom: Element): void {
   }
 
   if (instance !== null) {
-    // Run all effect cleanups
+    // Run all effect cleanups. Also clear pendingRun so any queued
+    // passive drain skips this instance (prevents a callback from
+    // running after its cleanup has already fired during unmount).
     for (let i = 0; i < instance._effects.length; i++) {
       const effect = instance._effects[i]!
       if (effect.cleanup !== null) {
         effect.cleanup()
+        effect.cleanup = null
       }
+      effect.pendingRun = false
     }
     vnode.instance = null
   }
@@ -1448,6 +1464,7 @@ export function renderComponentSSR(type: ComponentFn, props: Record<string, unkn
     _mounted: false,
     _contexts: null,
     _hookCount: -1,
+    _passiveQueued: false,
   }
 
   currentInstance = instance
@@ -1842,9 +1859,9 @@ function detachRenderedDOM(vnode: VNode, parentDom: Element): void {
 
 function runEffects(instance: ComponentInstance): void {
   // During Transition-lane rendering (effect collection active), defer
-  // effects to post-commit so callbacks see the final committed DOM.
+  // layout + passive scheduling to post-commit so callbacks see the
+  // final committed DOM.
   if (R.collecting) {
-    // Only defer if there are pending effects to run
     for (let i = 0; i < instance._effects.length; i++) {
       if (instance._effects[i]!.pendingRun) {
         pushDeferredEffect(() => runEffectsImmediate(instance))
@@ -1857,20 +1874,72 @@ function runEffects(instance: ComponentInstance): void {
 }
 
 function runEffectsImmediate(instance: ComponentInstance): void {
+  // React's ordering: layout effects fire synchronously in this commit,
+  // then passive effects run after the browser has a chance to paint.
   const effects = instance._effects
-  // React's ordering: all useLayoutEffect/useInsertionEffect in a commit run
-  // synchronously before any useEffect. Tachys runs passive effects in the
-  // same synchronous flush (no post-paint defer), but the two-pass ordering
-  // matches what apps written for React expect.
+  let hasPassive = false
   for (let i = 0; i < effects.length; i++) {
     const effect = effects[i]!
-    if (effect.isLayout && effect.pendingRun) {
+    if (!effect.pendingRun) continue
+    if (effect.isLayout) {
       effect.pendingRun = false
       if (effect.cleanup !== null) effect.cleanup()
       const result = effect.callback()
       effect.cleanup = typeof result === "function" ? result : null
+    } else {
+      hasPassive = true
     }
   }
+  if (hasPassive) {
+    enqueuePassiveInstance(instance)
+  }
+}
+
+// --- Passive effect queue (post-paint) ---
+//
+// Passive effects (useEffect) run in a task scheduled after the current
+// render commit. In a browser this means after the browser has a chance
+// to paint, matching React's semantics. In tests (jsdom/SSR), flushUpdates()
+// drains the queue synchronously at the end so callers observe the
+// post-commit state deterministically.
+//
+// The queue holds ComponentInstance references directly to avoid the
+// closure allocation pushDeferredEffect uses. Entries are deduplicated
+// via a per-instance flag so repeated enqueues are cheap and idempotent.
+
+const _pendingPassive: ComponentInstance[] = []
+let _passiveScheduled = false
+
+function enqueuePassiveInstance(instance: ComponentInstance): void {
+  if (instance._passiveQueued) return
+  instance._passiveQueued = true
+  _pendingPassive.push(instance)
+  if (_passiveScheduled) return
+  _passiveScheduled = true
+  runAfterPaint(drainPassiveEffects)
+}
+
+export function hasPendingPassiveEffects(): boolean {
+  return _pendingPassive.length > 0
+}
+
+export function drainPassiveEffects(): void {
+  _passiveScheduled = false
+  if (_pendingPassive.length === 0) return
+  // Snapshot and clear so passive callbacks scheduling new renders
+  // (which may re-enqueue this or other instances) don't mutate the
+  // array we're iterating.
+  const queue = _pendingPassive.slice()
+  _pendingPassive.length = 0
+  for (let i = 0; i < queue.length; i++) {
+    const instance = queue[i]!
+    instance._passiveQueued = false
+    runPassiveForInstance(instance)
+  }
+}
+
+function runPassiveForInstance(instance: ComponentInstance): void {
+  const effects = instance._effects
   for (let i = 0; i < effects.length; i++) {
     const effect = effects[i]!
     if (!effect.isLayout && effect.pendingRun) {

@@ -8,7 +8,11 @@
  * Pre-allocated working arrays for LIS are reused across diffs to avoid allocation.
  */
 
-import { patchComponent as patchComp } from "./component"
+import {
+  drainPassiveEffects,
+  hasPendingPassiveEffects,
+  patchComponent as patchComp,
+} from "./component"
 import { pushInsert, pushThunk } from "./effects"
 import type { ChildFlag } from "./flags"
 import { ChildFlags, VNodeFlags } from "./flags"
@@ -187,10 +191,18 @@ function ensureLisCapacity(n: number): void {
 export function patch(oldVNode: VNode, newVNode: VNode, parentDom: Element): void {
   setRootContainer(parentDom)
   patchInner(oldVNode, newVNode, parentDom)
+  // Drain any passive effects queued during this patch so callers see
+  // a quiescent state on return. Component-driven rerenders go through
+  // patchInner directly (via the bridge), so they don't trigger this
+  // drain -- passive effects stay queued for the post-paint MessageChannel
+  // callback, matching React semantics.
+  if (hasPendingPassiveEffects()) drainPassiveEffects()
 }
 
-// Register with the bridge so component.ts can call patch without a direct import.
-registerPatch(patch)
+// Register patchInner (not the public `patch`) with the bridge so internal
+// component rerenders skip the passive-effect drain. Passive effects from
+// those rerenders queue for the scheduler's post-paint callback.
+registerPatch(patchInner)
 
 /**
  * Internal patch dispatch -- skips setRootContainer for recursive calls.

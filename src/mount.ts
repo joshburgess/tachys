@@ -11,7 +11,11 @@
  * function call overhead on the hot path (~6000 calls per 1000 rows).
  */
 
-import { mountComponent as mountComp } from "./component"
+import {
+  drainPassiveEffects,
+  hasPendingPassiveEffects,
+  mountComponent as mountComp,
+} from "./component"
 import { pushAppend } from "./effects"
 import { ChildFlags, VNodeFlags } from "./flags"
 import { mountProps, setRootContainer } from "./patch"
@@ -30,6 +34,10 @@ const SVG_NS = "http://www.w3.org/2000/svg"
 export function mount(vnode: VNode, parentDom: Element, isSvg?: boolean): void {
   setRootContainer(parentDom)
   mountInternal(vnode, parentDom, isSvg ?? false)
+  // Drain passive effects queued during mount so callers see a quiescent
+  // state on return. Component-driven child mounts (via the bridge) go
+  // through mountInternal directly and don't trigger this drain.
+  if (hasPendingPassiveEffects()) drainPassiveEffects()
 }
 
 /**
@@ -38,6 +46,7 @@ export function mount(vnode: VNode, parentDom: Element, isSvg?: boolean): void {
 export function mountRoot(vnode: VNode, parentDom: Element): void {
   setRootContainer(parentDom)
   mountInternal(vnode, parentDom, false)
+  if (hasPendingPassiveEffects()) drainPassiveEffects()
 }
 
 /**
