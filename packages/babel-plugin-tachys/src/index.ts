@@ -165,28 +165,34 @@ const plugin = declareT<PluginState>((api) => {
 
         const markCompiledName = reserveImport(state, "markCompiled")
 
-        // List slots need two module-scope helpers each (makeProps + keyOf)
-        // plus the _mountList / _patchList runtime imports. Register them
-        // up-front so buildMount and buildPatch can reference stable names.
+        // List slots with no parent-prop dependencies hoist two module-scope
+        // helpers each (makeProps + keyOf) so they allocate once per module.
+        // Lists that capture parent props get inline closures at the mount/
+        // patch callsite instead — tracked here as `inline: true` so the
+        // emitter knows not to reference a hoisted id.
         const listHelpers = new Map<
           number,
-          { makePropsId: string; keyOfId: string }
+          { makePropsId: string; keyOfId: string } | { inline: true }
         >()
         compiled.slots.forEach((slot, index) => {
           if (slot.kind === "list") {
             reserveImport(state, "_mountList")
             reserveImport(state, "_patchList")
-            const makePropsId = `_lp$${name}_${index}`
-            const keyOfId = `_lk$${name}_${index}`
-            listHelpers.set(index, { makePropsId, keyOfId })
-            state.pendingHelpers.push({
-              id: makePropsId,
-              init: buildListMakePropsFn(t, slot),
-            })
-            state.pendingHelpers.push({
-              id: keyOfId,
-              init: buildListKeyOfFn(t, slot),
-            })
+            if (slot.parentPropDeps.length === 0) {
+              const makePropsId = `_lp$${name}_${index}`
+              const keyOfId = `_lk$${name}_${index}`
+              listHelpers.set(index, { makePropsId, keyOfId })
+              state.pendingHelpers.push({
+                id: makePropsId,
+                init: buildListMakePropsFn(t, slot),
+              })
+              state.pendingHelpers.push({
+                id: keyOfId,
+                init: buildListKeyOfFn(t, slot),
+              })
+            } else {
+              listHelpers.set(index, { inline: true })
+            }
             return
           }
           if (slot.kind === "cond") {
@@ -439,7 +445,17 @@ function maybeRetargetPropsName(
  */
 function slotPropNames(slot: Slot): string[] {
   if (slot.kind === "component") return slot.allDeps
-  if (slot.kind === "list") return [slot.arrayPropName]
+  if (slot.kind === "list") {
+    if (slot.parentPropDeps.length === 0) return [slot.arrayPropName]
+    const seen = new Set<string>([slot.arrayPropName])
+    const names = [slot.arrayPropName]
+    for (const d of slot.parentPropDeps) {
+      if (seen.has(d)) continue
+      seen.add(d)
+      names.push(d)
+    }
+    return names
+  }
   if (slot.kind === "cond") return slot.allDeps
   if (slot.kind === "alt") return slot.allDeps
   if (
@@ -563,7 +579,10 @@ function buildMount(
   tplId: string,
   slots: Slot[],
   propsName: string,
-  listHelpers: Map<number, { makePropsId: string; keyOfId: string }>,
+  listHelpers: Map<
+    number,
+    { makePropsId: string; keyOfId: string } | { inline: true }
+  >,
 ): BabelCore.types.ArrowFunctionExpression {
   const stmts: BabelCore.types.Statement[] = []
 
@@ -735,6 +754,14 @@ function buildMount(
       const markerName = `_lm${i}`
       const instName = listInstanceName(i)
       const helpers = listHelpers.get(i)!
+      const makePropsArg =
+        "inline" in helpers
+          ? buildListMakePropsFn(t, slot)
+          : t.identifier(helpers.makePropsId)
+      const keyOfArg =
+        "inline" in helpers
+          ? buildListKeyOfFn(t, slot)
+          : t.identifier(helpers.keyOfId)
 
       // const _lmN = <path-to-comment-anchor>;
       stmts.push(
@@ -745,27 +772,38 @@ function buildMount(
           ),
         ]),
       )
+      const mountArgs: BabelCore.types.Expression[] = [
+        t.memberExpression(
+          t.identifier(propsName),
+          t.identifier(slot.arrayPropName),
+        ),
+        t.identifier(slot.componentRef),
+        makePropsArg,
+        keyOfArg,
+        t.identifier(markerName),
+      ]
+      if (slot.parentPropDeps.length > 0) {
+        mountArgs.push(
+          t.arrayExpression(
+            slot.parentPropDeps.map((d) =>
+              t.memberExpression(t.identifier(propsName), t.identifier(d)),
+            ),
+          ),
+        )
+      }
       // const _lsN = _mountList(
       //   props.<arrayProp>,
       //   <componentRef>,
-      //   _makeProps_N,
-      //   _keyOf_N,
+      //   <makeProps>,   // hoisted id or inline (item) => ({...})
+      //   <keyOf>,       // hoisted id or inline (item) => key
       //   _lmN,
+      //   [props.<dep1>, props.<dep2>, ...],  // inline-closure lists only
       // );
       stmts.push(
         t.variableDeclaration("const", [
           t.variableDeclarator(
             t.identifier(instName),
-            t.callExpression(t.identifier("_mountList"), [
-              t.memberExpression(
-                t.identifier(propsName),
-                t.identifier(slot.arrayPropName),
-              ),
-              t.identifier(slot.componentRef),
-              t.identifier(helpers.makePropsId),
-              t.identifier(helpers.keyOfId),
-              t.identifier(markerName),
-            ]),
+            t.callExpression(t.identifier("_mountList"), mountArgs),
           ),
         ]),
       )
@@ -998,7 +1036,10 @@ function buildPatch(
   t: typeof BabelCore.types,
   slots: Slot[],
   propsName: string,
-  listHelpers: Map<number, { makePropsId: string; keyOfId: string }>,
+  listHelpers: Map<
+    number,
+    { makePropsId: string; keyOfId: string } | { inline: true }
+  >,
 ): BabelCore.types.ArrowFunctionExpression {
   if (slots.length === 0) {
     return t.arrowFunctionExpression([], t.blockStatement([]))
@@ -1022,7 +1063,10 @@ function buildPatchSimple(
   t: typeof BabelCore.types,
   slots: Slot[],
   propsName: string,
-  _listHelpers: Map<number, { makePropsId: string; keyOfId: string }>,
+  _listHelpers: Map<
+    number,
+    { makePropsId: string; keyOfId: string } | { inline: true }
+  >,
 ): BabelCore.types.ArrowFunctionExpression {
   // Simple path is only entered when no slot is a Component/List or has
   // a composite expression, so every slot has a single `.propName`.
@@ -1090,7 +1134,10 @@ function buildPatchComposite(
   t: typeof BabelCore.types,
   slots: Slot[],
   propsName: string,
-  listHelpers: Map<number, { makePropsId: string; keyOfId: string }>,
+  listHelpers: Map<
+    number,
+    { makePropsId: string; keyOfId: string } | { inline: true }
+  >,
 ): BabelCore.types.ArrowFunctionExpression {
   const propNames = collectReactiveProps(slots)
   const dirtyLocals = new Map<string, string>()
@@ -1176,7 +1223,10 @@ function buildSlotWrite(
   index: number,
   slots: Slot[],
   propsName: string,
-  listHelpers: Map<number, { makePropsId: string; keyOfId: string }>,
+  listHelpers: Map<
+    number,
+    { makePropsId: string; keyOfId: string } | { inline: true }
+  >,
 ): BabelCore.types.Statement | null {
   if (slot.kind === "text") {
     const refName = slotRefName(index)
@@ -1238,22 +1288,40 @@ function buildSlotWrite(
     )
   }
   if (slot.kind === "list") {
-    // _patchList(state._lsN, props.<arrayProp>, Child, makeProps, keyOf)
+    // _patchList(state._lsN, props.<arrayProp>, Child, makeProps, keyOf, [parentDeps]?)
     const helpers = listHelpers.get(index)!
+    const makePropsArg =
+      "inline" in helpers
+        ? buildListMakePropsFn(t, slot)
+        : t.identifier(helpers.makePropsId)
+    const keyOfArg =
+      "inline" in helpers
+        ? buildListKeyOfFn(t, slot)
+        : t.identifier(helpers.keyOfId)
+    const patchArgs: BabelCore.types.Expression[] = [
+      t.memberExpression(
+        t.identifier("state"),
+        t.identifier(listInstanceName(index)),
+      ),
+      t.memberExpression(
+        t.identifier(propsName),
+        t.identifier(slot.arrayPropName),
+      ),
+      t.identifier(slot.componentRef),
+      makePropsArg,
+      keyOfArg,
+    ]
+    if (slot.parentPropDeps.length > 0) {
+      patchArgs.push(
+        t.arrayExpression(
+          slot.parentPropDeps.map((d) =>
+            t.memberExpression(t.identifier(propsName), t.identifier(d)),
+          ),
+        ),
+      )
+    }
     return t.expressionStatement(
-      t.callExpression(t.identifier("_patchList"), [
-        t.memberExpression(
-          t.identifier("state"),
-          t.identifier(listInstanceName(index)),
-        ),
-        t.memberExpression(
-          t.identifier(propsName),
-          t.identifier(slot.arrayPropName),
-        ),
-        t.identifier(slot.componentRef),
-        t.identifier(helpers.makePropsId),
-        t.identifier(helpers.keyOfId),
-      ]),
+      t.callExpression(t.identifier("_patchList"), patchArgs),
     )
   }
   if (slot.kind === "cond") {

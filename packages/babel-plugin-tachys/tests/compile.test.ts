@@ -1132,7 +1132,7 @@ describe("babel-plugin-tachys (v0.8 keyed list compilation)", () => {
     expect(out).not.toContain("const List = markCompiled")
   })
 
-  it("bails when an attr references outside the item param", () => {
+  it("compiles when an attr captures a parent prop (inline closure)", () => {
     const input = `
       function Row({ id, flag }) { return <span>{id}</span>; }
       function List({ items, highlight }) {
@@ -1140,10 +1140,24 @@ describe("babel-plugin-tachys (v0.8 keyed list compilation)", () => {
       }
     `
     const out = transform(input)
-    // Row still compiles; List must bail because `flag={highlight}` reads
-    // a parent prop inside the callback body.
-    expect(out).toContain("function List(")
-    expect(out).not.toContain("const List = markCompiled")
+    // List compiles; makeProps is now inline (captures props.highlight) and
+    // no hoisted helper is emitted.
+    expect(out).toContain("const List = markCompiled")
+    expect(out).not.toMatch(/const _lp\$List_0 =/)
+    expect(out).not.toMatch(/const _lk\$List_0 =/)
+    // The inline closure reads the parent prop directly.
+    expect(out).toMatch(/flag:\s*props\.highlight/)
+    // The dirty-check path ORs both the array and the captured parent prop.
+    expect(out).toMatch(/state\.items !== props\.items/)
+    expect(out).toMatch(/state\.highlight !== props\.highlight/)
+    // Compare covers both reactive props.
+    expect(out).toMatch(
+      /prev\.items === next\.items[\s\S]*prev\.highlight === next\.highlight/,
+    )
+    // Parent-dep array is passed so _patchList can short-circuit item
+    // identity when parent deps are unchanged.
+    expect(out).toMatch(/_mountList\([\s\S]*\[props\.highlight\]\)/)
+    expect(out).toMatch(/_patchList\([\s\S]*\[props\.highlight\]\)/)
   })
 
   it("supports props.<name>.map form (no destructure)", () => {
@@ -1317,6 +1331,123 @@ describe("babel-plugin-tachys (v0.8 keyed list compilation)", () => {
         '<!---->' +
       '</ul>',
     )
+  })
+
+  it("runs a parent-prop-capturing list end-to-end in jsdom", async () => {
+    const { JSDOM } = await import("jsdom")
+    const dom = new JSDOM("<!doctype html><html><body></body></html>")
+    const doc = dom.window.document
+
+    // selectedId crosses the item boundary -- the inline closure reads it
+    // from the parent `props` on every _patchList iteration. Only the two
+    // rows whose `selected` flag flipped should re-render; others short
+    // out via Row's auto-generated _compare.
+    const input = `
+      function Row({ id, label, selected }) {
+        return <li className={selected ? "on" : "off"}>{label}</li>;
+      }
+      function List({ items, selectedId }) {
+        return <ul>{items.map(item => <Row key={item.id} id={item.id} label={item.label} selected={item.id === selectedId} />)}</ul>;
+      }
+    `
+    const out = transform(input)
+
+    // No hoisted helpers for this list.
+    expect(out).not.toMatch(/const _lp\$List_\d+ =/)
+    expect(out).not.toMatch(/const _lk\$List_\d+ =/)
+    // Inline closure reads props.selectedId.
+    expect(out).toMatch(/item\.id === props\.selectedId/)
+
+    const stubbed = out.replace(/import \{[^}]*\} from "tachys";?/g, "")
+
+    type MountResult = { dom: Element; state: Record<string, unknown> }
+
+    let patchCallCount = 0
+    const markCompiled = (
+      mount: (p: Record<string, unknown>) => MountResult,
+      patch: (s: Record<string, unknown>, p: Record<string, unknown>) => void,
+      compare?: (
+        a: Record<string, unknown>,
+        b: Record<string, unknown>,
+      ) => boolean,
+    ): ((p: Record<string, unknown>) => MountResult) & {
+      patch: typeof patch
+      _compare?: typeof compare
+    } => {
+      const wrappedPatch = (
+        s: Record<string, unknown>,
+        p: Record<string, unknown>,
+      ) => {
+        patchCallCount++
+        patch(s, p)
+      }
+      const callable = mount as ((p: Record<string, unknown>) => MountResult) & {
+        patch: typeof patch
+        _compare?: typeof compare
+      }
+      callable.patch = wrappedPatch
+      if (compare !== undefined) callable._compare = compare
+      return callable
+    }
+    const _template = (html: string): Element => {
+      const tpl = doc.createElement("template")
+      tpl.innerHTML = html
+      return tpl.content.firstElementChild as Element
+    }
+
+    const runtime = await import("../../../src/compiled")
+    const { _mountList, _patchList } = runtime
+
+    const fn = new Function(
+      "document",
+      "markCompiled",
+      "_template",
+      "_mountList",
+      "_patchList",
+      `${stubbed}; return { Row, List };`,
+    )
+    const { List } = fn(
+      doc,
+      markCompiled,
+      _template,
+      _mountList,
+      _patchList,
+    ) as {
+      List: ((p: Record<string, unknown>) => MountResult) & {
+        patch: (s: Record<string, unknown>, p: Record<string, unknown>) => void
+      }
+    }
+
+    const items = [
+      { id: 1, label: "one" },
+      { id: 2, label: "two" },
+      { id: 3, label: "three" },
+    ]
+    const inst = List({ items, selectedId: 1 })
+    expect((inst.dom as Element).outerHTML).toBe(
+      '<ul>' +
+        '<li class="on">one</li>' +
+        '<li class="off">two</li>' +
+        '<li class="off">three</li>' +
+        '<!---->' +
+      '</ul>',
+    )
+
+    // Flip selection from 1 -> 2 keeping items identity stable. Row's
+    // _compare must short-circuit on row 3 (selected stays false) while
+    // rows 1 and 2 re-patch. Total counted patches are 1 List.patch +
+    // 2 Row.patch calls; row 3 never enters Row.patch.
+    patchCallCount = 0
+    List.patch(inst.state, { items, selectedId: 2 })
+    expect((inst.dom as Element).outerHTML).toBe(
+      '<ul>' +
+        '<li class="off">one</li>' +
+        '<li class="on">two</li>' +
+        '<li class="off">three</li>' +
+        '<!---->' +
+      '</ul>',
+    )
+    expect(patchCallCount).toBe(3)
   })
 })
 

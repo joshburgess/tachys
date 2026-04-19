@@ -157,9 +157,11 @@ export interface ComponentSlot {
  * `_patchList` reconciles order without disturbing surrounding siblings.
  *
  * Props are split into `keyExpr` (the `key={...}` prop, required) and the
- * remaining entries. Each expression is stored with the arrow param name
- * rewritten to a stable identifier the emitter can substitute when building
- * the module-scope `makeProps`/`keyOf` helpers.
+ * remaining entries. Each expression keeps the item param intact and has
+ * any parent-scope identifiers rewritten to `props.<name>`. When no parent
+ * prop is referenced the emitter can hoist the helpers to module scope;
+ * when `parentPropDeps` is non-empty the closure is inlined at the call
+ * site so it captures the live parent `props`.
  */
 export interface ListSlot {
   kind: "list"
@@ -178,13 +180,17 @@ export interface ListSlot {
   keyExpr: BabelCore.types.Expression
   /**
    * Ordered non-key prop entries. Each valueExpr references `itemParamName`
-   * (or is a literal). The emitter can substitute the param name before
-   * emitting the helper.
+   * or `props.<name>` (parent-scope names are normalized to `props.*`).
    */
   propSpecs: Array<{
     name: string
     valueExpr: BabelCore.types.Expression
   }>
+  /**
+   * Parent prop names referenced across `keyExpr` + every `propSpecs` entry,
+   * deduped in first-seen order. Empty for item-only lists.
+   */
+  parentPropDeps: string[]
 }
 
 /**
@@ -480,9 +486,14 @@ function resolveListExpr(
   if (isHostTag(componentRef)) return null
   if (childEl.children.length > 0) return null
 
-  // Every attribute value must reference only the item param (or literals).
+  // Every attribute value must reference only the item param, literals, or
+  // parent-scope props (destructured names or `props.*` chains). Parent
+  // refs are rewritten to `props.<name>` and recorded as deps so the
+  // dirty-check path observes them.
   let keyExpr: BabelCore.types.Expression | null = null
   const propSpecs: ListSlot["propSpecs"] = []
+  const parentSeen = new Set<string>()
+  const parentPropDeps: string[] = []
   for (const attr of childEl.openingElement.attributes) {
     if (!t.isJSXAttribute(attr)) return null
     if (!t.isJSXIdentifier(attr.name)) return null
@@ -496,8 +507,14 @@ function resolveListExpr(
     } else if (t.isJSXExpressionContainer(value)) {
       const e = value.expression
       if (t.isJSXEmptyExpression(e)) return null
-      if (!isItemRestrictedExpr(e, itemParamName, t)) return null
-      valueExpr = e
+      const resolved = resolveListItemExpr(e, itemParamName, ctx)
+      if (resolved === null) return null
+      for (const d of resolved.deps) {
+        if (parentSeen.has(d)) continue
+        parentSeen.add(d)
+        parentPropDeps.push(d)
+      }
+      valueExpr = resolved.expr
     } else {
       return null
     }
@@ -516,6 +533,7 @@ function resolveListExpr(
     itemParamName,
     keyExpr,
     propSpecs,
+    parentPropDeps,
   }
 }
 
@@ -679,56 +697,139 @@ function resolveAltExpr(
 }
 
 /**
- * Accept literals plus any expression whose only identifier roots are
- * `itemParam`. Keeps the emitted makeProps/keyOf helpers pure so they can
- * be hoisted to module scope.
+ * Resolve an expression used inside `arr.map(item => <Row .../>)` for a
+ * single attribute or key value. Accepts literals, the item param (and
+ * member chains rooted on it), template literals, conditional/binary/
+ * logical/unary combinations of these, plus parent-scope identifiers
+ * resolvable via `resolveChildPropExpr`. Parent refs get rewritten to
+ * `props.<name>` and recorded as deps so the caller can mark the list
+ * slot reactive to them.
+ *
+ * Returns null for anything outside this grammar.
  */
-function isItemRestrictedExpr(
+function resolveListItemExpr(
   expr: BabelCore.types.Expression,
   itemParam: string,
-  t: T,
-): boolean {
+  ctx: CompileContext,
+): { expr: BabelCore.types.Expression; deps: string[] } | null {
+  const t = ctx.t
+
   if (
     t.isStringLiteral(expr) ||
     t.isNumericLiteral(expr) ||
     t.isBooleanLiteral(expr) ||
     t.isNullLiteral(expr)
   ) {
-    return true
+    return { expr, deps: [] }
   }
-  if (t.isIdentifier(expr)) return expr.name === itemParam
+
+  if (t.isIdentifier(expr)) {
+    if (expr.name === itemParam) return { expr, deps: [] }
+    return resolveChildPropExpr(expr, ctx)
+  }
+
   if (t.isMemberExpression(expr)) {
-    if (expr.computed) return false
+    if (expr.computed) return null
     let cursor: BabelCore.types.Expression = expr
     while (t.isMemberExpression(cursor)) {
-      if (cursor.computed) return false
+      if (cursor.computed) return null
       cursor = cursor.object
     }
-    return t.isIdentifier(cursor) && cursor.name === itemParam
+    if (t.isIdentifier(cursor) && cursor.name === itemParam) {
+      return { expr, deps: [] }
+    }
+    return resolveChildPropExpr(expr, ctx)
   }
+
   if (t.isTemplateLiteral(expr)) {
+    const parts: BabelCore.types.Expression[] = []
+    const depSet = new Set<string>()
+    const deps: string[] = []
     for (const sub of expr.expressions) {
-      if (t.isTSType(sub)) return false
-      if (
-        !isItemRestrictedExpr(
-          sub as BabelCore.types.Expression,
-          itemParam,
-          t,
-        )
-      ) {
-        return false
+      if (t.isTSType(sub)) return null
+      const r = resolveListItemExpr(
+        sub as BabelCore.types.Expression,
+        itemParam,
+        ctx,
+      )
+      if (r === null) return null
+      parts.push(r.expr)
+      for (const d of r.deps) {
+        if (depSet.has(d)) continue
+        depSet.add(d)
+        deps.push(d)
       }
     }
-    return true
+    return { expr: t.templateLiteral(expr.quasis, parts), deps }
   }
+
   if (t.isConditionalExpression(expr)) {
-    return (
-      isItemRestrictedExpr(expr.test, itemParam, t) &&
-      isItemRestrictedExpr(expr.consequent, itemParam, t) &&
-      isItemRestrictedExpr(expr.alternate, itemParam, t)
-    )
+    const test = resolveListItemExpr(expr.test, itemParam, ctx)
+    const cons = resolveListItemExpr(expr.consequent, itemParam, ctx)
+    const alt = resolveListItemExpr(expr.alternate, itemParam, ctx)
+    if (test === null || cons === null || alt === null) return null
+    const depSet = new Set<string>()
+    const deps: string[] = []
+    for (const d of [...test.deps, ...cons.deps, ...alt.deps]) {
+      if (depSet.has(d)) continue
+      depSet.add(d)
+      deps.push(d)
+    }
+    return {
+      expr: t.conditionalExpression(test.expr, cons.expr, alt.expr),
+      deps,
+    }
   }
-  return false
+
+  if (t.isBinaryExpression(expr)) {
+    if (t.isPrivateName(expr.left)) return null
+    const left = resolveListItemExpr(
+      expr.left as BabelCore.types.Expression,
+      itemParam,
+      ctx,
+    )
+    const right = resolveListItemExpr(expr.right, itemParam, ctx)
+    if (left === null || right === null) return null
+    const depSet = new Set<string>()
+    const deps: string[] = []
+    for (const d of [...left.deps, ...right.deps]) {
+      if (depSet.has(d)) continue
+      depSet.add(d)
+      deps.push(d)
+    }
+    return {
+      expr: t.binaryExpression(expr.operator, left.expr, right.expr),
+      deps,
+    }
+  }
+
+  if (t.isLogicalExpression(expr)) {
+    const left = resolveListItemExpr(expr.left, itemParam, ctx)
+    const right = resolveListItemExpr(expr.right, itemParam, ctx)
+    if (left === null || right === null) return null
+    const depSet = new Set<string>()
+    const deps: string[] = []
+    for (const d of [...left.deps, ...right.deps]) {
+      if (depSet.has(d)) continue
+      depSet.add(d)
+      deps.push(d)
+    }
+    return {
+      expr: t.logicalExpression(expr.operator, left.expr, right.expr),
+      deps,
+    }
+  }
+
+  if (t.isUnaryExpression(expr)) {
+    const arg = resolveListItemExpr(expr.argument, itemParam, ctx)
+    if (arg === null) return null
+    return {
+      expr: t.unaryExpression(expr.operator, arg.expr, expr.prefix),
+      deps: arg.deps,
+    }
+  }
+
+  return null
 }
 
 /**

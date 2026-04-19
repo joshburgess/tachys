@@ -72,6 +72,7 @@ interface ListInstance {
   dom: Node
   state: Record<string, unknown>
   props: Record<string, unknown>
+  item: unknown
 }
 
 interface CondInstance {
@@ -244,6 +245,7 @@ export interface CompiledListState {
   byKey: Map<unknown, ListInstance>
   anchor: Comment
   parent: Node
+  lastParentDeps: unknown[] | null
 }
 
 /**
@@ -258,6 +260,7 @@ export function _mountList<Item>(
   makeProps: (item: Item) => Record<string, unknown>,
   keyOf: (item: Item) => unknown,
   anchor: Comment,
+  parentDeps?: unknown[],
 ): CompiledListState {
   const parent = anchor.parentNode as Node
   const n = items.length
@@ -273,12 +276,19 @@ export function _mountList<Item>(
       dom: mounted.dom,
       state: mounted.state,
       props,
+      item,
     }
     parent.insertBefore(mounted.dom, anchor)
     instances[i] = inst
     byKey.set(key, inst)
   }
-  return { instances, byKey, anchor, parent }
+  return {
+    instances,
+    byKey,
+    anchor,
+    parent,
+    lastParentDeps: parentDeps === undefined ? null : parentDeps.slice(),
+  }
 }
 
 /**
@@ -303,6 +313,7 @@ export function _patchList<Item>(
   Child: CompiledComponent,
   makeProps: (item: Item) => Record<string, unknown>,
   keyOf: (item: Item) => unknown,
+  parentDeps?: unknown[],
 ): void {
   const prev = list.instances
   const prevLen = prev.length
@@ -312,15 +323,55 @@ export function _patchList<Item>(
   const compare = Child._compare
   const patchFn = Child.patch
 
+  let parentChanged = false
+  if (parentDeps !== undefined) {
+    const last = list.lastParentDeps
+    if (last === null || last.length !== parentDeps.length) {
+      parentChanged = true
+    } else {
+      for (let d = 0; d < parentDeps.length; d++) {
+        if (last[d] !== parentDeps[d]) {
+          parentChanged = true
+          break
+        }
+      }
+    }
+    if (parentChanged) {
+      const snap = new Array(parentDeps.length)
+      for (let d = 0; d < parentDeps.length; d++) snap[d] = parentDeps[d]
+      list.lastParentDeps = snap
+    }
+  }
+
+  // Fast-path: if the item object is identity-equal to the last render's
+  // item and no parent deps changed, everything makeProps could return is
+  // already bound into existing.state/props. Skip allocation + compare.
+  const canSkipOnIdentity = !parentChanged
+
   const next: ListInstance[] = new Array(nextLen)
   const nextByKey = new Map<unknown, ListInstance>()
 
   const patchInPlace = (existing: ListInstance, item: Item): void => {
+    if (canSkipOnIdentity && existing.item === item) return
     const props = makeProps(item)
     if (compare === undefined || !compare(existing.props, props)) {
       patchFn(existing.state, props)
       existing.props = props
     }
+    existing.item = item
+  }
+
+  // Pure-clear fast path: drop everything via Range.deleteContents() instead
+  // of N individual removeChild calls. Krausest 09_clear1k_x8 is dominated
+  // by this.
+  if (nextLen === 0 && prevLen > 0) {
+    const range = document.createRange()
+    range.setStartBefore(prev[0]!.dom)
+    range.setEndBefore(anchor)
+    range.deleteContents()
+    list.instances = next
+    list.byKey = nextByKey
+    return
   }
 
   // ── 1. Prefix trim ────────────────────────────────────────────────────
@@ -374,6 +425,7 @@ export function _patchList<Item>(
         dom: mounted.dom,
         state: mounted.state,
         props,
+        item,
       }
       parent.insertBefore(mounted.dom, nextSib)
       next[k] = inst
@@ -418,6 +470,7 @@ export function _patchList<Item>(
         dom: mounted.dom,
         state: mounted.state,
         props,
+        item,
       }
       next[srcIdx] = inst
       nextByKey.set(key, inst)
