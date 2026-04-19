@@ -246,6 +246,55 @@ describe("babel-plugin-tachys (v0.1 text slots)", () => {
     const out = transform(input)
     expect(out).not.toContain("markCompiled")
   })
+
+  it("flattens a fragment child into its parent's children", () => {
+    const input = `
+      function F({ a, b }) {
+        return <div><>{a}{b}</></div>;
+      }
+    `
+    const out = transform(input)
+    expect(out).toContain("markCompiled")
+    expect(out).toContain('_template("<div><!><!></div>")')
+    expect(out).toContain("String(props.a)")
+    expect(out).toContain("String(props.b)")
+  })
+
+  it("flattens nested fragments", () => {
+    const input = `
+      function F({ a, b, c }) {
+        return <div><><>{a}</>{b}{c}</></div>;
+      }
+    `
+    const out = transform(input)
+    expect(out).toContain("markCompiled")
+    expect(out).toContain('_template("<div><!><!><!></div>")')
+    expect(out).toContain("String(props.a)")
+    expect(out).toContain("String(props.b)")
+    expect(out).toContain("String(props.c)")
+  })
+
+  it("flattens a fragment containing static text and a slot", () => {
+    const input = `
+      function F({ name }) {
+        return <span><>hello {name}</></span>;
+      }
+    `
+    const out = transform(input)
+    expect(out).toContain("markCompiled")
+    expect(out).toContain('_template("<span>hello <!></span>")')
+    expect(out).toContain("String(props.name)")
+  })
+
+  it("bails on a fragment at the top level of the return", () => {
+    const input = `
+      function F({ a }) {
+        return <>{a}</>;
+      }
+    `
+    const out = transform(input)
+    expect(out).not.toContain("markCompiled")
+  })
 })
 
 describe("babel-plugin-tachys (v0.2 attribute slots)", () => {
@@ -926,10 +975,70 @@ describe("babel-plugin-tachys (v0.7 nested compiled components)", () => {
     expect(out).toMatch(/Row\(\{\s*disabled:\s*true\s*\}\)/)
   })
 
-  it("bails on a child with a spread prop", () => {
+  it("compiles a child with a pure spread prop", () => {
     const input = `
       function App({ row }) {
         return <div><Row {...row} /></div>;
+      }
+    `
+    const out = transform(input)
+    expect(out).toContain("markCompiled")
+    // Spread emitted into the child props object.
+    expect(out).toMatch(/Row\(\{\s*\.\.\.props\.row\s*\}\)/)
+    // Memo compare + patch guard still track the spread source as a dep.
+    expect(out).toContain("prev.row === next.row")
+    expect(out).toContain("state.row !== props.row")
+  })
+
+  it("compiles a child with a spread plus explicit prop (spread first)", () => {
+    const input = `
+      function App({ row, selected }) {
+        return <div><Row {...row} selected={selected} /></div>;
+      }
+    `
+    const out = transform(input)
+    expect(out).toContain("markCompiled")
+    // Order preserved: spread then explicit (so explicit wins).
+    expect(out).toMatch(
+      /Row\(\{\s*\.\.\.props\.row,\s*selected:\s*props\.selected\s*\}\)/,
+    )
+    expect(out).toContain("prev.row === next.row")
+    expect(out).toContain("prev.selected === next.selected")
+  })
+
+  it("compiles a child with explicit prop before spread (spread wins)", () => {
+    const input = `
+      function App({ row }) {
+        return <div><Row selected={false} {...row} /></div>;
+      }
+    `
+    const out = transform(input)
+    expect(out).toContain("markCompiled")
+    // Explicit key emitted first, then spread -- matches source order.
+    expect(out).toMatch(
+      /Row\(\{\s*selected:\s*false,\s*\.\.\.props\.row\s*\}\)/,
+    )
+  })
+
+  it("compiles a child with multiple spreads", () => {
+    const input = `
+      function App({ base, overrides }) {
+        return <div><Row {...base} {...overrides} /></div>;
+      }
+    `
+    const out = transform(input)
+    expect(out).toContain("markCompiled")
+    expect(out).toMatch(
+      /Row\(\{\s*\.\.\.props\.base,\s*\.\.\.props\.overrides\s*\}\)/,
+    )
+    expect(out).toContain("prev.base === next.base")
+    expect(out).toContain("prev.overrides === next.overrides")
+  })
+
+  it("bails on a child whose spread source is not a prop ref", () => {
+    const input = `
+      function App() {
+        return <div><Row {...someGlobal} /></div>;
       }
     `
     const out = transform(input)
@@ -1014,6 +1123,68 @@ describe("babel-plugin-tachys (v0.7 nested compiled components)", () => {
     App.patch(inst.state, { badge: "two" })
     expect((inst.dom as Element).outerHTML).toBe(
       '<div><span class="r">two</span></div>',
+    )
+  })
+
+  it("runs spread-props child end-to-end in jsdom", async () => {
+    const { JSDOM } = await import("jsdom")
+    const dom = new JSDOM("<!doctype html><html><body></body></html>")
+    const doc = dom.window.document
+
+    const input = `
+      function Row({ label, tone }) {
+        return <span className={tone}>{label}</span>;
+      }
+      function App({ row, tone }) {
+        return <div><Row {...row} tone={tone} /></div>;
+      }
+    `
+    const out = transform(input)
+    const stubbed = out.replace(/import \{[^}]*\} from "tachys";?/g, "")
+
+    const markCompiled = (
+      mount: (p: Record<string, unknown>) => { dom: Element; state: Record<string, unknown> },
+      patch: (s: Record<string, unknown>, p: Record<string, unknown>) => void,
+    ): ((p: Record<string, unknown>) => { dom: Element; state: Record<string, unknown> }) => {
+      const callable = mount as ((p: Record<string, unknown>) => { dom: Element; state: Record<string, unknown> }) & {
+        patch: typeof patch
+      }
+      callable.patch = patch
+      return callable
+    }
+    const _template = (html: string): Element => {
+      const tpl = doc.createElement("template")
+      tpl.innerHTML = html
+      return tpl.content.firstElementChild as Element
+    }
+    const fn = new Function(
+      "document",
+      "markCompiled",
+      "_template",
+      `${stubbed}; return { Row, App };`,
+    )
+    const { App } = fn(doc, markCompiled, _template) as {
+      App: ((p: Record<string, unknown>) => { dom: Element; state: Record<string, unknown> }) & {
+        patch: (s: Record<string, unknown>, p: Record<string, unknown>) => void
+      }
+      Row: unknown
+    }
+
+    // Spread provides both label and (defaulted) tone; explicit `tone` after
+    // the spread overrides the spread value since source order is preserved.
+    const inst = App({ row: { label: "hi", tone: "ignored" }, tone: "ok" })
+    expect((inst.dom as Element).outerHTML).toBe(
+      '<div><span class="ok">hi</span></div>',
+    )
+
+    App.patch(inst.state, { row: { label: "yo", tone: "ignored2" }, tone: "ok" })
+    expect((inst.dom as Element).outerHTML).toBe(
+      '<div><span class="ok">yo</span></div>',
+    )
+
+    App.patch(inst.state, { row: { label: "yo", tone: "ignored2" }, tone: "danger" })
+    expect((inst.dom as Element).outerHTML).toBe(
+      '<div><span class="danger">yo</span></div>',
     )
   })
 })

@@ -134,18 +134,34 @@ export interface EventSlot {
  * reads, so the parent can dirty-check before rebuilding the child props
  * object and calling `Child.patch`.
  */
+/**
+ * One entry in a child component's prop list. Spread entries emit
+ * `...value` into the resulting object literal; explicit entries emit
+ * `name: value`. Source order is preserved so later explicit keys can
+ * override earlier spreads (matching the runtime JSX semantics).
+ */
+export type ChildPropEntry =
+  | {
+      kind: "prop"
+      name: string
+      valueExpr: BabelCore.types.Expression
+      /** Parent prop names this value reads; empty for literals. */
+      deps: string[]
+    }
+  | {
+      kind: "spread"
+      valueExpr: BabelCore.types.Expression
+      /** Parent prop names the spread source reads. */
+      deps: string[]
+    }
+
 export interface ComponentSlot {
   kind: "component"
   path: number[]
   /** Local name of the component being rendered (e.g. "Row"). */
   componentRef: string
   /** Ordered prop entries to pass to the child on mount/patch. */
-  props: Array<{
-    name: string
-    valueExpr: BabelCore.types.Expression
-    /** Parent prop names this value reads; empty for literals. */
-    deps: string[]
-  }>
+  props: ChildPropEntry[]
   /** Union of all prop deps, deduped and in first-seen order. */
   allDeps: string[]
 }
@@ -214,11 +230,7 @@ export interface CondSlot {
   /** Parent prop names the cond reads (subset of allDeps). */
   condDeps: string[]
   /** Ordered prop entries passed to the child, mirroring ComponentSlot. */
-  props: Array<{
-    name: string
-    valueExpr: BabelCore.types.Expression
-    deps: string[]
-  }>
+  props: ChildPropEntry[]
   /** Union of condDeps + every prop's deps, deduped and in first-seen order. */
   allDeps: string[]
 }
@@ -240,18 +252,10 @@ export interface AltSlot {
   condDeps: string[]
   /** Truthy branch component + props. */
   refA: string
-  propsA: Array<{
-    name: string
-    valueExpr: BabelCore.types.Expression
-    deps: string[]
-  }>
+  propsA: ChildPropEntry[]
   /** Falsy branch component + props. */
   refB: string
-  propsB: Array<{
-    name: string
-    valueExpr: BabelCore.types.Expression
-    deps: string[]
-  }>
+  propsB: ChildPropEntry[]
   /** Union of all parent prop deps across cond + both branches. */
   allDeps: string[]
 }
@@ -369,11 +373,26 @@ function buildComponentSlot(
   if (!t.isJSXIdentifier(nameNode)) return null
   if (el.children.length > 0) return null
 
-  const props: ComponentSlot["props"] = []
+  const props: ChildPropEntry[] = []
   const depsSet = new Set<string>()
   const allDeps: string[] = []
 
+  const recordDeps = (deps: string[]): void => {
+    for (const dep of deps) {
+      if (depsSet.has(dep)) continue
+      depsSet.add(dep)
+      allDeps.push(dep)
+    }
+  }
+
   for (const attr of el.openingElement.attributes) {
+    if (t.isJSXSpreadAttribute(attr)) {
+      const resolved = resolveChildPropExpr(attr.argument, ctx)
+      if (resolved === null) return null
+      recordDeps(resolved.deps)
+      props.push({ kind: "spread", valueExpr: resolved.expr, deps: resolved.deps })
+      continue
+    }
     if (!t.isJSXAttribute(attr)) return null
     const attrName = attr.name
     if (!t.isJSXIdentifier(attrName)) return null
@@ -398,12 +417,8 @@ function buildComponentSlot(
       return null
     }
 
-    for (const dep of deps) {
-      if (depsSet.has(dep)) continue
-      depsSet.add(dep)
-      allDeps.push(dep)
-    }
-    props.push({ name: propName, valueExpr: valueExpr, deps })
+    recordDeps(deps)
+    props.push({ kind: "prop", name: propName, valueExpr: valueExpr, deps })
   }
 
   return {
@@ -550,11 +565,7 @@ function resolveBranchElement(
   allDeps: string[],
 ): {
   componentRef: string
-  props: Array<{
-    name: string
-    valueExpr: BabelCore.types.Expression
-    deps: string[]
-  }>
+  props: ChildPropEntry[]
 } | null {
   const t = ctx.t
   const nameNode = el.openingElement.name
@@ -563,12 +574,22 @@ function resolveBranchElement(
   if (isHostTag(componentRef)) return null
   if (el.children.length > 0) return null
 
-  const props: Array<{
-    name: string
-    valueExpr: BabelCore.types.Expression
-    deps: string[]
-  }> = []
+  const props: ChildPropEntry[] = []
+  const recordDeps = (deps: string[]): void => {
+    for (const d of deps) {
+      if (depsSet.has(d)) continue
+      depsSet.add(d)
+      allDeps.push(d)
+    }
+  }
   for (const attr of el.openingElement.attributes) {
+    if (t.isJSXSpreadAttribute(attr)) {
+      const r = resolveChildPropExpr(attr.argument, ctx)
+      if (r === null) return null
+      recordDeps(r.deps)
+      props.push({ kind: "spread", valueExpr: r.expr, deps: r.deps })
+      continue
+    }
     if (!t.isJSXAttribute(attr)) return null
     if (!t.isJSXIdentifier(attr.name)) return null
     const propName = attr.name.name
@@ -589,12 +610,8 @@ function resolveBranchElement(
     } else {
       return null
     }
-    for (const d of deps) {
-      if (depsSet.has(d)) continue
-      depsSet.add(d)
-      allDeps.push(d)
-    }
-    props.push({ name: propName, valueExpr, deps })
+    recordDeps(deps)
+    props.push({ kind: "prop", name: propName, valueExpr, deps })
   }
   return { componentRef, props }
 }
@@ -1157,6 +1174,14 @@ function collectEffectiveChildren(
     }
     if (t.isJSXExpressionContainer(child)) {
       out.push({ kind: "expr", node: child })
+      continue
+    }
+    if (t.isJSXFragment(child)) {
+      // Fragments are transparent: flatten their children into the parent's
+      // effective children list. Nested fragments are handled recursively.
+      const inner = collectEffectiveChildren(child.children, t)
+      if (inner === null) return null
+      for (const c of inner) out.push(c)
       continue
     }
     return null

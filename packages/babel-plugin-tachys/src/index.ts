@@ -32,6 +32,7 @@ import {
   compileComponent,
   type AltSlot,
   type AttrSlot,
+  type ChildPropEntry,
   type ComponentSlot,
   type CondSlot,
   type ListSlot,
@@ -407,22 +408,44 @@ function componentInstanceName(index: number): string {
 /**
  * Build the object expression passed to a child component as its props.
  * Each entry uses the ComponentSlot's pre-resolved value expression.
+ * Spread entries emit `...value`; explicit entries emit `name: value`;
+ * source order is preserved so later explicit keys override earlier spreads.
  */
 function buildChildPropsObject(
   t: typeof BabelCore.types,
   slot: ComponentSlot,
   propsName: string,
 ): BabelCore.types.ObjectExpression {
-  const props: BabelCore.types.ObjectProperty[] = []
-  for (const p of slot.props) {
-    props.push(
+  return t.objectExpression(buildChildPropEntries(t, slot.props, propsName))
+}
+
+/**
+ * Emit the property entries (ObjectProperty + SpreadElement) for a
+ * ChildPropEntry list, shared by component / cond / alt builders.
+ */
+function buildChildPropEntries(
+  t: typeof BabelCore.types,
+  entries: ChildPropEntry[],
+  propsName: string,
+): Array<BabelCore.types.ObjectProperty | BabelCore.types.SpreadElement> {
+  const out: Array<
+    BabelCore.types.ObjectProperty | BabelCore.types.SpreadElement
+  > = []
+  for (const p of entries) {
+    if (p.kind === "spread") {
+      out.push(
+        t.spreadElement(maybeRetargetPropsName(t, p.valueExpr, propsName)),
+      )
+      continue
+    }
+    out.push(
       t.objectProperty(
         t.identifier(p.name),
         maybeRetargetPropsName(t, p.valueExpr, propsName),
       ),
     )
   }
-  return t.objectExpression(props)
+  return out
 }
 
 /**
@@ -522,14 +545,7 @@ function buildCondPropsObject(
   slot: CondSlot,
   propsName: string,
 ): BabelCore.types.ObjectExpression {
-  return t.objectExpression(
-    slot.props.map((p) =>
-      t.objectProperty(
-        t.identifier(p.name),
-        maybeRetargetPropsName(t, p.valueExpr, propsName),
-      ),
-    ),
-  )
+  return t.objectExpression(buildChildPropEntries(t, slot.props, propsName))
 }
 
 /**
@@ -563,14 +579,7 @@ function buildAltMakePropsFn(
 ): BabelCore.types.ArrowFunctionExpression {
   return t.arrowFunctionExpression(
     [],
-    t.objectExpression(
-      propsArr.map((p) =>
-        t.objectProperty(
-          t.identifier(p.name),
-          maybeRetargetPropsName(t, p.valueExpr, propsName),
-        ),
-      ),
-    ),
+    t.objectExpression(buildChildPropEntries(t, propsArr, propsName)),
   )
 }
 
