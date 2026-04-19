@@ -17,6 +17,7 @@
   <script type="module">
     import { h, mount, patch, unmount, render, clearPool } from '../../dist/index.js';
     import { runInfernoBenchmarks } from './inferno-bench-bundle.js';
+    import { runTachysCompiledBenchmarks } from './compiled-bench-entry.js';
 
     const adjectives = ['pretty','large','big','small','tall','short','long','handsome'];
     const nouns = ['table','chair','house','bbq','desk','car','pony','cookie'];
@@ -221,49 +222,64 @@
       50
     ));
 
+    // ──── Tachys Compiled (Babel plugin) Benchmarks ────
+    container.textContent = '';
+    const tachysCompiledResults = runTachysCompiledBenchmarks(container);
+
     // ──── Inferno Benchmarks ────
     container.textContent = '';
     const infernoResults = runInfernoBenchmarks(container);
 
     // ──── Format Comparison Output ────
     const lines = [
-      'Tachys vs Inferno Browser Benchmark',
-      '='.repeat(90),
+      'Tachys (raw h()) vs Tachys (compiled Row) vs Inferno',
+      '='.repeat(110),
       ''
     ];
 
     const header =
       'Operation'.padEnd(35) +
-      'Tachys Med'.padStart(11) +
-      'Inf Med'.padStart(11) +
-      'Ratio'.padStart(8) +
-      'Tachys Mean'.padStart(12) +
-      'Inf Mean'.padStart(12);
+      'h()'.padStart(10) +
+      'compiled'.padStart(10) +
+      'inferno'.padStart(10) +
+      'c/h()'.padStart(8) +
+      'c/inf'.padStart(8) +
+      'h()/inf'.padStart(9);
     lines.push(header);
-    lines.push('-'.repeat(90));
+    lines.push('-'.repeat(110));
 
     for (let i = 0; i < tachysResults.length; i++) {
       const b = tachysResults[i];
+      const c = tachysCompiledResults[i];
       const inf = infernoResults[i];
-      const ratio = (b.median / inf.median).toFixed(2);
+      const ratioCompiledVsH = (c.median / b.median).toFixed(2);
+      const ratioCompiledVsInf = (c.median / inf.median).toFixed(2);
+      const ratioHVsInf = (b.median / inf.median).toFixed(2);
       lines.push(
         b.name.padEnd(35) +
-        (b.median.toFixed(2) + 'ms').padStart(11) +
-        (inf.median.toFixed(2) + 'ms').padStart(11) +
-        (ratio + 'x').padStart(8) +
-        (b.mean.toFixed(2) + 'ms').padStart(12) +
-        (inf.mean.toFixed(2) + 'ms').padStart(12)
+        (b.median.toFixed(2) + 'ms').padStart(10) +
+        (c.median.toFixed(2) + 'ms').padStart(10) +
+        (inf.median.toFixed(2) + 'ms').padStart(10) +
+        (ratioCompiledVsH + 'x').padStart(8) +
+        (ratioCompiledVsInf + 'x').padStart(8) +
+        (ratioHVsInf + 'x').padStart(9)
       );
     }
 
     lines.push('');
-    lines.push('Ratio < 1.0 = Tachys faster, > 1.0 = Inferno faster');
+    lines.push('c/h()  < 1.0 = compiled faster than raw h()');
+    lines.push('c/inf  < 1.0 = compiled faster than Inferno');
+    lines.push('h()/inf < 1.0 = raw h() faster than Inferno');
 
     const output = lines.join('\n');
     document.getElementById('results').textContent = output;
 
     // Expose results for Playwright to read
-    window.__benchmarkResults = { tachys: tachysResults, inferno: infernoResults };
+    window.__benchmarkResults = {
+      tachys: tachysResults,
+      tachysCompiled: tachysCompiledResults,
+      inferno: infernoResults,
+    };
     window.__benchmarkDone = true;
   </script>
 </body>

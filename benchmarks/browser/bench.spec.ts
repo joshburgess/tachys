@@ -97,6 +97,7 @@ test("Tachys vs Inferno browser benchmark", async ({ page }) => {
 
     interface BenchResults {
       tachys: BenchResult[]
+      tachysCompiled: BenchResult[]
       inferno: BenchResult[]
     }
 
@@ -119,29 +120,48 @@ test("Tachys vs Inferno browser benchmark", async ({ page }) => {
       "",
       "## Comparison",
       "",
-      "| Operation | Tachys Median | Inferno Median | Ratio | Tachys Mean | Inferno Mean |",
-      "|---|---|---|---|---|---|",
+      "Three-way comparison: Tachys with raw `h()`, Tachys with plugin-compiled Row, and Inferno.",
+      "",
+      "| Operation | h() | compiled | inferno | c/h() | c/inf | h()/inf |",
+      "|---|---|---|---|---|---|---|",
     ]
 
     for (let i = 0; i < results.tachys.length; i++) {
       const b = results.tachys[i]
+      const c = results.tachysCompiled[i]
       const inf = results.inferno[i]
-      const ratio = (b.median / inf.median).toFixed(2)
+      const ratioCompiledVsH = (c.median / b.median).toFixed(2)
+      const ratioCompiledVsInf = (c.median / inf.median).toFixed(2)
+      const ratioHVsInf = (b.median / inf.median).toFixed(2)
       lines.push(
-        `| ${b.name} | ${b.median.toFixed(2)}ms | ${inf.median.toFixed(2)}ms | ${ratio}x | ${b.mean.toFixed(2)}ms | ${inf.mean.toFixed(2)}ms |`,
+        `| ${b.name} | ${b.median.toFixed(2)}ms | ${c.median.toFixed(2)}ms | ${inf.median.toFixed(2)}ms | ${ratioCompiledVsH}x | ${ratioCompiledVsInf}x | ${ratioHVsInf}x |`,
       )
     }
 
     lines.push("")
-    lines.push("Ratio < 1.0 = Tachys faster, > 1.0 = Inferno faster")
+    lines.push("- `c/h()` < 1.0 = compiled faster than raw `h()`")
+    lines.push("- `c/inf` < 1.0 = compiled faster than Inferno")
+    lines.push("- `h()/inf` < 1.0 = raw `h()` faster than Inferno")
 
     lines.push("")
-    lines.push("## Tachys Detail")
+    lines.push("## Tachys Detail (raw h())")
     lines.push("")
     lines.push("| Operation | Median (ms) | Mean (ms) | Min (ms) | Max (ms) |")
     lines.push("|---|---|---|---|---|")
 
     for (const r of results.tachys) {
+      lines.push(
+        `| ${r.name} | ${r.median.toFixed(2)} | ${r.mean.toFixed(2)} | ${r.min.toFixed(2)} | ${r.max.toFixed(2)} |`,
+      )
+    }
+
+    lines.push("")
+    lines.push("## Tachys Detail (compiled Row)")
+    lines.push("")
+    lines.push("| Operation | Median (ms) | Mean (ms) | Min (ms) | Max (ms) |")
+    lines.push("|---|---|---|---|---|")
+
+    for (const r of results.tachysCompiled) {
       lines.push(
         `| ${r.name} | ${r.median.toFixed(2)} | ${r.mean.toFixed(2)} | ${r.min.toFixed(2)} | ${r.max.toFixed(2)} |`,
       )
@@ -169,8 +189,12 @@ test("Tachys vs Inferno browser benchmark", async ({ page }) => {
 
     // Basic sanity: all results should be present
     expect(results.tachys).toHaveLength(8)
+    expect(results.tachysCompiled).toHaveLength(8)
     expect(results.inferno).toHaveLength(8)
     for (const r of results.tachys) {
+      expect(r.median).toBeGreaterThan(0)
+    }
+    for (const r of results.tachysCompiled) {
       expect(r.median).toBeGreaterThan(0)
     }
     for (const r of results.inferno) {
