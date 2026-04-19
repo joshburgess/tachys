@@ -298,6 +298,103 @@ describe("_mountList / _patchList (LIS reconcile)", () => {
     expect(parent.children[1]).toBe(before[3])
   })
 
+  it("single-item removal fast path: removes from head without calling keyOf/makeProps", () => {
+    const rows: Row[] = [
+      { id: 1, label: "a" },
+      { id: 2, label: "b" },
+      { id: 3, label: "c" },
+      { id: 4, label: "d" },
+    ]
+    const { parent, list } = setupList(rows)
+    const before = nodesOf(parent)
+
+    let keyCalls = 0
+    let propCalls = 0
+    const keySpy = (r: Row): unknown => {
+      keyCalls++
+      return r.id
+    }
+    const makePropsSpy = (r: Row): Record<string, unknown> => {
+      propCalls++
+      return { id: r.id, label: r.label }
+    }
+
+    // Remove head via splice semantics (identity preserved for rest).
+    const next = rows.slice()
+    next.splice(0, 1)
+    _patchList(list, next, Item, makePropsSpy, keySpy)
+
+    expect(labelsOf(parent)).toEqual(["b", "c", "d"])
+    expect(parent.children[0]).toBe(before[1])
+    expect(parent.children[1]).toBe(before[2])
+    expect(parent.children[2]).toBe(before[3])
+    // Fast path must not invoke keyOf or makeProps for the 3 preserved rows.
+    expect(keyCalls).toBe(0)
+    expect(propCalls).toBe(0)
+  })
+
+  it("single-item removal fast path: removes from middle", () => {
+    const rows: Row[] = [
+      { id: 1, label: "a" },
+      { id: 2, label: "b" },
+      { id: 3, label: "c" },
+      { id: 4, label: "d" },
+    ]
+    const { parent, list } = setupList(rows)
+    const before = nodesOf(parent)
+
+    const next = rows.slice()
+    next.splice(2, 1) // remove { id: 3 }
+    _patchList(list, next, Item, makeProps, keyOf)
+
+    expect(labelsOf(parent)).toEqual(["a", "b", "d"])
+    expect(parent.children[0]).toBe(before[0])
+    expect(parent.children[1]).toBe(before[1])
+    expect(parent.children[2]).toBe(before[3])
+  })
+
+  it("single-item removal fast path: removes from tail", () => {
+    const rows: Row[] = [
+      { id: 1, label: "a" },
+      { id: 2, label: "b" },
+      { id: 3, label: "c" },
+      { id: 4, label: "d" },
+    ]
+    const { parent, list } = setupList(rows)
+    const before = nodesOf(parent)
+
+    const next = rows.slice()
+    next.pop() // remove { id: 4 }
+    _patchList(list, next, Item, makeProps, keyOf)
+
+    expect(labelsOf(parent)).toEqual(["a", "b", "c"])
+    expect(parent.children[0]).toBe(before[0])
+    expect(parent.children[2]).toBe(before[2])
+  })
+
+  it("single-item fast path falls through when identity is not preserved", () => {
+    const rows: Row[] = [
+      { id: 1, label: "a" },
+      { id: 2, label: "b" },
+      { id: 3, label: "c" },
+    ]
+    const { parent, list } = setupList(rows)
+
+    // New array has one fewer item and fresh object identities.
+    _patchList(
+      list,
+      [
+        { id: 1, label: "a" },
+        { id: 3, label: "C!" },
+      ],
+      Item,
+      makeProps,
+      keyOf,
+    )
+
+    expect(labelsOf(parent)).toEqual(["a", "C!"])
+  })
+
   it("handles reverse order (LIS length 1, every middle element moves)", () => {
     const rows: Row[] = [
       { id: 1, label: "a" },

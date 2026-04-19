@@ -344,6 +344,46 @@ export function _patchList<Item>(
   // already bound into existing.state/props. Skip allocation + compare.
   const canSkipOnIdentity = !parentChanged
 
+  // Pure-clear fast path: drop everything via Range.deleteContents() instead
+  // of N individual removeChild calls. Krausest 09_clear1k_x8 is dominated
+  // by this.
+  if (nextLen === 0 && prevLen > 0) {
+    const range = document.createRange()
+    range.setStartBefore(prev[0]!.dom)
+    range.setEndBefore(anchor)
+    range.deleteContents()
+    list.instances = []
+    return
+  }
+
+  // Single-item-removal fast path (Krausest 06_remove-one-1k). When the
+  // new array is the old one with exactly one item spliced out and no
+  // parent deps changed, no row's props could have changed. Locate the
+  // removed position by identity compare and skip keyOf/patchInPlace
+  // entirely across the 999 preserved rows. Using prev.slice() + splice
+  // lets V8 run the copy as a native memcpy, avoiding a hand-written loop.
+  if (!parentChanged && nextLen === prevLen - 1 && prevLen > 0) {
+    let r = 0
+    while (r < nextLen && (items[r] as Item) === prev[r]!.item) r++
+    // r === nextLen: tail-removal. Otherwise verify the tail shifts by 1.
+    let ok = true
+    if (r < nextLen) {
+      for (let k = r; k < nextLen; k++) {
+        if ((items[k] as Item) !== prev[k + 1]!.item) {
+          ok = false
+          break
+        }
+      }
+    }
+    if (ok) {
+      parent.removeChild(prev[r]!.dom)
+      const result = prev.slice()
+      result.splice(r, 1)
+      list.instances = result
+      return
+    }
+  }
+
   const next: ListInstance[] = new Array(nextLen)
 
   const patchInPlace = (existing: ListInstance, item: Item): void => {
@@ -354,18 +394,6 @@ export function _patchList<Item>(
       existing.props = props
     }
     existing.item = item
-  }
-
-  // Pure-clear fast path: drop everything via Range.deleteContents() instead
-  // of N individual removeChild calls. Krausest 09_clear1k_x8 is dominated
-  // by this.
-  if (nextLen === 0 && prevLen > 0) {
-    const range = document.createRange()
-    range.setStartBefore(prev[0]!.dom)
-    range.setEndBefore(anchor)
-    range.deleteContents()
-    list.instances = next
-    return
   }
 
   // ── 1. Prefix trim ────────────────────────────────────────────────────
