@@ -148,6 +148,7 @@
     "jsdom": "^26.0.0",
     "rollup": "^4.28.0",
     "rollup-plugin-swc3": "^0.12.1",
+    "tsx": "^4.21.0",
     "typescript": "^5.7.2",
     "vitepress": "^1.6.4",
     "vitest": "^3.2.4"

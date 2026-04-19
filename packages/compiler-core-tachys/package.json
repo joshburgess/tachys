@@ -1,7 +1,7 @@
 {
-  "name": "babel-plugin-tachys",
+  "name": "compiler-core-tachys",
   "version": "0.0.1",
-  "description": "Babel plugin that compiles Tachys JSX components into markCompiled + cloneNode templates",
+  "description": "Portable IR, typed JS emission DSL, and string emitter shared by the Babel and SWC Tachys compilers",
   "license": "MIT",
   "author": "Josh Burgess",
   "type": "module",
@@ -30,24 +30,8 @@
     "test": "vitest run",
     "test:watch": "vitest"
   },
-  "peerDependencies": {
-    "@babel/core": "^7.20.0"
-  },
-  "dependencies": {
-    "@babel/generator": "^7.24.0",
-    "@babel/helper-plugin-utils": "^7.20.0",
-    "@babel/parser": "^7.24.0",
-    "compiler-core-tachys": "workspace:*"
-  },
   "devDependencies": {
-    "@babel/core": "^7.24.0",
-    "@babel/plugin-syntax-jsx": "^7.24.0",
-    "@babel/types": "^7.24.0",
     "@rollup/plugin-node-resolve": "^16.0.0",
-    "@types/babel__core": "^7.20.0",
-    "@types/babel__generator": "^7.27.0",
-    "@types/babel__helper-plugin-utils": "^7.10.0",
-    "jsdom": "^26.0.0",
     "rollup": "^4.28.0",
     "rollup-plugin-swc3": "^0.12.1",
     "typescript": "^5.7.2",

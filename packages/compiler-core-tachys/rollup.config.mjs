@@ -10,16 +10,6 @@ const swcPlugin = swc({
   sourceMaps: true,
 })
 
-const external = [
-  "@babel/core",
-  "@babel/generator",
-  "@babel/helper-plugin-utils",
-  "@babel/parser",
-  "@babel/plugin-syntax-jsx",
-  "@babel/types",
-  "compiler-core-tachys",
-]
-
 export default {
   input: "src/index.ts",
   output: [
@@ -35,6 +25,5 @@ export default {
       exports: "named",
     },
   ],
-  external,
   plugins: [resolve({ extensions: [".ts", ".js"] }), swcPlugin],
 }

@@ -5,3 +5,6 @@ test-results/
 docs/.vitepress/cache/
 docs/.vitepress/dist/
 *.tsbuildinfo
+
+# pack artifacts
+*.tgz

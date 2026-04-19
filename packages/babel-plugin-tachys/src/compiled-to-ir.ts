@@ -24,7 +24,7 @@ import type {
   IRChildPropEntry,
   IRCompositeExpr,
   IRSlot,
-} from "./ir"
+} from "compiler-core-tachys"
 
 /**
  * `@babel/generator` ships the generator function under different export

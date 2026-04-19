@@ -24,7 +24,7 @@ import type {
   IRChildPropEntry,
   IRCompositeExpr,
   IRSlot,
-} from "./ir"
+} from "compiler-core-tachys"
 
 type T = typeof BabelCore.types
 
