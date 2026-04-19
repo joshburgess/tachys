@@ -357,14 +357,22 @@ export function _patchList<Item>(
   // already bound into existing.state/props. Skip allocation + compare.
   const canSkipOnIdentity = !parentChanged
 
-  // Pure-clear fast path: drop everything via Range.deleteContents() instead
-  // of N individual removeChild calls. Krausest 09_clear1k_x8 is dominated
-  // by this.
+  // Pure-clear fast path. When the list is the only content of `parent`
+  // (prev[0] is the first child, anchor is the last), `textContent = ""`
+  // is Chrome's fastest mass-detach — it's how Inferno wipes. We then
+  // re-insert the anchor so future inserts still have a reference node.
+  // Falls back to Range.deleteContents() when the list is surrounded by
+  // other siblings we must preserve.
   if (nextLen === 0 && prevLen > 0) {
-    const range = document.createRange()
-    range.setStartBefore(prev[0]!.dom)
-    range.setEndBefore(anchor)
-    range.deleteContents()
+    if (parent.firstChild === prev[0]!.dom && parent.lastChild === anchor) {
+      ;(parent as Element).textContent = ""
+      parent.appendChild(anchor)
+    } else {
+      const range = document.createRange()
+      range.setStartBefore(prev[0]!.dom)
+      range.setEndBefore(anchor)
+      range.deleteContents()
+    }
     list.instances = []
     return
   }
@@ -495,16 +503,28 @@ export function _patchList<Item>(
   // benches the vast majority of middle items stay at their original
   // index, so we can patchInPlace without building keyToPrevIdx at all.
   // Items whose position key diverged get deferred to phase B.
+  //
+  // When canSkipOnIdentity holds (no parent deps changed) and the item at
+  // position `srcIdx` has the same object identity as last render, the
+  // row's key is trivially unchanged and every makeProps output is already
+  // bound into existing.state — we can skip keyOf, the closure call, and
+  // the patch branch entirely. Swap hits this for ~998/1000 rows.
   let deferredKeys: unknown[] | null = null
   let deferredMs: Int32Array | null = null
   let deferredCount = 0
   for (let m = 0; m < middleLen; m++) {
     const srcIdx = prefixEnd + m
     const item = items[srcIdx] as Item
-    const key = keyOf(item)
     const prevAtPos = prev[srcIdx]!
+    if (canSkipOnIdentity && prevAtPos.item === item) {
+      used[m] = 1
+      oldIndex[m] = srcIdx
+      next[srcIdx] = prevAtPos
+      continue
+    }
+    const key = keyOf(item)
     if (prevAtPos.key === key) {
-      used[srcIdx - prefixEnd] = 1
+      used[m] = 1
       oldIndex[m] = srcIdx
       patchInPlace(prevAtPos, item)
       next[srcIdx] = prevAtPos
