@@ -426,41 +426,78 @@ export function _patchList<Item>(
   }
 
   // ── 4. Mixed middle: LIS-based reorder ───────────────────────────────
-  // Map each surviving key to its position in prev so we can discover
-  // moves cheaply. Sentinel -1 means "new node".
-  const keyToPrevIdx = new Map<unknown, number>()
-  for (let k = prefixEnd; k <= e1; k++) {
-    keyToPrevIdx.set(prev[k]!.key, k)
-  }
-
+  // Sentinel -1 means "new node"; -2 marks a deferred slot (same-position
+  // fast-path missed, need Map lookup in the second pass).
   const middleLen = e2 - prefixEnd + 1
   const oldIndex = new Int32Array(middleLen)
   const prevMiddleLen = e1 - prefixEnd + 1
   const used = new Uint8Array(prevMiddleLen)
 
+  // Phase A: same-position fast-path. For swap / update / tail-churn
+  // benches the vast majority of middle items stay at their original
+  // index, so we can patchInPlace without building keyToPrevIdx at all.
+  // Items whose position key diverged get deferred to phase B.
+  let deferredKeys: unknown[] | null = null
+  let deferredMs: Int32Array | null = null
+  let deferredCount = 0
   for (let m = 0; m < middleLen; m++) {
     const srcIdx = prefixEnd + m
     const item = items[srcIdx] as Item
     const key = keyOf(item)
-    const prevIdx = keyToPrevIdx.get(key)
-    if (prevIdx !== undefined) {
-      used[prevIdx - prefixEnd] = 1
-      oldIndex[m] = prevIdx
-      const existing = prev[prevIdx]!
-      patchInPlace(existing, item)
-      next[srcIdx] = existing
-    } else {
-      oldIndex[m] = -1
-      const props = makeProps(item)
-      const mounted = Child(props)
-      const inst: ListInstance = {
-        key,
-        dom: mounted.dom,
-        state: mounted.state,
-        props,
-        item,
+    const prevAtPos = prev[srcIdx]!
+    if (prevAtPos.key === key) {
+      used[srcIdx - prefixEnd] = 1
+      oldIndex[m] = srcIdx
+      patchInPlace(prevAtPos, item)
+      next[srcIdx] = prevAtPos
+      continue
+    }
+    if (deferredKeys === null) {
+      deferredKeys = new Array(middleLen - m)
+      deferredMs = new Int32Array(middleLen - m)
+    }
+    deferredKeys[deferredCount] = key
+    deferredMs![deferredCount] = m
+    deferredCount++
+    oldIndex[m] = -2
+  }
+
+  // Phase B: only runs if at least one position-match failed. Build
+  // keyToPrevIdx solely from prev entries that phase A didn't claim, then
+  // resolve each deferred slot (match, or mount-new when prevIdx is
+  // missing).
+  if (deferredCount > 0) {
+    const keyToPrevIdx = new Map<unknown, number>()
+    for (let k = prefixEnd; k <= e1; k++) {
+      if (used[k - prefixEnd] === 0) {
+        keyToPrevIdx.set(prev[k]!.key, k)
       }
-      next[srcIdx] = inst
+    }
+    for (let d = 0; d < deferredCount; d++) {
+      const m = deferredMs![d]!
+      const srcIdx = prefixEnd + m
+      const item = items[srcIdx] as Item
+      const key = deferredKeys![d]
+      const prevIdx = keyToPrevIdx.get(key)
+      if (prevIdx !== undefined) {
+        used[prevIdx - prefixEnd] = 1
+        oldIndex[m] = prevIdx
+        const existing = prev[prevIdx]!
+        patchInPlace(existing, item)
+        next[srcIdx] = existing
+      } else {
+        oldIndex[m] = -1
+        const props = makeProps(item)
+        const mounted = Child(props)
+        const inst: ListInstance = {
+          key,
+          dom: mounted.dom,
+          state: mounted.state,
+          props,
+          item,
+        }
+        next[srcIdx] = inst
+      }
     }
   }
 
