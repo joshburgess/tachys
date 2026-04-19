@@ -242,7 +242,6 @@ export function _patchAlt(
  */
 export interface CompiledListState {
   instances: ListInstance[]
-  byKey: Map<unknown, ListInstance>
   anchor: Comment
   parent: Node
   lastParentDeps: unknown[] | null
@@ -265,7 +264,6 @@ export function _mountList<Item>(
   const parent = anchor.parentNode as Node
   const n = items.length
   const instances: ListInstance[] = new Array(n)
-  const byKey = new Map<unknown, ListInstance>()
   for (let i = 0; i < n; i++) {
     const item = items[i] as Item
     const props = makeProps(item)
@@ -280,11 +278,9 @@ export function _mountList<Item>(
     }
     parent.insertBefore(mounted.dom, anchor)
     instances[i] = inst
-    byKey.set(key, inst)
   }
   return {
     instances,
-    byKey,
     anchor,
     parent,
     lastParentDeps: parentDeps === undefined ? null : parentDeps.slice(),
@@ -349,7 +345,6 @@ export function _patchList<Item>(
   const canSkipOnIdentity = !parentChanged
 
   const next: ListInstance[] = new Array(nextLen)
-  const nextByKey = new Map<unknown, ListInstance>()
 
   const patchInPlace = (existing: ListInstance, item: Item): void => {
     if (canSkipOnIdentity && existing.item === item) return
@@ -370,7 +365,6 @@ export function _patchList<Item>(
     range.setEndBefore(anchor)
     range.deleteContents()
     list.instances = next
-    list.byKey = nextByKey
     return
   }
 
@@ -384,7 +378,6 @@ export function _patchList<Item>(
     if (existing.key !== key) break
     patchInPlace(existing, item)
     next[i] = existing
-    nextByKey.set(key, existing)
     i++
   }
   const prefixEnd = i
@@ -399,7 +392,6 @@ export function _patchList<Item>(
     if (existing.key !== key) break
     patchInPlace(existing, item)
     next[e2] = existing
-    nextByKey.set(key, existing)
     e1--
     e2--
   }
@@ -408,7 +400,6 @@ export function _patchList<Item>(
   if (prefixEnd > e2) {
     for (let k = prefixEnd; k <= e1; k++) parent.removeChild(prev[k]!.dom)
     list.instances = next
-    list.byKey = nextByKey
     return
   }
 
@@ -429,10 +420,8 @@ export function _patchList<Item>(
       }
       parent.insertBefore(mounted.dom, nextSib)
       next[k] = inst
-      nextByKey.set(key, inst)
     }
     list.instances = next
-    list.byKey = nextByKey
     return
   }
 
@@ -460,7 +449,6 @@ export function _patchList<Item>(
       const existing = prev[prevIdx]!
       patchInPlace(existing, item)
       next[srcIdx] = existing
-      nextByKey.set(key, existing)
     } else {
       oldIndex[m] = -1
       const props = makeProps(item)
@@ -473,7 +461,6 @@ export function _patchList<Item>(
         item,
       }
       next[srcIdx] = inst
-      nextByKey.set(key, inst)
     }
   }
 
@@ -504,7 +491,6 @@ export function _patchList<Item>(
   }
 
   list.instances = next
-  list.byKey = nextByKey
 }
 
 /**
