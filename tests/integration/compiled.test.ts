@@ -537,6 +537,31 @@ describe("_mountList / _patchList (LIS reconcile)", () => {
     expect(parent.children[1]).toBe(before[1])
   })
 
+  it("handles next middle longer than prev middle (regression: phase A overrun)", () => {
+    // Krausest repro: run fills 1000 rows, remove drops to 999 with a
+    // missing middle index, run again rebuilds with 1000 fresh keys. The
+    // resulting patch has prefixEnd=0 and middleLen=1000 but prevMiddleLen=999;
+    // phase A used to read past prev[] and crash.
+    const initial: Row[] = Array.from({ length: 6 }, (_, i) => ({
+      id: i + 1,
+      label: `r${i + 1}`,
+    }))
+    const { parent, list } = setupList(initial)
+
+    // Drop the row at index 3 to land in the middle (no prefix/suffix bail).
+    _patchList(list, initial.toSpliced(3, 1), Item, makeProps, keyOf)
+    expect(parent.children).toHaveLength(5)
+
+    // Now patch to 6 fresh-keyed rows: every key changes, prefix/suffix trim
+    // are no-ops, and the new middle is one longer than the prev middle.
+    const fresh: Row[] = Array.from({ length: 6 }, (_, i) => ({
+      id: 1000 + i,
+      label: `f${i}`,
+    }))
+    _patchList(list, fresh, Item, makeProps, keyOf)
+    expect(labelsOf(parent)).toEqual(["f0", "f1", "f2", "f3", "f4", "f5"])
+  })
+
   it("preserves node identity across two consecutive patches (swap then swap back)", () => {
     const rows: Row[] = Array.from({ length: 6 }, (_, i) => ({
       id: i,

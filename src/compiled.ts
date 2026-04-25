@@ -512,7 +512,12 @@ export function _patchList<Item>(
   let deferredKeys: unknown[] | null = null
   let deferredMs: Int32Array | null = null
   let deferredCount = 0
-  for (let m = 0; m < middleLen; m++) {
+  // Phase A only has a position-aligned prev for m < prevMiddleLen. Past
+  // that we're in the "next middle is longer than prev middle" tail
+  // (e.g. remove-one followed by a fresh-keyed run): every such slot is
+  // either a key match elsewhere or a new mount, both handled by phase B.
+  const phaseALen = middleLen < prevMiddleLen ? middleLen : prevMiddleLen
+  for (let m = 0; m < phaseALen; m++) {
     const srcIdx = prefixEnd + m
     const item = items[srcIdx] as Item
     const prevAtPos = prev[srcIdx]!
@@ -538,6 +543,25 @@ export function _patchList<Item>(
     deferredMs![deferredCount] = m
     deferredCount++
     oldIndex[m] = -2
+  }
+
+  // Tail of next middle that has no prev counterpart (middleLen >
+  // prevMiddleLen): defer every slot. Phase B's keyToPrevIdx may still
+  // map the key to a leftover prev entry, but the position itself is new.
+  if (phaseALen < middleLen) {
+    if (deferredKeys === null) {
+      deferredKeys = new Array(middleLen - phaseALen)
+      deferredMs = new Int32Array(middleLen - phaseALen)
+    }
+    for (let m = phaseALen; m < middleLen; m++) {
+      const srcIdx = prefixEnd + m
+      const item = items[srcIdx] as Item
+      const key = keyOf(item)
+      deferredKeys[deferredCount] = key
+      deferredMs![deferredCount] = m
+      deferredCount++
+      oldIndex[m] = -2
+    }
   }
 
   // Phase B: only runs if at least one position-match failed. Build
