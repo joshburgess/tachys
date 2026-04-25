@@ -46,6 +46,7 @@ interface PluginState extends PluginPass {
     patchCond: string | null
     mountAlt: string | null
     patchAlt: string | null
+    batched: string | null
   }
   templateCounter: number
   pendingTemplates: Array<{ id: string; html: string }>
@@ -86,6 +87,7 @@ const plugin = declareT<PluginState>((api) => {
         patchCond: null,
         mountAlt: null,
         patchAlt: null,
+        batched: null,
       }
       this.templateCounter = 0
       this.pendingTemplates = []
@@ -116,6 +118,9 @@ const plugin = declareT<PluginState>((api) => {
           }
           if (state.tachysImports.patchAlt !== null) {
             ensureImport(path, t, state, "_patchAlt")
+          }
+          if (state.tachysImports.batched !== null) {
+            ensureImport(path, t, state, "_batched")
           }
 
           // List-helper module consts come after imports but before
@@ -188,6 +193,9 @@ const plugin = declareT<PluginState>((api) => {
             reserveImport(state, "_mountAlt")
             reserveImport(state, "_patchAlt")
           }
+          if (slot.kind === "event") {
+            reserveImport(state, "_batched")
+          }
         })
 
         const { callSrc, hoistedHelpers } = emitComponent(ir, {
@@ -254,6 +262,7 @@ type ImportLocal =
   | "_patchCond"
   | "_mountAlt"
   | "_patchAlt"
+  | "_batched"
 
 function importKey(local: ImportLocal): keyof PluginState["tachysImports"] {
   if (local === "markCompiled") return "markCompiled"
@@ -263,7 +272,8 @@ function importKey(local: ImportLocal): keyof PluginState["tachysImports"] {
   if (local === "_mountCond") return "mountCond"
   if (local === "_patchCond") return "patchCond"
   if (local === "_mountAlt") return "mountAlt"
-  return "patchAlt"
+  if (local === "_patchAlt") return "patchAlt"
+  return "batched"
 }
 
 function reserveImport(state: PluginState, local: ImportLocal): string {

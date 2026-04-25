@@ -682,13 +682,15 @@ describe("babel-plugin-tachys (runtime smoke)", () => {
       t.innerHTML = `<table><tbody>${html}</tbody></table>`
       return t.content.firstElementChild!.firstElementChild!.firstElementChild as Element
     }
+    const _batched = <T,>(f: () => T): T => f()
     const fn = new Function(
       "document",
       "markCompiled",
       "_template",
+      "_batched",
       `${stubbed}; return Row;`,
     )
-    const Row = fn(doc, markCompiled, _template) as {
+    const Row = fn(doc, markCompiled, _template, _batched) as {
       mount: (p: Record<string, unknown>) => { dom: Element; state: Record<string, unknown> }
       patch: (s: Record<string, unknown>, p: Record<string, unknown>) => void
     }

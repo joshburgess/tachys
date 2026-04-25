@@ -261,6 +261,15 @@ export function batchedUpdates<T>(fn: () => T): T {
 }
 
 /**
+ * Compiled-component event-handler wrapper. Emitted by babel-plugin-tachys
+ * around each `el.on<event> = ...` assignment so a setState inside the
+ * handler hits the synchronous flushSyncBatch fast path instead of falling
+ * into a queueMicrotask(autoFlush) boundary -- collapsing the click /
+ * render trace into one FunctionCall, matching the delegated-event path.
+ */
+export const _batched: <T>(fn: () => T) => T = batchedUpdates
+
+/**
  * Drain the Sync queue with no yield/slice/lane bookkeeping. Safe when
  * Default + Transition queues are empty and we're not inside a Transition
  * effect collection. Used by batchedUpdates for the common event-handler
@@ -342,6 +351,21 @@ export function signalTransitionSuspended(promise: Promise<unknown>): void {
  */
 function autoFlush(): void {
   if (isFlushing) return
+
+  // Sync-only fast path: when only the Sync queue has work and we're not
+  // resuming a Transition render, skip the lane for-loop, performance.now()
+  // call, and collection-state bookkeeping. Mirrors batchedUpdates' exit
+  // path so a microtask-dispatched Sync flush stays as cheap as a batched
+  // one.
+  if (
+    laneQueues[Lane.Default]!.length === 0 &&
+    laneQueues[Lane.Transition]!.length === 0 &&
+    !R.collecting
+  ) {
+    flushSyncBatch()
+    return
+  }
+
   isFlushing = true
   isScheduled = false
 

@@ -446,12 +446,16 @@ function emitMount(
   stmts.push(D.vdecl("const", "state", D.obj(stateEntries)))
 
   // Event listener wrappers, installed after state is declared so the
-  // closure sees `state`.
+  // closure sees `state`. The inner call is wrapped in `_batched(...)` so
+  // setStates inside the handler skip the queueMicrotask(autoFlush)
+  // boundary and flush synchronously via flushSyncBatch -- collapsing the
+  // click / render trace into one FunctionCall, matching the delegated-
+  // event path.
   for (const slot of slots) {
     if (slot.kind !== "event") continue
     const elName = ensureElementRef(slot.path)
     const wrapper = rawExpr(
-      `function (ev) { return state.${slot.propName}.call(this, ev); }`,
+      `function (ev) { return _batched(() => state.${slot.propName}.call(this, ev)); }`,
     )
     stmts.push(D.exprStmt(D.assign(D.member(D.id(elName), slot.domProp), wrapper)))
   }
