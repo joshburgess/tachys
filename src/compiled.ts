@@ -512,6 +512,11 @@ export function _patchList<Item>(
   let deferredKeys: unknown[] | null = null
   let deferredMs: Int32Array | null = null
   let deferredCount = 0
+  // Tracks how many prev middle slots we reused (in either phase). When
+  // matchedCount stays 0 through phase B, every prev middle row will be
+  // removed, which lets us swap N removeChild calls for a single
+  // textContent="" wipe in the full-replace case.
+  let matchedCount = 0
   // Phase A only has a position-aligned prev for m < prevMiddleLen. Past
   // that we're in the "next middle is longer than prev middle" tail
   // (e.g. remove-one followed by a fresh-keyed run): every such slot is
@@ -523,6 +528,7 @@ export function _patchList<Item>(
     const prevAtPos = prev[srcIdx]!
     if (canSkipOnIdentity && prevAtPos.item === item) {
       used[m] = 1
+      matchedCount++
       oldIndex[m] = srcIdx
       next[srcIdx] = prevAtPos
       continue
@@ -530,6 +536,7 @@ export function _patchList<Item>(
     const key = keyOf(item)
     if (prevAtPos.key === key) {
       used[m] = 1
+      matchedCount++
       oldIndex[m] = srcIdx
       patchInPlace(prevAtPos, item)
       next[srcIdx] = prevAtPos
@@ -583,6 +590,7 @@ export function _patchList<Item>(
       const prevIdx = keyToPrevIdx.get(key)
       if (prevIdx !== undefined) {
         used[prevIdx - prefixEnd] = 1
+        matchedCount++
         oldIndex[m] = prevIdx
         const existing = prev[prevIdx]!
         patchInPlace(existing, item)
@@ -627,9 +635,25 @@ export function _patchList<Item>(
     return
   }
 
-  // Remove prev middle items that weren't matched in the new middle.
-  for (let k = prefixEnd; k <= e1; k++) {
-    if (used[k - prefixEnd] === 0) parent.removeChild(prev[k]!.dom)
+  // Full-replace fast path (Krausest 02_replace1k): every prev row gets
+  // removed and the list spans the entire parent. Swap prevMiddleLen
+  // individual removeChild calls (each detaches a row, walks the
+  // ownerDocument's mutation queue, fires MutationObservers per node)
+  // for a single textContent="" — Chrome's ContainerNode::collectChildrenAndRemoveFromOldParent
+  // bulk-detaches in one pass and skips per-node bookkeeping.
+  if (
+    matchedCount === 0 &&
+    prevMiddleLen === prevLen &&
+    parent.firstChild === prev[0]!.dom &&
+    parent.lastChild === anchor
+  ) {
+    ;(parent as Element).textContent = ""
+    parent.appendChild(anchor)
+  } else {
+    // Remove prev middle items that weren't matched in the new middle.
+    for (let k = prefixEnd; k <= e1; k++) {
+      if (used[k - prefixEnd] === 0) parent.removeChild(prev[k]!.dom)
+    }
   }
 
   // LIS over oldIndex; entries tagged -1 (new nodes) are skipped inside
