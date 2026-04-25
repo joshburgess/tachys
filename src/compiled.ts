@@ -579,6 +579,30 @@ export function _patchList<Item>(
     }
   }
 
+  // 2-element swap fast path. When Phase A deferred exactly two items and
+  // both matched existing prev entries (no mounts) and prev/next middles
+  // are the same length (no removals), the only middle work is moving
+  // those two items to their new positions. Skip the LIS computation and
+  // the O(middleLen) reverse-walk that would otherwise scan ~998 unchanged
+  // rows on Krausest 05_swap1k.
+  if (
+    deferredCount === 2 &&
+    prevMiddleLen === middleLen &&
+    oldIndex[deferredMs![0]!]! >= 0 &&
+    oldIndex[deferredMs![1]!]! >= 0
+  ) {
+    for (let d = 0; d < 2; d++) {
+      const m = deferredMs![d]!
+      const srcIdx = prefixEnd + m
+      const inst = next[srcIdx]!
+      const nextSib: Node = srcIdx + 1 < nextLen ? next[srcIdx + 1]!.dom : anchor
+      parent.insertBefore(inst.dom, nextSib)
+    }
+    list.instances = next
+    list.scratchProps = scratch
+    return
+  }
+
   // Remove prev middle items that weren't matched in the new middle.
   for (let k = prefixEnd; k <= e1; k++) {
     if (used[k - prefixEnd] === 0) parent.removeChild(prev[k]!.dom)
