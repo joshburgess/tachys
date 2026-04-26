@@ -434,6 +434,72 @@ describe("babel-plugin-tachys (v0.4b ternary attrs)", () => {
     const out = transform(input)
     expect(out).not.toContain("markCompiled")
   })
+
+  it("compiles className={cond ? str : null} as a guarded mount write", () => {
+    const input = `
+      function Row({ selected }) {
+        return <tr className={selected ? "danger" : null}><td>x</td></tr>;
+      }
+    `
+    const out = transform(input)
+    expect(out).toContain("markCompiled")
+    expect(out).toContain('_template("<tr><td>x</td></tr>")')
+    // Mount: skip the write entirely when selected is falsy so the row's
+    // <tr> stays attribute-free (no `class=""`).
+    expect(out).toMatch(
+      /if\s*\(\s*props\.selected\s*\)\s*\{?\s*_root\.className = "danger"/,
+    )
+    // Patch: still a single assignment (null collapses to "") so a
+    // true→false transition clears the className.
+    expect(out).toContain('state._root.className = props.selected ? "danger" : ""')
+  })
+
+  it("compiles className={cond ? null : str} (negated) as a guarded mount write", () => {
+    const input = `
+      function Row({ active }) {
+        return <span className={active ? null : "muted"}>x</span>;
+      }
+    `
+    const out = transform(input)
+    expect(out).toMatch(
+      /if\s*\(\s*!props\.active\s*\)\s*\{?\s*_root\.className = "muted"/,
+    )
+  })
+
+  it("compiles setAttribute ternary with null branch as set/remove", () => {
+    const input = `
+      function Row({ pressed }) {
+        return <button aria-pressed={pressed ? "true" : null}>x</button>;
+      }
+    `
+    const out = transform(input)
+    // Mount skips the write when pressed is falsy.
+    expect(out).toMatch(
+      /if\s*\(\s*props\.pressed\s*\)\s*\{?\s*_root\.setAttribute\("aria-pressed", "true"\)/,
+    )
+    // Patch toggles between setAttribute and removeAttribute.
+    expect(out).toContain('state._root.setAttribute("aria-pressed", "true")')
+    expect(out).toContain('state._root.removeAttribute("aria-pressed")')
+  })
+
+  it("treats `false` and `undefined` ternary branches the same as null", () => {
+    const inputFalse = `
+      function R({ x }) {
+        return <i className={x ? "on" : false}>x</i>;
+      }
+    `
+    const inputUndefined = `
+      function R({ x }) {
+        return <i className={x ? "on" : undefined}>x</i>;
+      }
+    `
+    for (const src of [inputFalse, inputUndefined]) {
+      const out = transform(src)
+      expect(out).toMatch(
+        /if\s*\(\s*props\.x\s*\)\s*\{?\s*_root\.className = "on"/,
+      )
+    }
+  })
 })
 
 describe("babel-plugin-tachys (v0.4c memo compare)", () => {

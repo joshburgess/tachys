@@ -108,7 +108,9 @@ function textValueExpr(slot: IRTextSlot): D.JsExpr {
 /**
  * Value expression for an attr slot. See `buildAttrValueExpr` in the old
  * emitter for the three cases (composite template, ternary-of-strings,
- * plain prop with String() wrap).
+ * plain prop with String() wrap). Null branches in a ternary collapse to
+ * empty-string here; callers that want true omit/remove semantics handle
+ * the conditional shape explicitly via `mountAttrStmts`/`patchAttrStmt`.
  */
 function attrValueExpr(slot: import("./ir").IRAttrSlot): D.JsExpr {
   if (slot.composite !== undefined) {
@@ -118,11 +120,87 @@ function attrValueExpr(slot: import("./ir").IRAttrSlot): D.JsExpr {
   if (slot.ternary !== undefined) {
     return D.ternary(
       propRef,
-      D.str(slot.ternary.ifTrue),
-      D.str(slot.ternary.ifFalse),
+      D.str(slot.ternary.ifTrue ?? ""),
+      D.str(slot.ternary.ifFalse ?? ""),
     )
   }
   return D.call(D.id("String"), [propRef])
+}
+
+/**
+ * Mount-side write for an attr slot. Returns one statement, or `null` to
+ * skip writing entirely. A ternary with a `null` branch lets us avoid the
+ * per-row `el.className = ""` write that otherwise leaves a `class=""`
+ * attribute on cloneNode'd rows (see Krausest 08 paint regression).
+ */
+function mountAttrStmts(
+  slot: import("./ir").IRAttrSlot,
+  elExpr: D.JsExpr,
+): D.JsStmt | null {
+  const t = slot.ternary
+  if (t !== undefined && (t.ifTrue === null || t.ifFalse === null)) {
+    const propRef = D.member(D.id("props"), slot.propName)
+    if (t.ifTrue !== null && t.ifFalse === null) {
+      return D.ifStmt(propRef, [attrWriteStmt(slot, elExpr, D.str(t.ifTrue))])
+    }
+    if (t.ifTrue === null && t.ifFalse !== null) {
+      return D.ifStmt(D.not(propRef), [
+        attrWriteStmt(slot, elExpr, D.str(t.ifFalse)),
+      ])
+    }
+    return null
+  }
+  return attrWriteStmt(slot, elExpr, attrValueExpr(slot))
+}
+
+/**
+ * Patch-side write for an attr slot. For ternaries with a `null` branch
+ * and `setAttribute` strategy, transitions in the null direction emit
+ * `removeAttribute` so the attribute fully disappears (matching how the
+ * mount path skipped it). `className` strategy keeps the simple
+ * assignment with `""` for null since `el.className = ""` is faster than
+ * `removeAttribute("class")` on Blink and visually equivalent for the
+ * bench's `:not(.danger)` selectors.
+ */
+function patchAttrStmt(
+  slot: import("./ir").IRAttrSlot,
+  elExpr: D.JsExpr,
+): D.JsStmt {
+  const t = slot.ternary
+  if (
+    t !== undefined &&
+    slot.strategy === "setAttribute" &&
+    (t.ifTrue === null || t.ifFalse === null)
+  ) {
+    const propRef = D.member(D.id("props"), slot.propName)
+    const setStmt = (val: string) =>
+      D.exprStmt(
+        D.call(D.member(elExpr, "setAttribute"), [D.str(slot.attrName), D.str(val)]),
+      )
+    const removeStmt = D.exprStmt(
+      D.call(D.member(elExpr, "removeAttribute"), [D.str(slot.attrName)]),
+    )
+    if (t.ifTrue !== null && t.ifFalse === null) {
+      return D.ifStmt(propRef, [setStmt(t.ifTrue)], [removeStmt])
+    }
+    if (t.ifTrue === null && t.ifFalse !== null) {
+      return D.ifStmt(propRef, [removeStmt], [setStmt(t.ifFalse)])
+    }
+  }
+  return attrWriteStmt(slot, elExpr, attrValueExpr(slot))
+}
+
+function attrWriteStmt(
+  slot: import("./ir").IRAttrSlot,
+  elExpr: D.JsExpr,
+  value: D.JsExpr,
+): D.JsStmt {
+  if (slot.strategy === "className") {
+    return D.exprStmt(D.assign(D.member(elExpr, "className"), value))
+  }
+  return D.exprStmt(
+    D.call(D.member(elExpr, "setAttribute"), [D.str(slot.attrName), value]),
+  )
 }
 
 /**
@@ -305,21 +383,8 @@ function emitMount(
 
     if (slot.kind === "attr") {
       const elName = ensureElementRef(slot.path)
-      const value = attrValueExpr(slot)
-      if (slot.strategy === "className") {
-        stmts.push(
-          D.exprStmt(D.assign(D.member(D.id(elName), "className"), value)),
-        )
-      } else {
-        stmts.push(
-          D.exprStmt(
-            D.call(D.member(D.id(elName), "setAttribute"), [
-              D.str(slot.attrName),
-              value,
-            ]),
-          ),
-        )
-      }
+      const stmt = mountAttrStmts(slot, D.id(elName))
+      if (stmt !== null) stmts.push(stmt)
       registerSlotProps(slot)
       continue
     }
@@ -493,13 +558,7 @@ function emitSlotWrite(
   }
   if (slot.kind === "attr") {
     const el = stateElementExpr(slots, slot.path)
-    const value = attrValueExpr(slot)
-    if (slot.strategy === "className") {
-      return D.exprStmt(D.assign(D.member(el, "className"), value))
-    }
-    return D.exprStmt(
-      D.call(D.member(el, "setAttribute"), [D.str(slot.attrName), value]),
-    )
+    return patchAttrStmt(slot, el)
   }
   if (slot.kind === "component") {
     const compSlot = slot as IRComponentSlot

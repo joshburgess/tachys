@@ -51,8 +51,12 @@ export interface IRAttrSlot {
   attrName: string
   strategy: "className" | "setAttribute"
   propName: string
-  /** Simple ternary-of-string-literals fast path, no composite needed. */
-  ternary?: { ifTrue: string; ifFalse: string }
+  /**
+   * Simple ternary fast path. Either branch may be `null`, meaning the
+   * attribute is omitted on mount when that branch is taken (and cleared
+   * on patch). At least one branch is a string.
+   */
+  ternary?: { ifTrue: string | null; ifFalse: string | null }
   composite?: IRCompositeExpr
 }
 

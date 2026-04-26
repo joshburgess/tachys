@@ -100,11 +100,12 @@ export interface AttrSlot {
   propName: string
   /**
    * Present when the value is a ConditionalExpression whose branches are
-   * both StringLiteral. Mount/patch emit `props.x ? "a" : "b"` instead of
-   * `String(props.x)`. Common for the `className={selected ? "danger" : ""}`
-   * Krausest pattern.
+   * both string-or-null. `null` (also `false` / `undefined`) means "omit
+   * the attribute on mount and clear it on patch" so the bench source can
+   * write `className={selected ? "danger" : null}` and avoid the per-row
+   * `class=""` write that otherwise costs paint time on Krausest 08.
    */
-  ternary?: { ifTrue: string; ifFalse: string }
+  ternary?: { ifTrue: string | null; ifFalse: string | null }
   /**
    * Present when the value is a template literal reading one or more props.
    * Takes precedence over `ternary`.
@@ -1345,20 +1346,33 @@ function resolveTernaryAttr(
     | BabelCore.types.Expression
     | BabelCore.types.JSXEmptyExpression,
   ctx: CompileContext,
-): { propName: string; ifTrue: string; ifFalse: string } | null {
+): { propName: string; ifTrue: string | null; ifFalse: string | null } | null {
   const t = ctx.t
   if (!t.isConditionalExpression(expr)) return null
-  const consequent = expr.consequent
-  const alternate = expr.alternate
-  if (!t.isStringLiteral(consequent)) return null
-  if (!t.isStringLiteral(alternate)) return null
+  const ifTrue = ternaryBranchValue(expr.consequent, t)
+  if (ifTrue === undefined) return null
+  const ifFalse = ternaryBranchValue(expr.alternate, t)
+  if (ifFalse === undefined) return null
+  // At least one branch must be a real string. `(cond ? null : null)`
+  // contributes nothing and falls through to other resolvers.
+  if (ifTrue === null && ifFalse === null) return null
   const propName = resolvePropExpr(expr.test, ctx)
   if (propName === null) return null
-  return {
-    propName,
-    ifTrue: consequent.value,
-    ifFalse: alternate.value,
-  }
+  return { propName, ifTrue, ifFalse }
+}
+
+// `null` / `undefined` / `false` in either branch maps to "omit attribute"
+// on mount and "clear" on patch. Returns `undefined` for anything we cannot
+// constant-fold.
+function ternaryBranchValue(
+  node: BabelCore.types.Expression,
+  t: typeof BabelCore.types,
+): string | null | undefined {
+  if (t.isStringLiteral(node)) return node.value
+  if (t.isNullLiteral(node)) return null
+  if (t.isBooleanLiteral(node) && node.value === false) return null
+  if (t.isIdentifier(node) && node.name === "undefined") return null
+  return undefined
 }
 
 /**
