@@ -179,6 +179,7 @@ const plugin = declareT<PluginState>((api) => {
                 kind: "hoisted",
                 makePropsId: `_lp$${name}_${index}`,
                 keyOfId: `_lk$${name}_${index}`,
+                makePropsOrDiffId: `_lpd$${name}_${index}`,
               })
             } else {
               listHelpers.set(index, { kind: "inline" })
@@ -212,6 +213,10 @@ const plugin = declareT<PluginState>((api) => {
           state.pendingHelpers.push({
             id: h.keyOfId,
             init: parseExpr(h.keyOfSrc),
+          })
+          state.pendingHelpers.push({
+            id: h.makePropsOrDiffId,
+            init: parseExpr(h.makePropsOrDiffSrc),
           })
         }
 

@@ -1330,9 +1330,10 @@ describe("babel-plugin-tachys (v0.8 keyed list compilation)", () => {
     expect(out).toMatch(
       /_mountList\(props\.items,\s*Row,\s*_lp\$List_0,\s*_lk\$List_0,\s*_lm\d+\)/,
     )
-    // Patch calls _patchList under the items dirty-check.
+    // Patch calls _patchList under the items dirty-check, with the
+    // hoisted makePropsOrDiff helper passed alongside makeProps and keyOf.
     expect(out).toMatch(
-      /_patchList\(state\._ls\d+,\s*props\.items,\s*Row,\s*_lp\$List_0,\s*_lk\$List_0\)/,
+      /_patchList\(state\._ls\d+,\s*props\.items,\s*Row,\s*_lp\$List_0,\s*_lk\$List_0,\s*_lpd\$List_0\)/,
     )
   })
 

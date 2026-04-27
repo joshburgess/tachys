@@ -23,7 +23,12 @@ import type {
 } from "./ir"
 
 type ListHelpers =
-  | { kind: "hoisted"; makePropsId: string; keyOfId: string }
+  | {
+      kind: "hoisted"
+      makePropsId: string
+      keyOfId: string
+      makePropsOrDiffId: string
+    }
   | { kind: "inline" }
 
 export interface EmitInput {
@@ -45,6 +50,8 @@ export interface EmitResult {
     makePropsSrc: string
     keyOfId: string
     keyOfSrc: string
+    makePropsOrDiffId: string
+    makePropsOrDiffSrc: string
   }>
 }
 
@@ -284,6 +291,57 @@ function listMakePropsExpr(slot: IRListSlot): D.JsExpr {
   }
   stmts.push(D.ret(D.id("__r")))
   return D.arrowBlock([slot.itemParamName, "__r = {}"], stmts)
+}
+
+/**
+ * `(item, __r, __p) => { ... }` — patch-path makeProps with a third
+ * `prevState` parameter. Computes each prop value into a local, compares
+ * the locals to the corresponding `__p.<name>` slot, and returns `null`
+ * when every slot already matches (no work needed). Otherwise writes the
+ * locals into `__r` (allocating an empty object on first use) and returns
+ * it. The list runtime calls this in place of `makeProps + patchFn` to
+ * skip the per-row patch closure on no-op rows entirely.
+ *
+ * For an empty propSpec list, returns the trivial `(_, __r) => __r ?? {}`
+ * since there's nothing to compare; it's never actually invoked because
+ * the runtime needs propSpecs to do anything useful, but keeping it
+ * defined avoids special-casing in the call site.
+ */
+function listMakePropsOrDiffExpr(slot: IRListSlot): D.JsExpr {
+  const stmts: D.JsStmt[] = []
+  if (slot.propSpecs.length === 0) {
+    stmts.push(D.ret(D.id("__r")))
+    return D.arrowBlock([slot.itemParamName, "__r = {}", "__p"], stmts)
+  }
+  slot.propSpecs.forEach((p, i) => {
+    stmts.push(D.vdecl("const", `__v${i}`, rawExpr(p.valueSrc)))
+  })
+  let bail: D.JsExpr = D.bin(
+    "===",
+    D.member(D.id("__p"), slot.propSpecs[0]!.name),
+    D.id("__v0"),
+  )
+  for (let i = 1; i < slot.propSpecs.length; i++) {
+    bail = D.and(
+      bail,
+      D.bin(
+        "===",
+        D.member(D.id("__p"), slot.propSpecs[i]!.name),
+        D.id(`__v${i}`),
+      ),
+    )
+  }
+  stmts.push(D.ifStmt(bail, [D.ret(D.nullLit)]))
+  stmts.push(
+    D.exprStmt(D.assign(D.id("__r"), D.or(D.id("__r"), D.obj([])))),
+  )
+  slot.propSpecs.forEach((p, i) => {
+    stmts.push(
+      D.exprStmt(D.assign(D.member(D.id("__r"), p.name), D.id(`__v${i}`))),
+    )
+  })
+  stmts.push(D.ret(D.id("__r")))
+  return D.arrowBlock([slot.itemParamName, "__r", "__p"], stmts)
 }
 
 /**
@@ -612,6 +670,10 @@ function emitSlotWrite(
       helpers.kind === "hoisted"
         ? D.id(helpers.makePropsId)
         : listMakePropsExpr(listSlot)
+    const makePropsOrDiff =
+      helpers.kind === "hoisted"
+        ? D.id(helpers.makePropsOrDiffId)
+        : listMakePropsOrDiffExpr(listSlot)
     const keyOf =
       helpers.kind === "hoisted"
         ? D.id(helpers.keyOfId)
@@ -622,6 +684,7 @@ function emitSlotWrite(
       D.id(listSlot.componentRef),
       makeProps,
       keyOf,
+      makePropsOrDiff,
     ]
     if (listSlot.parentPropDeps.length > 0) {
       args.push(
@@ -851,6 +914,8 @@ export function emitComponent(
       makePropsSrc: listMakePropsExpr(slot).src,
       keyOfId: helpers.keyOfId,
       keyOfSrc: listKeyOfExpr(slot).src,
+      makePropsOrDiffId: helpers.makePropsOrDiffId,
+      makePropsOrDiffSrc: listMakePropsOrDiffExpr(slot).src,
     })
   })
 

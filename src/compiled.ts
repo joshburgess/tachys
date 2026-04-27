@@ -322,6 +322,11 @@ export function _patchList<Item>(
   Child: CompiledComponent,
   makeProps: (item: Item, scratch?: Record<string, unknown>) => Record<string, unknown>,
   keyOf: (item: Item) => unknown,
+  makePropsOrDiff?: (
+    item: Item,
+    scratch: Record<string, unknown> | undefined,
+    prevState: Record<string, unknown>,
+  ) => Record<string, unknown> | null,
   parentDeps?: unknown[],
 ): void {
   const prev = list.instances
@@ -414,14 +419,31 @@ export function _patchList<Item>(
   // than allocating one per row. User-supplied compare still uses the
   // memo-style path (compare reads prev.props so we can't mutate it).
   let scratch = list.scratchProps
+  // When `makePropsOrDiff` is supplied (compiler-emitted patch helper),
+  // call it instead of `makeProps + patchFn`: it computes the new prop
+  // values into locals, compares them to `existing.state`, and returns
+  // `null` when every slot already matches — letting us skip both the
+  // scratch writes and the patchFn's leading-bail call entirely. For
+  // the select_row case (one parent dep changed, ~998/1000 rows
+  // unaffected) this drops the per-row no-op work from ~25ns to ~10ns.
   const patchInPlace =
     compare === undefined
-      ? (existing: ListInstance, item: Item): void => {
-          if (canSkipOnIdentity && existing.item === item) return
-          scratch = makeProps(item, scratch)
-          patchFn(existing.state, scratch)
-          existing.item = item
-        }
+      ? makePropsOrDiff !== undefined
+        ? (existing: ListInstance, item: Item): void => {
+            if (canSkipOnIdentity && existing.item === item) return
+            const result = makePropsOrDiff(item, scratch, existing.state)
+            if (result !== null) {
+              scratch = result
+              patchFn(existing.state, scratch)
+            }
+            existing.item = item
+          }
+        : (existing: ListInstance, item: Item): void => {
+            if (canSkipOnIdentity && existing.item === item) return
+            scratch = makeProps(item, scratch)
+            patchFn(existing.state, scratch)
+            existing.item = item
+          }
       : (existing: ListInstance, item: Item): void => {
           if (canSkipOnIdentity && existing.item === item) return
           const props = makeProps(item)
