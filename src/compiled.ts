@@ -455,31 +455,93 @@ export function _patchList<Item>(
         }
 
   // ── 1. Prefix trim ────────────────────────────────────────────────────
+  // When parent deps changed but the item array is the same reference (the
+  // common select_row pattern: store mutates `selected` and renders with
+  // the same `data` array), every row has `existing.item === items[i]`.
+  // keyOf is pure, so identity-equal items have identity-equal keys; skip
+  // the call. The patch body still has to run because parent-dep-derived
+  // props may have changed.
+  //
+  // The compiler-emitted no-compare path inlines the patch body here to
+  // drop the patchInPlace closure dispatch across the prefix run (the hot
+  // path on select_row, where 1000 rows traverse this loop per click).
   let i = 0
   const minLen = prevLen < nextLen ? prevLen : nextLen
-  while (i < minLen) {
-    const item = items[i] as Item
-    const key = keyOf(item)
-    const existing = prev[i]!
-    if (existing.key !== key) break
-    patchInPlace(existing, item)
-    next[i] = existing
-    i++
+  if (compare === undefined && makePropsOrDiff !== undefined) {
+    while (i < minLen) {
+      const existing = prev[i]!
+      const item = items[i] as Item
+      if (existing.item !== item) {
+        const key = keyOf(item)
+        if (existing.key !== key) break
+      } else if (canSkipOnIdentity) {
+        next[i] = existing
+        i++
+        continue
+      }
+      const result = makePropsOrDiff(item, scratch, existing.state)
+      if (result !== null) {
+        scratch = result
+        patchFn(existing.state, scratch)
+      }
+      existing.item = item
+      next[i] = existing
+      i++
+    }
+  } else {
+    while (i < minLen) {
+      const item = items[i] as Item
+      const existing = prev[i]!
+      if (existing.item !== item) {
+        const key = keyOf(item)
+        if (existing.key !== key) break
+      }
+      patchInPlace(existing, item)
+      next[i] = existing
+      i++
+    }
   }
   const prefixEnd = i
 
   // ── 2. Suffix trim ────────────────────────────────────────────────────
   let e1 = prevLen - 1
   let e2 = nextLen - 1
-  while (e1 >= prefixEnd && e2 >= prefixEnd) {
-    const item = items[e2] as Item
-    const key = keyOf(item)
-    const existing = prev[e1]!
-    if (existing.key !== key) break
-    patchInPlace(existing, item)
-    next[e2] = existing
-    e1--
-    e2--
+  if (compare === undefined && makePropsOrDiff !== undefined) {
+    while (e1 >= prefixEnd && e2 >= prefixEnd) {
+      const existing = prev[e1]!
+      const item = items[e2] as Item
+      if (existing.item !== item) {
+        const key = keyOf(item)
+        if (existing.key !== key) break
+      } else if (canSkipOnIdentity) {
+        next[e2] = existing
+        e1--
+        e2--
+        continue
+      }
+      const result = makePropsOrDiff(item, scratch, existing.state)
+      if (result !== null) {
+        scratch = result
+        patchFn(existing.state, scratch)
+      }
+      existing.item = item
+      next[e2] = existing
+      e1--
+      e2--
+    }
+  } else {
+    while (e1 >= prefixEnd && e2 >= prefixEnd) {
+      const item = items[e2] as Item
+      const existing = prev[e1]!
+      if (existing.item !== item) {
+        const key = keyOf(item)
+        if (existing.key !== key) break
+      }
+      patchInPlace(existing, item)
+      next[e2] = existing
+      e1--
+      e2--
+    }
   }
 
   // ── 3a. Pure removal case: next middle is empty ──────────────────────
@@ -548,11 +610,15 @@ export function _patchList<Item>(
     const srcIdx = prefixEnd + m
     const item = items[srcIdx] as Item
     const prevAtPos = prev[srcIdx]!
-    if (canSkipOnIdentity && prevAtPos.item === item) {
+    if (prevAtPos.item === item) {
       used[m] = 1
       matchedCount++
       oldIndex[m] = srcIdx
       next[srcIdx] = prevAtPos
+      // Identity match: key is trivially equal so skip keyOf. When parent
+      // deps changed, parent-dep-derived props may still differ; patchFn
+      // still has to run.
+      if (!canSkipOnIdentity) patchInPlace(prevAtPos, item)
       continue
     }
     const key = keyOf(item)
