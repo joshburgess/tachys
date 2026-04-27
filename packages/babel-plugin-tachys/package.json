@@ -37,11 +37,11 @@
     "@babel/generator": "^7.24.0",
     "@babel/helper-plugin-utils": "^7.20.0",
     "@babel/parser": "^7.24.0",
+    "@babel/plugin-syntax-jsx": "^7.24.0",
     "compiler-core-tachys": "workspace:*"
   },
   "devDependencies": {
     "@babel/core": "^7.24.0",
-    "@babel/plugin-syntax-jsx": "^7.24.0",
     "@babel/types": "^7.24.0",
     "@rollup/plugin-node-resolve": "^16.0.0",
     "@types/babel__core": "^7.20.0",
