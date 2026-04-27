@@ -317,6 +317,35 @@ function emitMount(
   const stateEntries: D.ObjEntry[] = []
   const seenPropNames = new Set<string>()
 
+  // Path-binding cache: maps pathKey -> binding name. Lets `pathFrom` walk
+  // from the deepest already-bound ancestor so paths that share a prefix
+  // (e.g. [1,0] and [1,0,0]) avoid re-traversing from _root.
+  const pathBindings = new Map<string, string>()
+  pathBindings.set("", "_root")
+
+  function pathFrom(path: readonly number[]): D.JsExpr {
+    if (path.length === 0) return D.id("_root")
+    for (let len = path.length - 1; len >= 0; len--) {
+      const ancestor = pathBindings.get(pathKey(path.slice(0, len)))
+      if (ancestor === undefined) continue
+      let expr: D.JsExpr = D.id(ancestor)
+      for (let j = len; j < path.length; j++) {
+        expr = D.member(expr, "firstChild")
+        const stepIdx = path[j]!
+        for (let k = 0; k < stepIdx; k++) {
+          expr = D.member(expr, "nextSibling")
+        }
+      }
+      return expr
+    }
+    return pathExpr("_root", path)
+  }
+
+  function registerPath(path: readonly number[], name: string): void {
+    if (path.length === 0) return
+    pathBindings.set(pathKey(path), name)
+  }
+
   // Element-ref cache: multiple attrs on the same path share one _eN.
   const elementRefs = new Map<string, string>()
   let elementCounter = 0
@@ -327,7 +356,8 @@ function emitMount(
     if (existing !== undefined) return existing
     const name = `_e${elementCounter++}`
     elementRefs.set(key, name)
-    stmts.push(D.vdecl("const", name, pathExpr("_root", path)))
+    stmts.push(D.vdecl("const", name, pathFrom(path)))
+    registerPath(path, name)
     return name
   }
 
@@ -349,7 +379,8 @@ function emitMount(
     if (slot.kind === "text") {
       const refName = slotRefName(i)
       if (slot.placeholder === "prealloc") {
-        stmts.push(D.vdecl("const", refName, pathExpr("_root", slot.path)))
+        stmts.push(D.vdecl("const", refName, pathFrom(slot.path)))
+        registerPath(slot.path, refName)
         stmts.push(
           D.exprStmt(
             D.assign(D.member(D.id(refName), "data"), textValueExpr(slot)),
@@ -357,7 +388,8 @@ function emitMount(
         )
       } else {
         const markerName = `_m${i}`
-        stmts.push(D.vdecl("const", markerName, pathExpr("_root", slot.path)))
+        stmts.push(D.vdecl("const", markerName, pathFrom(slot.path)))
+        registerPath(slot.path, markerName)
         stmts.push(
           D.vdecl(
             "const",
@@ -406,7 +438,8 @@ function emitMount(
       const keyOf =
         helpers.kind === "hoisted" ? D.id(helpers.keyOfId) : listKeyOfExpr(slot)
 
-      stmts.push(D.vdecl("const", markerName, pathExpr("_root", slot.path)))
+      stmts.push(D.vdecl("const", markerName, pathFrom(slot.path)))
+      registerPath(slot.path, markerName)
 
       const args: D.JsExpr[] = [
         D.member(D.id(propsName), slot.arrayPropName),
@@ -431,7 +464,8 @@ function emitMount(
     if (slot.kind === "cond") {
       const markerName = `_cdm${i}`
       const instName = condInstanceName(i)
-      stmts.push(D.vdecl("const", markerName, pathExpr("_root", slot.path)))
+      stmts.push(D.vdecl("const", markerName, pathFrom(slot.path)))
+      registerPath(slot.path, markerName)
       stmts.push(
         D.vdecl(
           "const",
@@ -452,7 +486,8 @@ function emitMount(
     if (slot.kind === "alt") {
       const markerName = `_alm${i}`
       const instName = altInstanceName(i)
-      stmts.push(D.vdecl("const", markerName, pathExpr("_root", slot.path)))
+      stmts.push(D.vdecl("const", markerName, pathFrom(slot.path)))
+      registerPath(slot.path, markerName)
       stmts.push(
         D.vdecl(
           "const",
@@ -475,7 +510,8 @@ function emitMount(
     if (slot.kind === "component") {
       const markerName = `_cm${i}`
       const instName = componentInstanceName(i)
-      stmts.push(D.vdecl("const", markerName, pathExpr("_root", slot.path)))
+      stmts.push(D.vdecl("const", markerName, pathFrom(slot.path)))
+      registerPath(slot.path, markerName)
       stmts.push(
         D.vdecl(
           "const",
