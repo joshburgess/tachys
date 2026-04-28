@@ -511,8 +511,9 @@ export function _patchList<Item>(
   // parent deps changed, no row's props could have changed. Locate the
   // removed position by identity compare and skip keyOf/patchInPlace
   // entirely across the 999 preserved rows. We mutate `prev` in place
-  // (which is `list.instances`) instead of slice+splice to save one
-  // Array(prevLen) allocation per delete.
+  // (which is `list.instances`) using copyWithin + length truncation
+  // rather than splice, since splice allocates a 1-element return array
+  // we never use.
   if (!parentChanged && nextLen === prevLen - 1 && prevLen > 0) {
     let r = 0
     while (r < nextLen && (items[r] as Item) === prev[r]!.item) r++
@@ -529,7 +530,8 @@ export function _patchList<Item>(
     if (ok) {
       const removed = prev[r]!
       parent.removeChild(removed.dom)
-      prev.splice(r, 1)
+      if (r < nextLen) prev.copyWithin(r, r + 1)
+      prev.length = nextLen
       // Maintain keyToInst incrementally: drop just the one removed entry.
       // The remaining entries still point at live instances at correct keys.
       if (list.keyToInst !== null) list.keyToInst.delete(removed.key)
