@@ -290,6 +290,16 @@ export function _mountList<Item>(
   const parent = anchor.parentNode as Node
   const n = items.length
   const instances: ListInstance[] = new Array(n)
+  // Detach `parent` from its grandparent for the duration of the mount
+  // when the row count is large enough to matter. Blink's style/layout
+  // engine does substantially less work attributing dirtiness to nodes
+  // that aren't currently in the document, and reattaching once at the
+  // end produces a single layout/paint cycle instead of N incremental
+  // ones. The 64-row threshold keeps small mounts on the original path
+  // (the detach/reattach has a fixed cost that loses on tiny lists).
+  const grandparent = n >= 64 ? parent.parentNode : null
+  const nextSib = grandparent ? parent.nextSibling : null
+  if (grandparent) grandparent.removeChild(parent)
   // When the child has no _compare hook, the patch path never reads
   // `inst.props`. Two consequences worth exploiting on a 10k mount:
   //   • Let `makeProps` reuse a single scratch across rows. The first
@@ -334,6 +344,7 @@ export function _mountList<Item>(
       instances[i] = inst
     }
   }
+  if (grandparent) grandparent.insertBefore(parent, nextSib)
   return {
     instances,
     anchor,

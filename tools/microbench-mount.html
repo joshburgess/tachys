@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Mount microbench</title>
+  <link href="/Users/joshburgess/code/js-framework-benchmark/css/currentStyle.css" rel="stylesheet">
+</head>
+<body>
+  <div class="container">
+    <table class="table table-hover table-striped test-data">
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
+  <pre id="out"></pre>
+  <script>
+    const N = 10000;
+    const adjectives = ['pretty','large','big','small','tall','short','long','handsome','plain','quaint'];
+    const colors = ['red','yellow','blue','green','pink','brown','purple','black','white','orange'];
+    const nouns = ['table','chair','house','bbq','desk','car','pony','cookie','sandwich','burger'];
+    function items(n) {
+      const arr = new Array(n);
+      let id = 1;
+      for (let i = 0; i < n; i++) {
+        arr[i] = {
+          id: id++,
+          label: adjectives[i % 10] + ' ' + colors[(i * 7) % 10] + ' ' + nouns[(i * 13) % 10],
+        };
+      }
+      return arr;
+    }
+
+    function clearTbody() {
+      const tb = document.getElementById('tbody');
+      tb.textContent = '';
+      // Force layout reset
+      void tb.offsetHeight;
+    }
+
+    // Method A: cloneNode + setData + per-row insertBefore (mimics tachys)
+    function mountClone(itemsArr) {
+      const tb = document.getElementById('tbody');
+      const tpl = document.createElement('template');
+      tpl.innerHTML = '<tr><td class="col-md-1"> </td><td class="col-md-4"><a> </a></td><td class="col-md-1"><a><span class="glyphicon glyphicon-remove" aria-hidden="true"></span></a></td><td class="col-md-6"></td></tr>';
+      const proto = tpl.content.firstChild;
+      const onSelect = (e) => { e.preventDefault(); };
+      const onRemove = (e) => { e.preventDefault(); };
+      for (let i = 0; i < itemsArr.length; i++) {
+        const it = itemsArr[i];
+        const tr = proto.cloneNode(true);
+        const td0Text = tr.firstChild.firstChild;
+        td0Text.data = String(it.id);
+        const a = tr.firstChild.nextSibling.firstChild;
+        a.firstChild.data = it.label;
+        const a2 = tr.firstChild.nextSibling.nextSibling.firstChild;
+        a.onclick = onSelect;
+        a2.onclick = onRemove;
+        tb.appendChild(tr);
+      }
+    }
+
+    // Method B: build giant HTML string, single innerHTML, then walk children
+    function mountInnerHTML(itemsArr) {
+      const tb = document.getElementById('tbody');
+      const parts = new Array(itemsArr.length);
+      const escape = (s) => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+      for (let i = 0; i < itemsArr.length; i++) {
+        const it = itemsArr[i];
+        parts[i] = '<tr><td class="col-md-1">' + it.id + '</td><td class="col-md-4"><a>' + escape(it.label) + '</a></td><td class="col-md-1"><a><span class="glyphicon glyphicon-remove" aria-hidden="true"></span></a></td><td class="col-md-6"></td></tr>';
+      }
+      tb.innerHTML = parts.join('');
+      const onSelect = (e) => { e.preventDefault(); };
+      const onRemove = (e) => { e.preventDefault(); };
+      const rows = tb.children;
+      for (let i = 0; i < rows.length; i++) {
+        const tr = rows[i];
+        tr.children[1].firstChild.onclick = onSelect;
+        tr.children[2].firstChild.onclick = onRemove;
+      }
+    }
+
+    // Method E: detach tbody, mount, reattach
+    function mountCloneDetached(itemsArr) {
+      const tb = document.getElementById('tbody');
+      const tplPar = tb.parentNode;
+      tplPar.removeChild(tb);
+      const tpl = document.createElement('template');
+      tpl.innerHTML = '<tr><td class="col-md-1"> </td><td class="col-md-4"><a> </a></td><td class="col-md-1"><a><span class="glyphicon glyphicon-remove" aria-hidden="true"></span></a></td><td class="col-md-6"></td></tr>';
+      const proto = tpl.content.firstChild;
+      const onSelect = (e) => { e.preventDefault(); };
+      const onRemove = (e) => { e.preventDefault(); };
+      for (let i = 0; i < itemsArr.length; i++) {
+        const it = itemsArr[i];
+        const tr = proto.cloneNode(true);
+        tr.firstChild.firstChild.data = String(it.id);
+        const a = tr.firstChild.nextSibling.firstChild;
+        a.firstChild.data = it.label;
+        const a2 = tr.firstChild.nextSibling.nextSibling.firstChild;
+        a.onclick = onSelect;
+        a2.onclick = onRemove;
+        tb.appendChild(tr);
+      }
+      tplPar.appendChild(tb);
+    }
+
+    // Method F: clone with WeakMap delegation (no per-element listeners)
+    let __delegationInstalled = false;
+    let __rowMap;
+    function ensureDelegation() {
+      if (__delegationInstalled) return;
+      __delegationInstalled = true;
+      __rowMap = new WeakMap();
+      document.addEventListener('click', (e) => {
+        let n = e.target;
+        while (n && n.nodeName !== 'TR') n = n.parentNode;
+        if (!n) return;
+        const state = __rowMap.get(n);
+        if (state) state.onclick(e);
+      });
+    }
+    function mountCloneDelegated(itemsArr) {
+      ensureDelegation();
+      const tb = document.getElementById('tbody');
+      const tpl = document.createElement('template');
+      tpl.innerHTML = '<tr><td class="col-md-1"> </td><td class="col-md-4"><a> </a></td><td class="col-md-1"><a><span class="glyphicon glyphicon-remove" aria-hidden="true"></span></a></td><td class="col-md-6"></td></tr>';
+      const proto = tpl.content.firstChild;
+      const onSelect = (e) => { e.preventDefault(); };
+      const onRemove = (e) => { e.preventDefault(); };
+      for (let i = 0; i < itemsArr.length; i++) {
+        const it = itemsArr[i];
+        const tr = proto.cloneNode(true);
+        tr.firstChild.firstChild.data = String(it.id);
+        const a = tr.firstChild.nextSibling.firstChild;
+        a.firstChild.data = it.label;
+        __rowMap.set(tr, { onclick: onSelect, onSelect, onRemove });
+        tb.appendChild(tr);
+      }
+    }
+
+    // Method D: clone but without per-row onclick (delegated)
+    function mountCloneNoHandlers(itemsArr) {
+      const tb = document.getElementById('tbody');
+      const tpl = document.createElement('template');
+      tpl.innerHTML = '<tr><td class="col-md-1"> </td><td class="col-md-4"><a> </a></td><td class="col-md-1"><a><span class="glyphicon glyphicon-remove" aria-hidden="true"></span></a></td><td class="col-md-6"></td></tr>';
+      const proto = tpl.content.firstChild;
+      for (let i = 0; i < itemsArr.length; i++) {
+        const it = itemsArr[i];
+        const tr = proto.cloneNode(true);
+        tr.firstChild.firstChild.data = String(it.id);
+        const a = tr.firstChild.nextSibling.firstChild;
+        a.firstChild.data = it.label;
+        tb.appendChild(tr);
+      }
+    }
+
+    // Method C: build DocumentFragment with cloneNode (mimics tachys with fragment)
+    function mountFragment(itemsArr) {
+      const tb = document.getElementById('tbody');
+      const tpl = document.createElement('template');
+      tpl.innerHTML = '<tr><td class="col-md-1"> </td><td class="col-md-4"><a> </a></td><td class="col-md-1"><a><span class="glyphicon glyphicon-remove" aria-hidden="true"></span></a></td><td class="col-md-6"></td></tr>';
+      const proto = tpl.content.firstChild;
+      const frag = document.createDocumentFragment();
+      const onSelect = (e) => { e.preventDefault(); };
+      const onRemove = (e) => { e.preventDefault(); };
+      for (let i = 0; i < itemsArr.length; i++) {
+        const it = itemsArr[i];
+        const tr = proto.cloneNode(true);
+        tr.firstChild.firstChild.data = String(it.id);
+        const a = tr.firstChild.nextSibling.firstChild;
+        a.firstChild.data = it.label;
+        const a2 = tr.firstChild.nextSibling.nextSibling.firstChild;
+        a.onclick = onSelect;
+        a2.onclick = onRemove;
+        frag.appendChild(tr);
+      }
+      tb.appendChild(frag);
+    }
+
+    // Run a single trial and return { script, totalToPaint }
+    async function trial(fn, itemsArr) {
+      clearTbody();
+      await new Promise((r) => requestAnimationFrame(() => r()));
+      await new Promise((r) => requestAnimationFrame(() => r()));
+      const t0 = performance.now();
+      fn(itemsArr);
+      const t1 = performance.now();
+      // Wait two RAFs for paint to complete
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
+      const t2 = performance.now();
+      return { script: t1 - t0, total: t2 - t0 };
+    }
+
+    async function run() {
+      const out = document.getElementById('out');
+      const arr = items(N);
+      const methods = { clone: mountClone, cloneNoHnd: mountCloneNoHandlers, cloneDetach: mountCloneDetached, cloneDeleg: mountCloneDelegated, frag: mountFragment, innerhtml: mountInnerHTML };
+
+      // Warmup
+      for (const k of Object.keys(methods)) {
+        for (let w = 0; w < 3; w++) await trial(methods[k], arr);
+      }
+
+      const trials = 15;
+      const results = {};
+      for (const k of Object.keys(methods)) {
+        results[k] = { script: [], total: [] };
+        for (let i = 0; i < trials; i++) {
+          const t = await trial(methods[k], arr);
+          results[k].script.push(t.script);
+          results[k].total.push(t.total);
+        }
+      }
+      const median = (a) => a.slice().sort((x,y)=>x-y)[Math.floor(a.length/2)];
+      let s = '';
+      for (const k of Object.keys(results)) {
+        const r = results[k];
+        const sortedTotal = r.total.slice().sort((a,b)=>a-b);
+        s += `${k.padEnd(12)} script median ${median(r.script).toFixed(2)}ms, total median ${median(r.total).toFixed(2)}ms (paint ~${(median(r.total)-median(r.script)).toFixed(2)}ms), total min ${sortedTotal[0].toFixed(2)} max ${sortedTotal[sortedTotal.length-1].toFixed(2)}\n`;
+      }
+      out.textContent = s;
+      window.__results = results;
+    }
+    run();
+  </script>
+</body>
+</html>
