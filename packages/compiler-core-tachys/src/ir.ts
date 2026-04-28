@@ -109,6 +109,15 @@ export interface IRListSlot {
   }>
   /** Parent prop names across key + prop entries, deduped in first-seen order. */
   parentPropDeps: string[]
+  /**
+   * Indices into `parentPropDeps` for parent props that participate in a
+   * `<keyExpr> === <props.X>` boolean propSpec, where `<keyExpr>` is
+   * structurally identical to this slot's keyExpr. When such a parent dep
+   * changes from `oldVal` to `newVal`, only the rows whose key equals
+   * `oldVal` or `newVal` need patching, so the runtime can skip the full
+   * iteration when only these deps changed.
+   */
+  selectionDepIndices: number[]
 }
 
 export interface IRCondSlot {

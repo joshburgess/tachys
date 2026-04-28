@@ -690,6 +690,11 @@ function emitSlotWrite(
       args.push(
         D.arr(listSlot.parentPropDeps.map((d) => D.member(D.id("props"), d))),
       )
+      if (listSlot.selectionDepIndices.length > 0) {
+        args.push(
+          D.arr(listSlot.selectionDepIndices.map((i) => D.num(i))),
+        )
+      }
     }
     return D.exprStmt(D.call(D.id("_patchList"), args))
   }

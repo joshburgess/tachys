@@ -208,6 +208,11 @@ export interface ListSlot {
    * deduped in first-seen order. Empty for item-only lists.
    */
   parentPropDeps: string[]
+  /**
+   * Indices into `parentPropDeps` for parent props that participate in a
+   * `<keyExpr> === <props.X>` propSpec. See IRListSlot.selectionDepIndices.
+   */
+  selectionDepIndices: number[]
 }
 
 /**
@@ -542,6 +547,46 @@ function resolveListExpr(
   }
   if (keyExpr === null) return null
 
+  // Detect propSpecs of form `<keyExpr> === props.<X>` (or symmetric). When
+  // parent prop X changes, only the row whose key equals the old or new
+  // value of X can have its boolean prop flip; the rest are unchanged.
+  // This lets the runtime skip the full row iteration when only such
+  // "selection" deps changed.
+  const selectionDepSet = new Set<number>()
+  for (const spec of propSpecs) {
+    const ve = spec.valueExpr
+    if (!t.isBinaryExpression(ve)) continue
+    if (ve.operator !== "===" && ve.operator !== "==") continue
+    const lhs = ve.left
+    const rhs = ve.right
+    let depName: string | null = null
+    if (
+      t.isExpression(lhs) &&
+      t.isNodesEquivalent(lhs, keyExpr) &&
+      isParentPropRef(rhs, t)
+    ) {
+      depName = (rhs as BabelCore.types.MemberExpression).property
+        ? ((rhs as BabelCore.types.MemberExpression).property as BabelCore.types.Identifier).name
+        : null
+    } else if (
+      t.isExpression(rhs) &&
+      t.isNodesEquivalent(rhs, keyExpr) &&
+      isParentPropRef(lhs, t)
+    ) {
+      depName = (lhs as BabelCore.types.MemberExpression).property
+        ? ((lhs as BabelCore.types.MemberExpression).property as BabelCore.types.Identifier).name
+        : null
+    }
+    if (depName === null) continue
+    const idx = parentPropDeps.indexOf(depName)
+    if (idx < 0) continue
+    selectionDepSet.add(idx)
+  }
+  const selectionDepIndices: number[] = []
+  for (let i = 0; i < parentPropDeps.length; i++) {
+    if (selectionDepSet.has(i)) selectionDepIndices.push(i)
+  }
+
   return {
     kind: "list",
     componentRef,
@@ -550,7 +595,19 @@ function resolveListExpr(
     keyExpr,
     propSpecs,
     parentPropDeps,
+    selectionDepIndices,
   }
+}
+
+function isParentPropRef(
+  node: BabelCore.types.Node,
+  t: typeof BabelCore.types,
+): boolean {
+  if (!t.isMemberExpression(node)) return false
+  if (node.computed) return false
+  if (!t.isIdentifier(node.object) || node.object.name !== "props") return false
+  if (!t.isIdentifier(node.property)) return false
+  return true
 }
 
 /**

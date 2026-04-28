@@ -257,6 +257,20 @@ export interface CompiledListState {
    * first iteration allocates it via the makeProps default parameter.
    */
   scratchProps: Record<string, unknown> | undefined
+  /**
+   * Reference to the items array passed to the previous mount/patch. Used
+   * by the targeted-row fast path to detect "no shape change" without
+   * iterating: when the user mutates a prop like `selectedId` but reuses
+   * the same `data` array, `items === lastItemsRef` confirms positions
+   * and item identities are unchanged.
+   */
+  lastItemsRef: ArrayLike<unknown> | null
+  /**
+   * Lazily built key->instance map for the targeted-row fast path. Built
+   * the first time the targeted path is taken, and cleared whenever a
+   * shape-changing patch runs (insertion, removal, or LIS reorder).
+   */
+  keyToInst: Map<unknown, ListInstance> | null
 }
 
 /**
@@ -297,6 +311,8 @@ export function _mountList<Item>(
     parent,
     lastParentDeps: parentDeps === undefined ? null : parentDeps.slice(),
     scratchProps: undefined,
+    lastItemsRef: items,
+    keyToInst: null,
   }
 }
 
@@ -328,6 +344,7 @@ export function _patchList<Item>(
     prevState: Record<string, unknown>,
   ) => Record<string, unknown> | null,
   parentDeps?: unknown[],
+  selectionDepIndices?: number[],
 ): void {
   const prev = list.instances
   const prevLen = prev.length
@@ -336,25 +353,90 @@ export function _patchList<Item>(
   const anchor = list.anchor
   const compare = Child._compare
   const patchFn = Child.patch
+  const lastDeps = list.lastParentDeps
 
   let parentChanged = false
+  let onlySelectionChanged = false
+  let anyDepChanged = false
   if (parentDeps !== undefined) {
-    const last = list.lastParentDeps
-    if (last === null || last.length !== parentDeps.length) {
+    if (lastDeps === null || lastDeps.length !== parentDeps.length) {
       parentChanged = true
+      anyDepChanged = true
     } else {
+      onlySelectionChanged =
+        selectionDepIndices !== undefined && selectionDepIndices.length > 0
       for (let d = 0; d < parentDeps.length; d++) {
-        if (last[d] !== parentDeps[d]) {
+        if (lastDeps[d] !== parentDeps[d]) {
           parentChanged = true
-          break
+          anyDepChanged = true
+          if (
+            onlySelectionChanged &&
+            selectionDepIndices!.indexOf(d) < 0
+          ) {
+            onlySelectionChanged = false
+          }
         }
       }
     }
-    if (parentChanged) {
-      const snap = new Array(parentDeps.length)
-      for (let d = 0; d < parentDeps.length; d++) snap[d] = parentDeps[d]
-      list.lastParentDeps = snap
+  }
+
+  // Targeted-row fast path. When only "selection" parent deps changed (each
+  // appears in a `<keyExpr> === props.X` propSpec) and the items array is
+  // the same reference as last render, the only rows whose props can have
+  // changed are those whose key equals the old or new value of any changed
+  // selection dep. Look them up in keyToInst and patch only those, skipping
+  // the prefix-trim entirely.
+  let scratch = list.scratchProps
+  if (
+    onlySelectionChanged &&
+    anyDepChanged &&
+    items === list.lastItemsRef &&
+    prevLen === nextLen &&
+    compare === undefined &&
+    makePropsOrDiff !== undefined &&
+    lastDeps !== null
+  ) {
+    let keyToInst = list.keyToInst
+    if (keyToInst === null) {
+      keyToInst = new Map<unknown, ListInstance>()
+      for (let i = 0; i < prevLen; i++) {
+        keyToInst.set(prev[i]!.key, prev[i]!)
+      }
+      list.keyToInst = keyToInst
     }
+    for (let s = 0; s < selectionDepIndices!.length; s++) {
+      const idx = selectionDepIndices![s]!
+      const prevVal = lastDeps[idx]
+      const nextVal = parentDeps![idx]
+      if (prevVal === nextVal) continue
+      const prevInst = keyToInst.get(prevVal)
+      if (prevInst !== undefined) {
+        const result = makePropsOrDiff(prevInst.item as Item, scratch, prevInst.state)
+        if (result !== null) {
+          scratch = result
+          patchFn(prevInst.state, scratch)
+        }
+      }
+      const nextInst = keyToInst.get(nextVal)
+      if (nextInst !== undefined) {
+        const result = makePropsOrDiff(nextInst.item as Item, scratch, nextInst.state)
+        if (result !== null) {
+          scratch = result
+          patchFn(nextInst.state, scratch)
+        }
+      }
+    }
+    const snap = new Array(parentDeps!.length)
+    for (let d = 0; d < parentDeps!.length; d++) snap[d] = parentDeps![d]
+    list.lastParentDeps = snap
+    list.scratchProps = scratch
+    return
+  }
+
+  if (parentChanged && parentDeps !== undefined) {
+    const snap = new Array(parentDeps.length)
+    for (let d = 0; d < parentDeps.length; d++) snap[d] = parentDeps[d]
+    list.lastParentDeps = snap
   }
 
   // Fast-path: if the item object is identity-equal to the last render's
@@ -379,6 +461,8 @@ export function _patchList<Item>(
       range.deleteContents()
     }
     list.instances = []
+    list.lastItemsRef = items
+    list.keyToInst = null
     return
   }
 
@@ -406,6 +490,8 @@ export function _patchList<Item>(
       const result = prev.slice()
       result.splice(r, 1)
       list.instances = result
+      list.lastItemsRef = items
+      list.keyToInst = null
       return
     }
   }
@@ -418,7 +504,7 @@ export function _patchList<Item>(
   // and we can reuse a scratch props object across iterations rather
   // than allocating one per row. User-supplied compare still uses the
   // memo-style path (compare reads prev.props so we can't mutate it).
-  let scratch = list.scratchProps
+  // (`scratch` was hoisted above for the targeted-row fast path.)
   // When `makePropsOrDiff` is supplied (compiler-emitted patch helper),
   // call it instead of `makeProps + patchFn`: it computes the new prop
   // values into locals, compares them to `existing.state`, and returns
@@ -546,15 +632,19 @@ export function _patchList<Item>(
 
   // ── 3a. Pure removal case: next middle is empty ──────────────────────
   if (prefixEnd > e2) {
+    const removedCount = e1 - prefixEnd + 1
     for (let k = prefixEnd; k <= e1; k++) parent.removeChild(prev[k]!.dom)
     list.instances = next
     list.scratchProps = scratch
+    list.lastItemsRef = items
+    if (removedCount > 0) list.keyToInst = null
     return
   }
 
   // ── 3b. Pure insertion case: prev middle is empty ────────────────────
   if (prefixEnd > e1) {
     const nextSib: Node = e1 + 1 < prevLen ? prev[e1 + 1]!.dom : anchor
+    let insertedCount = 0
     for (let k = prefixEnd; k <= e2; k++) {
       const item = items[k] as Item
       const key = keyOf(item)
@@ -569,9 +659,12 @@ export function _patchList<Item>(
       }
       parent.insertBefore(mounted.dom, nextSib)
       next[k] = inst
+      insertedCount++
     }
     list.instances = next
     list.scratchProps = scratch
+    list.lastItemsRef = items
+    if (insertedCount > 0) list.keyToInst = null
     return
   }
 
@@ -720,6 +813,8 @@ export function _patchList<Item>(
     }
     list.instances = next
     list.scratchProps = scratch
+    list.lastItemsRef = items
+    // 2-element swap: keys preserved; keyToInst stays valid.
     return
   }
 
@@ -767,6 +862,10 @@ export function _patchList<Item>(
 
   list.instances = next
   list.scratchProps = scratch
+  list.lastItemsRef = items
+  // LIS reorder may have inserted/removed rows; invalidate the key map
+  // so the targeted-row fast path rebuilds it on next access.
+  list.keyToInst = null
 }
 
 /**

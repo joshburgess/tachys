@@ -1677,10 +1677,11 @@ describe("babel-plugin-tachys (v0.8 keyed list compilation)", () => {
       '</ul>',
     )
 
-    // Flip selection from 1 -> 2 keeping items identity stable. Each row
-    // enters Row.patch (which increments the counter), but the leading
-    // all-equal bail short-circuits row 3 before any DOM write. Total
-    // counted patches are 1 List.patch + 3 Row.patch calls.
+    // Flip selection from 1 -> 2 keeping items identity stable. The
+    // compiler detects that `selected` has the form `<keyExpr> === selectedId`
+    // and the runtime takes the targeted-row fast path: only the rows whose
+    // key equals the old or new value of `selectedId` enter Row.patch. Row
+    // 3 is never visited. Total counted patches are 1 List.patch + 2 Row.patch.
     patchCallCount = 0
     List.patch(inst.state, { items, selectedId: 2 })
     expect((inst.dom as Element).outerHTML).toBe(
@@ -1691,7 +1692,7 @@ describe("babel-plugin-tachys (v0.8 keyed list compilation)", () => {
         '<!---->' +
       '</ul>',
     )
-    expect(patchCallCount).toBe(4)
+    expect(patchCallCount).toBe(3)
   })
 })
 

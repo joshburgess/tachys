@@ -139,6 +139,7 @@ function slotFromIR(t: T, slot: IRSlot): Slot {
           valueExpr: parseSrc(p.valueSrc),
         })),
         parentPropDeps: [...slot.parentPropDeps],
+        selectionDepIndices: [...slot.selectionDepIndices],
       }
     case "cond":
       return {
