@@ -510,8 +510,9 @@ export function _patchList<Item>(
   // new array is the old one with exactly one item spliced out and no
   // parent deps changed, no row's props could have changed. Locate the
   // removed position by identity compare and skip keyOf/patchInPlace
-  // entirely across the 999 preserved rows. Using prev.slice() + splice
-  // lets V8 run the copy as a native memcpy, avoiding a hand-written loop.
+  // entirely across the 999 preserved rows. We mutate `prev` in place
+  // (which is `list.instances`) instead of slice+splice to save one
+  // Array(prevLen) allocation per delete.
   if (!parentChanged && nextLen === prevLen - 1 && prevLen > 0) {
     let r = 0
     while (r < nextLen && (items[r] as Item) === prev[r]!.item) r++
@@ -526,12 +527,13 @@ export function _patchList<Item>(
       }
     }
     if (ok) {
-      parent.removeChild(prev[r]!.dom)
-      const result = prev.slice()
-      result.splice(r, 1)
-      list.instances = result
+      const removed = prev[r]!
+      parent.removeChild(removed.dom)
+      prev.splice(r, 1)
+      // Maintain keyToInst incrementally: drop just the one removed entry.
+      // The remaining entries still point at live instances at correct keys.
+      if (list.keyToInst !== null) list.keyToInst.delete(removed.key)
       list.lastItemsRef = items
-      list.keyToInst = null
       return
     }
   }
