@@ -136,28 +136,51 @@ function attrValueExpr(slot: import("./ir").IRAttrSlot): D.JsExpr {
 
 /**
  * Mount-side write for an attr slot. Returns one statement, or `null` to
- * skip writing entirely. A ternary with a `null` branch lets us avoid the
- * per-row `el.className = ""` write that otherwise leaves a `class=""`
- * attribute on cloneNode'd rows (see Krausest 08 paint regression).
+ * skip writing entirely. A ternary with a "skippable" branch lets us avoid
+ * the per-row `el.className = ""` write that otherwise leaves a `class=""`
+ * attribute on cloneNode'd rows (see Krausest 07 / 08 paint regression).
+ *
+ * For the `className` strategy, an empty-string branch is also skippable:
+ * `class=""` and a missing `class` attribute are visually equivalent for
+ * CSS selectors, and skipping the write avoids the per-row style
+ * invalidation that the assignment otherwise triggers.
  */
 function mountAttrStmts(
   slot: import("./ir").IRAttrSlot,
   elExpr: D.JsExpr,
 ): D.JsStmt | null {
   const t = slot.ternary
-  if (t !== undefined && (t.ifTrue === null || t.ifFalse === null)) {
+  if (t !== undefined) {
+    const trueSkip = isMountSkippableBranch(t.ifTrue, slot.strategy)
+    const falseSkip = isMountSkippableBranch(t.ifFalse, slot.strategy)
+    if (trueSkip && falseSkip) return null
     const propRef = D.member(D.id("props"), slot.propName)
-    if (t.ifTrue !== null && t.ifFalse === null) {
-      return D.ifStmt(propRef, [attrWriteStmt(slot, elExpr, D.str(t.ifTrue))])
+    if (!trueSkip && falseSkip) {
+      return D.ifStmt(propRef, [attrWriteStmt(slot, elExpr, D.str(t.ifTrue!))])
     }
-    if (t.ifTrue === null && t.ifFalse !== null) {
+    if (trueSkip && !falseSkip) {
       return D.ifStmt(D.not(propRef), [
-        attrWriteStmt(slot, elExpr, D.str(t.ifFalse)),
+        attrWriteStmt(slot, elExpr, D.str(t.ifFalse!)),
       ])
     }
-    return null
   }
   return attrWriteStmt(slot, elExpr, attrValueExpr(slot))
+}
+
+/**
+ * A ternary branch is "skippable" on mount when emitting nothing produces
+ * the same DOM state as emitting it. `null`/`undefined`/`false` always
+ * qualify (the IR maps them all to `null`). For `className` specifically,
+ * `""` also qualifies since cloneNode'd elements have no class attribute
+ * and `class=""` is selector-equivalent.
+ */
+function isMountSkippableBranch(
+  branch: string | null,
+  strategy: import("./ir").IRAttrSlot["strategy"],
+): boolean {
+  if (branch === null) return true
+  if (strategy === "className" && branch === "") return true
+  return false
 }
 
 /**
