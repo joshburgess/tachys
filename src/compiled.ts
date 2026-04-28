@@ -290,20 +290,49 @@ export function _mountList<Item>(
   const parent = anchor.parentNode as Node
   const n = items.length
   const instances: ListInstance[] = new Array(n)
-  for (let i = 0; i < n; i++) {
-    const item = items[i] as Item
-    const props = makeProps(item)
-    const mounted = Child(props)
-    const key = keyOf(item)
-    const inst: ListInstance = {
-      key,
-      dom: mounted.dom,
-      state: mounted.state,
-      props,
-      item,
+  // When the child has no _compare hook, the patch path never reads
+  // `inst.props`. Two consequences worth exploiting on a 10k mount:
+  //   • Let `makeProps` reuse a single scratch across rows. The first
+  //     call seeds it (default arg `t={}`); subsequent calls overwrite
+  //     in place. Saves N-1 small object allocations.
+  //   • Set `inst.props = scratch` (undefined-aware): we still need a
+  //     reference there to keep the hidden class stable, but we don't
+  //     pay for fresh per-row props snapshots.
+  // For children with _compare, `inst.props` is read on every patch
+  // and must be a per-row snapshot, so fall back to the un-shared
+  // path.
+  const reuseScratch = Child._compare === undefined
+  if (reuseScratch) {
+    let scratch: Record<string, unknown> | undefined
+    for (let i = 0; i < n; i++) {
+      const item = items[i] as Item
+      scratch = makeProps(item, scratch)
+      const mounted = Child(scratch)
+      const inst: ListInstance = {
+        key: keyOf(item),
+        dom: mounted.dom,
+        state: mounted.state,
+        props: scratch,
+        item,
+      }
+      parent.insertBefore(mounted.dom, anchor)
+      instances[i] = inst
     }
-    parent.insertBefore(mounted.dom, anchor)
-    instances[i] = inst
+  } else {
+    for (let i = 0; i < n; i++) {
+      const item = items[i] as Item
+      const props = makeProps(item)
+      const mounted = Child(props)
+      const inst: ListInstance = {
+        key: keyOf(item),
+        dom: mounted.dom,
+        state: mounted.state,
+        props,
+        item,
+      }
+      parent.insertBefore(mounted.dom, anchor)
+      instances[i] = inst
+    }
   }
   return {
     instances,
