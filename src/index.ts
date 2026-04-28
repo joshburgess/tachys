@@ -35,6 +35,7 @@ export {
   _template,
   markCompiled,
 } from "./compiled"
+export { _attachEvent } from "./events"
 export type {
   CompiledAltState,
   CompiledComponent,

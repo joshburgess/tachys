@@ -227,6 +227,13 @@ function delegatedEventHandler(event: Event, eventName: string, rootContainer: E
       if (handlers != null) {
         const handler = handlers[eventName]
         if (handler !== undefined) {
+          // Override currentTarget so user handlers see the element the
+          // listener was conceptually attached to, not the root container
+          // where the native listener actually lives.
+          Object.defineProperty(event, "currentTarget", {
+            value: target,
+            configurable: true,
+          })
           handler.call(target, event)
 
           // Check if propagation was stopped
@@ -243,9 +250,74 @@ function delegatedEventHandler(event: Event, eventName: string, rootContainer: E
       if (handlers != null) {
         const handler = handlers[eventName]
         if (handler !== undefined) {
+          Object.defineProperty(event, "currentTarget", {
+            value: rootContainer,
+            configurable: true,
+          })
           handler.call(rootContainer, event)
         }
       }
+    }
+  })
+}
+
+/**
+ * Compiled-runtime event attach. Stores the handler on `el.__tachys` and
+ * lazily wires a single document-level listener per event type that walks
+ * up the DOM dispatching handlers it finds. Lets compiled components skip
+ * the per-element `el.onclick = fn` IDL-attribute write, which on Krausest
+ * 07_create10k saves ~6ms of paint-side work across 20k handler attaches.
+ *
+ * Non-bubbling events fall back to direct addEventListener (same as
+ * `attachEvent`).
+ *
+ * No rootContainer parameter: the compiler doesn't easily know it, and
+ * document is a fine default for SPAs. Mixed compiled + manual-API trees
+ * should ensure their root containers and document-delegated event sets
+ * don't both dispatch the same event on overlapping subtrees, since the
+ * two paths share `__tachys` storage (see events.ts:25).
+ */
+const docDelegated = new Set<string>()
+
+export function _attachEvent(el: Element, eventName: string, handler: EventListener): void {
+  if (NON_BUBBLING_EVENTS.has(eventName)) {
+    el.addEventListener(eventName, handler)
+    return
+  }
+  let handlers = el.__tachys
+  if (handlers == null) {
+    handlers = {}
+    el.__tachys = handlers
+  }
+  handlers[eventName] = handler
+  if (!docDelegated.has(eventName)) {
+    docDelegated.add(eventName)
+    document.addEventListener(eventName, docDelegatedHandler)
+  }
+}
+
+function docDelegatedHandler(event: Event): void {
+  batchedUpdates(() => {
+    const evName = event.type
+    let target: Node | null = event.target as Node | null
+    while (target !== null && target !== document) {
+      const handlers = (target as Element).__tachys
+      if (handlers != null) {
+        const handler = handlers[evName]
+        if (handler !== undefined) {
+          // Override currentTarget so user handlers can rely on it
+          // pointing at the element the listener was attached to (the
+          // standard React/native pattern). Native currentTarget would
+          // be `document` here because that's where the listener lives.
+          Object.defineProperty(event, "currentTarget", {
+            value: target,
+            configurable: true,
+          })
+          handler.call(target, event)
+          if (event.cancelBubble) return
+        }
+      }
+      target = target.parentNode
     }
   })
 }

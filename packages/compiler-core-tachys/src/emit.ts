@@ -628,18 +628,28 @@ function emitMount(
   stmts.push(D.vdecl("const", "state", D.obj(stateEntries)))
 
   // Event listener wrappers, installed after state is declared so the
-  // closure sees `state`. The inner call is wrapped in `_batched(...)` so
-  // setStates inside the handler skip the queueMicrotask(autoFlush)
-  // boundary and flush synchronously via flushSyncBatch -- collapsing the
-  // click / render trace into one FunctionCall, matching the delegated-
-  // event path.
+  // closure sees `state`. Routes through the runtime's _attachEvent helper
+  // which (for bubbling events) stores the handler on `el.__tachys` and
+  // ensures a single document-level delegated listener exists for that
+  // event type. Skipping the per-element `el.onclick = fn` IDL-attribute
+  // write avoids Blink's per-listener registration cost, which on Krausest
+  // 07_create10k saves several ms across 10k rows. The delegation handler
+  // already wraps dispatch in batchedUpdates, so the per-element wrapper
+  // doesn't need its own _batched call.
   for (const slot of slots) {
     if (slot.kind !== "event") continue
     const elName = ensureElementRef(slot.path)
+    const eventName = slot.domProp.startsWith("on")
+      ? slot.domProp.slice(2)
+      : slot.domProp
     const wrapper = rawExpr(
-      `function (ev) { return _batched(() => state.${slot.propName}.call(this, ev)); }`,
+      `function (ev) { return state.${slot.propName}.call(this, ev); }`,
     )
-    stmts.push(D.exprStmt(D.assign(D.member(D.id(elName), slot.domProp), wrapper)))
+    stmts.push(
+      D.exprStmt(
+        D.call(D.id("_attachEvent"), [D.id(elName), D.str(eventName), wrapper]),
+      ),
+    )
   }
 
   stmts.push(

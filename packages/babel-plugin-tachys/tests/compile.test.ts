@@ -564,7 +564,7 @@ describe("babel-plugin-tachys (v0.3 event handlers)", () => {
     expect(out).toContain('_template("<button>go</button>")')
     // Mount installs a state-closure wrapper so patch never rebinds the
     // DOM listener. The wrapper reads state.onSelect at dispatch time.
-    expect(out).toMatch(/_root\.onclick\s*=\s*function\s*\(ev\)/)
+    expect(out).toMatch(/_attachEvent\(_root,\s*"click",\s*function\s*\(ev\)/)
     expect(out).toContain("state.onSelect.call(this, ev)")
     // Patch updates state only.
     expect(out).toContain("state.onSelect !== props.onSelect")
@@ -582,7 +582,7 @@ describe("babel-plugin-tachys (v0.3 event handlers)", () => {
     expect(out).toContain('_template("<div><input></div>")')
     expect(out).toMatch(/_e0\s*=\s*_root\.firstChild/)
     // State-closure wrapper on the nested element.
-    expect(out).toMatch(/_e0\.oninput\s*=\s*function\s*\(ev\)/)
+    expect(out).toMatch(/_attachEvent\(_e0,\s*"input",\s*function\s*\(ev\)/)
     expect(out).toContain("state.onType.call(this, ev)")
   })
 
@@ -595,7 +595,7 @@ describe("babel-plugin-tachys (v0.3 event handlers)", () => {
     const out = transform(input)
     expect(out).toContain("_root.className = String(props.cls)")
     // Handler is state-closure-wrapped; no direct props.onSelect assignment.
-    expect(out).toMatch(/_root\.onclick\s*=\s*function\s*\(ev\)/)
+    expect(out).toMatch(/_attachEvent\(_root,\s*"click",\s*function\s*\(ev\)/)
     expect(out).toContain("state.onSelect.call(this, ev)")
     // `{label}` is the sole child of <td>, so it uses a prealloc text node:
     // navigate to it and write .data directly, no createTextNode.
@@ -749,14 +749,22 @@ describe("babel-plugin-tachys (runtime smoke)", () => {
       return t.content.firstElementChild!.firstElementChild!.firstElementChild as Element
     }
     const _batched = <T,>(f: () => T): T => f()
+    const _attachEvent = (
+      el: Element,
+      eventName: string,
+      handler: EventListener,
+    ): void => {
+      el.addEventListener(eventName, handler)
+    }
     const fn = new Function(
       "document",
       "markCompiled",
       "_template",
       "_batched",
+      "_attachEvent",
       `${stubbed}; return Row;`,
     )
-    const Row = fn(doc, markCompiled, _template, _batched) as {
+    const Row = fn(doc, markCompiled, _template, _batched, _attachEvent) as {
       mount: (p: Record<string, unknown>) => { dom: Element; state: Record<string, unknown> }
       patch: (s: Record<string, unknown>, p: Record<string, unknown>) => void
     }
