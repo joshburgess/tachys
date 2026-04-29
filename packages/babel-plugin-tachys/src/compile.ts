@@ -213,6 +213,16 @@ export interface ListSlot {
    * `<keyExpr> === <props.X>` propSpec. See IRListSlot.selectionDepIndices.
    */
   selectionDepIndices: number[]
+  /**
+   * True when this list is the last child of its parent template element.
+   * In that case the compiler skips emitting the `<!>` marker for the list,
+   * and `_mountList` receives the parent element directly instead of a
+   * comment anchor; rows are appended via `parent.appendChild`. Saves one
+   * DOM node per list and (more importantly) avoids the trailing comment
+   * sibling that was inflating Chromium's PrePaint/Layout cycle on
+   * mid-list `removeChild` (Krausest 06_remove-one-1k).
+   */
+  tailOfParent: boolean
 }
 
 /**
@@ -596,6 +606,7 @@ function resolveListExpr(
     propSpecs,
     parentPropDeps,
     selectionDepIndices,
+    tailOfParent: false,
   }
 }
 
@@ -1305,11 +1316,18 @@ function renderChildren(
         const isTextLike = (c: EffectiveChild | null): boolean =>
           c !== null && c.kind !== "element"
         if (isTextLike(prev) || isTextLike(next)) return null
+        // When the list is the last child of its parent template, skip the
+        // `<!>` marker. The runtime appends rows directly via the parent
+        // element. This shaves one DOM node per list and removes the
+        // trailing comment that was inflating Chromium's PrePaint/Layout
+        // pass on mid-list removeChild (Krausest 06_remove-one-1k).
+        const tailOfParent = next === null
         ctx.slots.push({
           ...list,
           path: [...parentPath, i],
+          tailOfParent,
         })
-        out += "<!>"
+        if (!tailOfParent) out += "<!>"
         continue
       }
 

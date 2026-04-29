@@ -511,7 +511,6 @@ function emitMount(
     }
 
     if (slot.kind === "list") {
-      const markerName = `_lm${i}`
       const instName = listInstanceName(i)
       const helpers = listHelpers.get(i)!
       const makeProps =
@@ -519,15 +518,27 @@ function emitMount(
       const keyOf =
         helpers.kind === "hoisted" ? D.id(helpers.keyOfId) : listKeyOfExpr(slot)
 
-      stmts.push(D.vdecl("const", markerName, pathFrom(slot.path)))
-      registerPath(slot.path, markerName)
+      // tailOfParent lists skip the `<!>` marker (it's not in the template
+      // HTML). Pass the parent element directly; the runtime detects a
+      // non-Comment node and appends rows via parent.appendChild.
+      let anchorArg: D.JsExpr
+      if (slot.tailOfParent) {
+        const parentPath = slot.path.slice(0, -1)
+        const parentName = ensureElementRef(parentPath)
+        anchorArg = D.id(parentName)
+      } else {
+        const markerName = `_lm${i}`
+        stmts.push(D.vdecl("const", markerName, pathFrom(slot.path)))
+        registerPath(slot.path, markerName)
+        anchorArg = D.id(markerName)
+      }
 
       const args: D.JsExpr[] = [
         D.member(D.id(propsName), slot.arrayPropName),
         D.id(slot.componentRef),
         makeProps,
         keyOf,
-        D.id(markerName),
+        anchorArg,
       ]
       if (slot.parentPropDeps.length > 0) {
         args.push(

@@ -1324,8 +1324,9 @@ describe("babel-plugin-tachys (v0.8 keyed list compilation)", () => {
       }
     `
     const out = transform(input)
-    // Template has a <!> comment anchor inside ul.
-    expect(out).toContain('_template("<ul><!></ul>")')
+    // List is the last (only) child of ul, so the <!> marker is skipped.
+    // Rows are appended directly via parent.appendChild.
+    expect(out).toContain('_template("<ul></ul>")')
     // Runtime imports got added.
     expect(out).toMatch(/import \{[^}]*_mountList[^}]*\} from "tachys"/)
     expect(out).toMatch(/import \{[^}]*_patchList[^}]*\} from "tachys"/)
@@ -1334,9 +1335,9 @@ describe("babel-plugin-tachys (v0.8 keyed list compilation)", () => {
     // one props object per row instead of allocating per iteration.
     expect(out).toMatch(/const _lp\$List_0 = \(item, __r = \{\}\) =>/)
     expect(out).toMatch(/const _lk\$List_0 = item => item\.id/)
-    // Mount calls _mountList with the resolved args.
+    // Mount calls _mountList with the parent element (_root) as anchor.
     expect(out).toMatch(
-      /_mountList\(props\.items,\s*Row,\s*_lp\$List_0,\s*_lk\$List_0,\s*_lm\d+\)/,
+      /_mountList\(props\.items,\s*Row,\s*_lp\$List_0,\s*_lk\$List_0,\s*_root\)/,
     )
     // Patch calls _patchList under the items dirty-check, with the
     // hoisted makePropsOrDiff helper passed alongside makeProps and keyOf.
@@ -1529,7 +1530,6 @@ describe("babel-plugin-tachys (v0.8 keyed list compilation)", () => {
         '<li class="row">one</li>' +
         '<li class="row">two</li>' +
         '<li class="row">three</li>' +
-        '<!---->' +
       '</ul>',
     )
 
@@ -1541,7 +1541,6 @@ describe("babel-plugin-tachys (v0.8 keyed list compilation)", () => {
         '<li class="row">three</li>' +
         '<li class="row">one</li>' +
         '<li class="row">two</li>' +
-        '<!---->' +
       '</ul>',
     )
 
@@ -1551,7 +1550,6 @@ describe("babel-plugin-tachys (v0.8 keyed list compilation)", () => {
       '<ul>' +
         '<li class="row">three</li>' +
         '<li class="row">two</li>' +
-        '<!---->' +
       '</ul>',
     )
 
@@ -1564,7 +1562,6 @@ describe("babel-plugin-tachys (v0.8 keyed list compilation)", () => {
         '<li class="row">three</li>' +
         '<li class="row">two</li>' +
         '<li class="row">four</li>' +
-        '<!---->' +
       '</ul>',
     )
 
@@ -1580,7 +1577,6 @@ describe("babel-plugin-tachys (v0.8 keyed list compilation)", () => {
         '<li class="row">THREE</li>' +
         '<li class="row">two</li>' +
         '<li class="row">four</li>' +
-        '<!---->' +
       '</ul>',
     )
   })
@@ -1681,7 +1677,6 @@ describe("babel-plugin-tachys (v0.8 keyed list compilation)", () => {
         '<li class="on">one</li>' +
         '<li class="off">two</li>' +
         '<li class="off">three</li>' +
-        '<!---->' +
       '</ul>',
     )
 
@@ -1697,7 +1692,6 @@ describe("babel-plugin-tachys (v0.8 keyed list compilation)", () => {
         '<li class="off">one</li>' +
         '<li class="on">two</li>' +
         '<li class="off">three</li>' +
-        '<!---->' +
       '</ul>',
     )
     expect(patchCallCount).toBe(3)

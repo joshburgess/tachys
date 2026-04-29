@@ -585,6 +585,208 @@ describe("_mountList / _patchList (LIS reconcile)", () => {
   })
 })
 
+describe("_mountList / _patchList (tail-of-parent: parent as anchor)", () => {
+  // When a list is the last child of its parent template element, the
+  // compiler emits no `<!>` marker. _mountList receives the parent element
+  // directly; rows are appended via parent.appendChild and `anchor` is null.
+  const tpl = _template("<li> </li>")
+  const Item = markCompiled(
+    (props: Record<string, unknown>) => {
+      const dom = tpl.cloneNode(true) as Element
+      const text = dom.firstChild as Text
+      text.data = String(props["label"])
+      return { dom, state: { text, id: props["id"], label: props["label"] } }
+    },
+    (state: Record<string, unknown>, props: Record<string, unknown>) => {
+      if (state["label"] !== props["label"]) {
+        ;(state["text"] as Text).data = String(props["label"])
+        state["label"] = props["label"]
+      }
+    },
+    (prev, next) => prev["id"] === next["id"] && prev["label"] === next["label"],
+  )
+
+  interface Row {
+    id: number
+    label: string
+  }
+  const makeProps = (r: Row): Record<string, unknown> => ({ id: r.id, label: r.label })
+  const keyOf = (r: Row): unknown => r.id
+
+  function setupList(rows: Row[]): {
+    parent: HTMLUListElement
+    list: ReturnType<typeof _mountList>
+  } {
+    const parent = document.createElement("ul")
+    // Pass parent element directly as anchor (no trailing comment marker).
+    const list = _mountList(rows, Item, makeProps, keyOf, parent)
+    return { parent, list }
+  }
+
+  function labelsOf(parent: Element): string[] {
+    return Array.from(parent.children).map((el) => el.textContent ?? "")
+  }
+
+  it("mounts initial rows directly under parent with no trailing marker", () => {
+    const { parent, list } = setupList([
+      { id: 1, label: "a" },
+      { id: 2, label: "b" },
+      { id: 3, label: "c" },
+    ])
+    expect(labelsOf(parent)).toEqual(["a", "b", "c"])
+    expect(parent.childNodes.length).toBe(3)
+    expect(list.instances).toHaveLength(3)
+    // No trailing comment.
+    expect(parent.lastChild).toBe(parent.children[2])
+  })
+
+  it("mounts empty list with no trailing marker", () => {
+    const { parent, list } = setupList([])
+    expect(parent.childNodes.length).toBe(0)
+    expect(list.instances).toHaveLength(0)
+  })
+
+  it("appends rows at the tail without an anchor", () => {
+    const rows: Row[] = [
+      { id: 1, label: "a" },
+      { id: 2, label: "b" },
+    ]
+    const { parent, list } = setupList(rows)
+    _patchList(
+      list,
+      [...rows, { id: 3, label: "c" }, { id: 4, label: "d" }],
+      Item,
+      makeProps,
+      keyOf,
+    )
+    expect(labelsOf(parent)).toEqual(["a", "b", "c", "d"])
+    expect(parent.childNodes.length).toBe(4)
+  })
+
+  it("inserts at head when anchor is null", () => {
+    const rows: Row[] = [
+      { id: 3, label: "c" },
+      { id: 4, label: "d" },
+    ]
+    const { parent, list } = setupList(rows)
+    _patchList(
+      list,
+      [{ id: 1, label: "a" }, { id: 2, label: "b" }, ...rows],
+      Item,
+      makeProps,
+      keyOf,
+    )
+    expect(labelsOf(parent)).toEqual(["a", "b", "c", "d"])
+    expect(parent.childNodes.length).toBe(4)
+  })
+
+  it("removes from middle when anchor is null", () => {
+    const rows: Row[] = [
+      { id: 1, label: "a" },
+      { id: 2, label: "b" },
+      { id: 3, label: "c" },
+      { id: 4, label: "d" },
+    ]
+    const { parent, list } = setupList(rows)
+    _patchList(list, [rows[0]!, rows[3]!], Item, makeProps, keyOf)
+    expect(labelsOf(parent)).toEqual(["a", "d"])
+    expect(parent.childNodes.length).toBe(2)
+  })
+
+  it("single-item removal fast path works without anchor (Krausest 06_remove case)", () => {
+    const rows: Row[] = Array.from({ length: 8 }, (_, i) => ({
+      id: i + 1,
+      label: `r${i + 1}`,
+    }))
+    const { parent, list } = setupList(rows)
+    const next = rows.slice()
+    next.splice(3, 1) // remove from middle
+    _patchList(list, next, Item, makeProps, keyOf)
+    expect(labelsOf(parent)).toEqual(["r1", "r2", "r3", "r5", "r6", "r7", "r8"])
+    expect(parent.childNodes.length).toBe(7)
+  })
+
+  it("clears all rows via textContent fast path when anchor is null", () => {
+    const rows: Row[] = Array.from({ length: 4 }, (_, i) => ({
+      id: i + 1,
+      label: `r${i + 1}`,
+    }))
+    const { parent, list } = setupList(rows)
+    _patchList(list, [], Item, makeProps, keyOf)
+    expect(parent.childNodes.length).toBe(0)
+  })
+
+  it("re-fills after clear when anchor is null", () => {
+    const { parent, list } = setupList([
+      { id: 1, label: "a" },
+      { id: 2, label: "b" },
+    ])
+    _patchList(list, [], Item, makeProps, keyOf)
+    expect(parent.childNodes.length).toBe(0)
+    _patchList(
+      list,
+      [
+        { id: 10, label: "x" },
+        { id: 11, label: "y" },
+        { id: 12, label: "z" },
+      ],
+      Item,
+      makeProps,
+      keyOf,
+    )
+    expect(labelsOf(parent)).toEqual(["x", "y", "z"])
+    expect(parent.childNodes.length).toBe(3)
+  })
+
+  it("reverses rows in place without an anchor", () => {
+    const rows: Row[] = Array.from({ length: 5 }, (_, i) => ({
+      id: i,
+      label: `i${i}`,
+    }))
+    const { parent, list } = setupList(rows)
+    _patchList(list, [...rows].reverse(), Item, makeProps, keyOf)
+    expect(labelsOf(parent)).toEqual(["i4", "i3", "i2", "i1", "i0"])
+  })
+
+  it("swaps two rows without an anchor", () => {
+    const rows: Row[] = Array.from({ length: 6 }, (_, i) => ({
+      id: i,
+      label: `i${i}`,
+    }))
+    const { parent, list } = setupList(rows)
+    const swapped = [...rows]
+    const tmp = swapped[1]!
+    swapped[1] = swapped[4]!
+    swapped[4] = tmp
+    _patchList(list, swapped, Item, makeProps, keyOf)
+    expect(labelsOf(parent)).toEqual(["i0", "i4", "i2", "i3", "i1", "i5"])
+  })
+
+  it("does not leave trailing comment after any patch sequence", () => {
+    const { parent, list } = setupList([
+      { id: 1, label: "a" },
+      { id: 2, label: "b" },
+    ])
+    _patchList(list, [{ id: 1, label: "a" }], Item, makeProps, keyOf)
+    _patchList(
+      list,
+      [
+        { id: 1, label: "a" },
+        { id: 5, label: "e" },
+        { id: 6, label: "f" },
+      ],
+      Item,
+      makeProps,
+      keyOf,
+    )
+    _patchList(list, [], Item, makeProps, keyOf)
+    // Every child must be an Element, never a Comment.
+    for (const node of Array.from(parent.childNodes)) {
+      expect(node.nodeType).toBe(1)
+    }
+  })
+})
+
 describe("_mountCond / _patchCond", () => {
   const tpl = _template("<span> </span>")
   let patchCalls = 0

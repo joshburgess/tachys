@@ -118,6 +118,14 @@ export interface IRListSlot {
    * iteration when only these deps changed.
    */
   selectionDepIndices: number[]
+  /**
+   * True when this list is the last child of its parent template element.
+   * The compiler skips the `<!>` marker and `_mountList` receives the parent
+   * element directly; rows are appended via `parent.appendChild`. Saves one
+   * DOM node and avoids the trailing comment that inflated Chromium's
+   * PrePaint/Layout pass on mid-list `removeChild`.
+   */
+  tailOfParent: boolean
 }
 
 export interface IRCondSlot {

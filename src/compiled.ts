@@ -246,7 +246,12 @@ export function _patchAlt(
  */
 export interface CompiledListState {
   instances: ListInstance[]
-  anchor: Comment
+  /**
+   * When the list is the last child of its parent template, the compiler
+   * skips emitting a `<!>` marker. `anchor` is null in that case and inserts
+   * use `parent.appendChild` (= insertBefore(node, null)) instead.
+   */
+  anchor: Comment | null
   parent: Node
   lastParentDeps: unknown[] | null
   /**
@@ -274,20 +279,24 @@ export interface CompiledListState {
 }
 
 /**
- * Mount a compiled keyed list. `anchor` is the comment placeholder inside
- * the parent DOM at the list's position; children get inserted before it.
- * `makeProps` and `keyOf` are module-scoped pure functions emitted by the
- * plugin; they must not close over per-render values.
+ * Mount a compiled keyed list. `anchorOrParent` is either a `Comment`
+ * placeholder at the list's position (children get inserted before it) or
+ * the parent element itself when the list is the last child of its parent
+ * (no `<!>` marker emitted; children get appended). `makeProps` and `keyOf`
+ * are module-scoped pure functions emitted by the plugin; they must not
+ * close over per-render values.
  */
 export function _mountList<Item>(
   items: ArrayLike<Item>,
   Child: CompiledComponent,
   makeProps: (item: Item, scratch?: Record<string, unknown>) => Record<string, unknown>,
   keyOf: (item: Item) => unknown,
-  anchor: Comment,
+  anchorOrParent: Node,
   parentDeps?: unknown[],
 ): CompiledListState {
-  const parent = anchor.parentNode as Node
+  const isComment = anchorOrParent.nodeType === 8
+  const parent = (isComment ? anchorOrParent.parentNode : anchorOrParent) as Node
+  const anchor = isComment ? (anchorOrParent as Comment) : null
   const n = items.length
   const instances: ListInstance[] = new Array(n)
   // Detach `parent` from its grandparent for the duration of the mount
@@ -491,13 +500,18 @@ export function _patchList<Item>(
   // Falls back to Range.deleteContents() when the list is surrounded by
   // other siblings we must preserve.
   if (nextLen === 0 && prevLen > 0) {
-    if (parent.firstChild === prev[0]!.dom && parent.lastChild === anchor) {
+    const lastIsListEnd =
+      anchor !== null
+        ? parent.lastChild === anchor
+        : parent.lastChild === prev[prevLen - 1]!.dom
+    if (parent.firstChild === prev[0]!.dom && lastIsListEnd) {
       ;(parent as Element).textContent = ""
-      parent.appendChild(anchor)
+      if (anchor !== null) parent.appendChild(anchor)
     } else {
       const range = document.createRange()
       range.setStartBefore(prev[0]!.dom)
-      range.setEndBefore(anchor)
+      if (anchor !== null) range.setEndBefore(anchor)
+      else range.setEndAfter(prev[prevLen - 1]!.dom)
       range.deleteContents()
     }
     list.instances = []
@@ -687,7 +701,7 @@ export function _patchList<Item>(
 
   // ── 3b. Pure insertion case: prev middle is empty ────────────────────
   if (prefixEnd > e1) {
-    const nextSib: Node = e1 + 1 < prevLen ? prev[e1 + 1]!.dom : anchor
+    const nextSib: Node | null = e1 + 1 < prevLen ? prev[e1 + 1]!.dom : anchor
     let insertedCount = 0
     for (let k = prefixEnd; k <= e2; k++) {
       const item = items[k] as Item
@@ -852,7 +866,7 @@ export function _patchList<Item>(
       const m = deferredMs![d]!
       const srcIdx = prefixEnd + m
       const inst = next[srcIdx]!
-      const nextSib: Node = srcIdx + 1 < nextLen ? next[srcIdx + 1]!.dom : anchor
+      const nextSib: Node | null = srcIdx + 1 < nextLen ? next[srcIdx + 1]!.dom : anchor
       parent.insertBefore(inst.dom, nextSib)
     }
     list.instances = next
@@ -872,10 +886,12 @@ export function _patchList<Item>(
     matchedCount === 0 &&
     prevMiddleLen === prevLen &&
     parent.firstChild === prev[0]!.dom &&
-    parent.lastChild === anchor
+    (anchor !== null
+      ? parent.lastChild === anchor
+      : parent.lastChild === prev[prevLen - 1]!.dom)
   ) {
     ;(parent as Element).textContent = ""
-    parent.appendChild(anchor)
+    if (anchor !== null) parent.appendChild(anchor)
   } else {
     // Remove prev middle items that weren't matched in the new middle.
     for (let k = prefixEnd; k <= e1; k++) {
@@ -894,7 +910,7 @@ export function _patchList<Item>(
   for (let m = middleLen - 1; m >= 0; m--) {
     const srcIdx = prefixEnd + m
     const inst = next[srcIdx]!
-    const nextSib: Node = srcIdx + 1 < nextLen ? next[srcIdx + 1]!.dom : anchor
+    const nextSib: Node | null = srcIdx + 1 < nextLen ? next[srcIdx + 1]!.dom : anchor
     if (oldIndex[m] === -1) {
       parent.insertBefore(inst.dom, nextSib)
     } else if (lisPtr < 0 || m !== lis[lisPtr]) {

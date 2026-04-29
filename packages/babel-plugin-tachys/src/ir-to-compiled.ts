@@ -140,6 +140,7 @@ function slotFromIR(t: T, slot: IRSlot): Slot {
         })),
         parentPropDeps: [...slot.parentPropDeps],
         selectionDepIndices: [...slot.selectionDepIndices],
+        tailOfParent: slot.tailOfParent,
       }
     case "cond":
       return {
