@@ -26,6 +26,16 @@ declare global {
   }
 }
 
+/**
+ * Per-event scratch slot. Set by an inner delegated listener to the root
+ * container it dispatched against, so an outer listener (another nested
+ * root, or the document-level listener) resumes the bubble walk above
+ * that ancestor and doesn't re-invoke handlers the inner pass already ran.
+ */
+interface TachysEvent extends Event {
+  __tachysStopAt?: Element
+}
+
 import { batchedUpdates } from "./scheduler"
 
 /**
@@ -220,7 +230,14 @@ function delegatedEventHandler(event: Event, eventName: string, rootContainer: E
   // Batch all setStates triggered by this event so the handler and render
   // run in a single EventDispatch FunctionCall (matches Inferno's behavior).
   batchedUpdates(() => {
-    let target = event.target as Element | null
+    // If an inner-fired delegated listener already dispatched up to some
+    // ancestor, resume from above it. Bubble phase fires inner-most root
+    // first, so this naturally chains across nested roots and the doc
+    // listener (see docDelegatedHandler).
+    const stopAt = (event as TachysEvent).__tachysStopAt
+    let target: Element | null = stopAt
+      ? (stopAt.parentElement as Element | null)
+      : (event.target as Element | null)
 
     while (target !== null && target !== rootContainer) {
       const handlers = target.__tachys
@@ -237,7 +254,10 @@ function delegatedEventHandler(event: Event, eventName: string, rootContainer: E
           handler.call(target, event)
 
           // Check if propagation was stopped
-          if (event.cancelBubble) return
+          if (event.cancelBubble) {
+            ;(event as TachysEvent).__tachysStopAt = rootContainer
+            return
+          }
         }
       }
 
@@ -258,6 +278,9 @@ function delegatedEventHandler(event: Event, eventName: string, rootContainer: E
         }
       }
     }
+
+    // Outer listeners (other roots, document) resume above this root.
+    ;(event as TachysEvent).__tachysStopAt = rootContainer
   })
 }
 
@@ -299,7 +322,12 @@ export function _attachEvent(el: Element, eventName: string, handler: EventListe
 function docDelegatedHandler(event: Event): void {
   batchedUpdates(() => {
     const evName = event.type
-    let target: Node | null = event.target as Node | null
+    // Inner root-level listeners may have already dispatched up to some
+    // ancestor; resume from above it so the same handler doesn't fire twice.
+    const stopAt = (event as TachysEvent).__tachysStopAt
+    let target: Node | null = stopAt
+      ? (stopAt.parentNode as Node | null)
+      : (event.target as Node | null)
     while (target !== null && target !== document) {
       const handlers = (target as Element).__tachys
       if (handlers != null) {
