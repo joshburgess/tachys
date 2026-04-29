@@ -299,14 +299,17 @@ export function _mountList<Item>(
   const anchor = isComment ? (anchorOrParent as Comment) : null
   const n = items.length
   const instances: ListInstance[] = new Array(n)
-  // Detach `parent` from its grandparent for the duration of the mount
-  // when the row count is large enough to matter. Blink's style/layout
-  // engine does substantially less work attributing dirtiness to nodes
-  // that aren't currently in the document, and reattaching once at the
-  // end produces a single layout/paint cycle instead of N incremental
-  // ones. The 64-row threshold keeps small mounts on the original path
-  // (the detach/reattach has a fixed cost that loses on tiny lists).
-  const grandparent = n >= 64 ? parent.parentNode : null
+  // Detach `parent` from its grandparent for the duration of the mount when
+  // the row count is in a sweet spot. For mid-size lists Blink does less
+  // per-insert style/layout work on a detached parent and runs one layout
+  // pass on reattach. The 64-row floor avoids detach overhead for tiny
+  // lists; the 2000-row ceiling keeps the very large mounts (e.g. 10k
+  // rows in 07_create10k) on the direct-insert path, where the single
+  // monster layout pass triggered by reattach is super-linear and ends
+  // up paying ~8ms more than incremental layout. Empirically:
+  //   - 1000 rows: detach wins by ~2ms (02_replace1k init).
+  //   - 10000 rows: detach loses by ~8ms (07_create10k mount).
+  const grandparent = n >= 64 && n <= 2000 ? parent.parentNode : null
   const nextSib = grandparent ? parent.nextSibling : null
   if (grandparent) grandparent.removeChild(parent)
   // When the child has no _compare hook, the patch path never reads
