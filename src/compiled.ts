@@ -899,6 +899,34 @@ export function _patchList<Item>(
     }
   }
 
+  // Full-replace fragment fast path (Krausest 02_replace1k). Every middle
+  // slot is a fresh mount with a detached .dom. Skip the LIS loop and
+  // batch-insert all rows via a DocumentFragment in DOM order — Chrome
+  // moves the fragment's children into the parent in one bulk operation,
+  // collapsing N insertBefore mutations into a single insert and a single
+  // layout/paint invalidation.
+  if (matchedCount === 0 && middleLen > 0) {
+    const frag = (parent.ownerDocument ?? document).createDocumentFragment()
+    for (let m = 0; m < middleLen; m++) {
+      frag.appendChild(next[prefixEnd + m]!.dom)
+    }
+    if (anchor !== null) {
+      parent.insertBefore(frag, anchor)
+    } else if (prefixEnd > 0) {
+      // There's a kept prefix and the list owns the tail. The kept suffix
+      // is empty (matchedCount === 0 implies no suffix matched), so
+      // appendChild lands every new row right after the prefix.
+      parent.appendChild(frag)
+    } else {
+      parent.appendChild(frag)
+    }
+    list.instances = next
+    list.scratchProps = scratch
+    list.lastItemsRef = items
+    list.keyToInst = null
+    return
+  }
+
   // LIS over oldIndex; entries tagged -1 (new nodes) are skipped inside
   // getLIS and always get an insertBefore below.
   const lis = getLIS(oldIndex)
