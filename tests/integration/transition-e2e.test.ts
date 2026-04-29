@@ -24,7 +24,7 @@ import {
   flushUpdates,
 } from "../../src"
 import { isCollecting, discardEffects } from "../../src/effects"
-import { Lane, setCurrentLane } from "../../src/scheduler"
+import { hasPendingWork, Lane, setCurrentLane } from "../../src/scheduler"
 
 let container: HTMLDivElement
 
@@ -53,19 +53,24 @@ function nextFrame(): Promise<void> {
 }
 
 /**
- * Wait until the DOM stabilizes (no changes for two consecutive frames).
- * Max iterations prevents infinite loops in case of bugs.
+ * Wait until the auto-scheduler has truly settled (no queued lane work,
+ * no in-flight transition render, no pending passive effects, no scheduled
+ * MessageChannel frame). The DOM-stability fallback catches anything
+ * mutating outside the scheduler's view. Max iterations is generous
+ * because under parallel-test contention the auto-scheduler's
+ * MessageChannel slices can be delayed by hundreds of ms.
  */
 async function waitForStable(
   el: HTMLElement = container,
-  maxIterations = 30,
+  maxIterations = 200,
 ): Promise<void> {
-  let prevHTML = ""
+  let prevHTML = el.innerHTML
   let stableCount = 0
   for (let i = 0; i < maxIterations; i++) {
     await nextFrame()
     const html = el.innerHTML
-    if (html === prevHTML) {
+    const idle = !hasPendingWork()
+    if (html === prevHTML && idle) {
       stableCount++
       if (stableCount >= 2) return
     } else {

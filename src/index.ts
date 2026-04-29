@@ -63,7 +63,14 @@ export { createRef } from "./ref"
 export { createRoot, hydrateRoot, render } from "./render"
 export type { Root } from "./render"
 export type { Ref, RefCallback, RefObject } from "./ref"
-export { _batched, flushUpdates, flushSyncWork, Lane, shouldYield } from "./scheduler"
+export {
+  _batched,
+  flushUpdates,
+  flushSyncWork,
+  hasPendingWork,
+  Lane,
+  shouldYield,
+} from "./scheduler"
 export type { Lane as LaneType } from "./scheduler"
 export { lazy } from "./suspense"
 export { unmount } from "./unmount"

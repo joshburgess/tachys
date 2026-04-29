@@ -141,18 +141,20 @@ let isMessageChannelAvailable = false
 // Use MessageChannel for yielding if available (browser), otherwise microtask (SSR/tests)
 if (typeof MessageChannel !== "undefined") {
   const channel = new MessageChannel()
-  let pendingCallback: (() => void) | null = null
+  // FIFO queue of pending callbacks. A single slot would race: independent
+  // schedule paths (autoFlush via scheduleCallback, drainPassiveEffects via
+  // scheduleAfterPaint) can both fire before the first onmessage drains, and
+  // a single-slot variable would silently drop the earlier callback. The
+  // queue keeps each scheduled function distinct.
+  const pendingCallbacks: Array<() => void> = []
 
   channel.port1.onmessage = () => {
-    if (pendingCallback !== null) {
-      const fn = pendingCallback
-      pendingCallback = null
-      fn()
-    }
+    const fn = pendingCallbacks.shift()
+    if (fn !== undefined) fn()
   }
 
   scheduleCallback = (fn: () => void) => {
-    pendingCallback = fn
+    pendingCallbacks.push(fn)
     channel.port2.postMessage(null)
   }
   isMessageChannelAvailable = true
@@ -164,7 +166,7 @@ if (typeof MessageChannel !== "undefined") {
   if (typeof requestAnimationFrame !== "undefined") {
     scheduleAfterPaint = (fn: () => void) => {
       requestAnimationFrame(() => {
-        pendingCallback = fn
+        pendingCallbacks.push(fn)
         channel.port2.postMessage(null)
       })
     }
@@ -596,6 +598,16 @@ function laneWorkPending(): boolean {
     laneQueues[Lane.Transition]!.length > 0 ||
     R.pending
   )
+}
+
+/**
+ * True when there's no scheduled lane work, no pending in-flight render,
+ * no queued passive (useEffect) callbacks, and no scheduled MessageChannel
+ * frame waiting to drive more work. Tests use this to wait for the
+ * auto-scheduler to truly settle instead of polling innerHTML.
+ */
+export function hasPendingWork(): boolean {
+  return laneWorkPending() || hasPendingPassiveEffects() || isScheduled || isFlushing
 }
 
 function processAllLanes(): void {
