@@ -18,13 +18,17 @@ import type { ChildFlag } from "./flags"
 import { ChildFlags, VNodeFlags } from "./flags"
 import { mountInternal } from "./mount"
 import { patchProp, setRootContainer } from "./patch"
-import { R, LANE_TRANSITION } from "./render-state"
 import { registerPatch } from "./reconcile-bridge"
 import { clearRef, setRef } from "./ref"
-import { shouldYield } from "./scheduler"
+import {
+  appendAfterWork,
+  LANE_TRANSITION,
+  R,
+  savePendingWork,
+  shouldYield,
+} from "./scheduler-shim"
 import { unmount, unmountChildren } from "./unmount"
 import type { DangerousInnerHTML, VNode } from "./vnode"
-import { appendAfterWork, savePendingWork } from "./work-loop"
 
 // --- className / text / innerHTML helpers ---
 //

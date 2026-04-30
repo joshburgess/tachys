@@ -29,7 +29,7 @@
  * execute immediately while Transition mutations remain queued.
  */
 
-import { R } from "./render-state"
+import { R } from "./scheduler-shim"
 
 // --- Effect tags (numeric for fast switch dispatch) ---
 

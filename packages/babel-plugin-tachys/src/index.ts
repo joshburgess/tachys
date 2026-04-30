@@ -60,6 +60,25 @@ interface PluginState extends PluginPass {
 }
 
 const PACKAGE_NAME = "tachys"
+const COMPILED_PACKAGE_NAME = "tachys/compiled"
+
+// Compiled-runtime helpers live in the `tachys/compiled` subpath so that
+// non-compiled apps don't ship them. Runtime helpers (`_attachEvent`,
+// `_batched`) stay on the bare `tachys` entry.
+const COMPILED_LOCALS: ReadonlySet<string> = new Set([
+  "markCompiled",
+  "_template",
+  "_mountList",
+  "_patchList",
+  "_mountCond",
+  "_patchCond",
+  "_mountAlt",
+  "_patchAlt",
+])
+
+function importSource(local: ImportLocal): string {
+  return COMPILED_LOCALS.has(local) ? COMPILED_PACKAGE_NAME : PACKAGE_NAME
+}
 
 type DeclareFn = <S extends PluginPass>(
   builder: (api: BabelCore.ConfigAPI & typeof BabelCore) => PluginObj<S>,
@@ -303,11 +322,12 @@ function ensureImport(
   local: ImportLocal,
 ): string {
   const name = reserveImport(state, local)
+  const source = importSource(local)
 
   let existingDecl: BabelCore.types.ImportDeclaration | null = null
   for (const node of path.node.body) {
     if (!t.isImportDeclaration(node)) continue
-    if (node.source.value !== PACKAGE_NAME) continue
+    if (node.source.value !== source) continue
     existingDecl = node
     for (const spec of node.specifiers) {
       if (!t.isImportSpecifier(spec)) continue
@@ -326,7 +346,7 @@ function ensureImport(
     return name
   }
 
-  const decl = t.importDeclaration([spec], t.stringLiteral(PACKAGE_NAME))
+  const decl = t.importDeclaration([spec], t.stringLiteral(source))
   path.unshiftContainer("body", decl)
   return name
 }

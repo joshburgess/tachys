@@ -55,7 +55,8 @@ export { __DEV__ } from "./dev"
 
 // --- react-dom ---
 
-export { createRoot, hydrateRoot, render } from "./render"
+export { createRoot, render } from "./render"
+export { hydrateRoot } from "./hydrate-root"
 export type { Root } from "./render"
 export { createPortal } from "./portal"
 export { flushUpdates as flushSync } from "./scheduler"

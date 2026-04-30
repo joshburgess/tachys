@@ -18,8 +18,8 @@
  *     source (`const Name = markCompiled(mount, patch, compare);`).
  *   - Splices all replacements back into the original source string
  *     in reverse order (so earlier spans don't shift).
- *   - Prepends `import { markCompiled, _template, ... } from "tachys";`
- *     (deduped against any existing tachys import), the template
+ *   - Prepends `import { markCompiled, _template, ... } from "tachys/compiled";`
+ *     (deduped against any existing tachys/compiled import), the template
  *     `const _tpl$Name_N = _template("...");` decls, and any hoisted
  *     list helpers.
  *
@@ -239,7 +239,7 @@ function buildPrelude(
   const hasExisting = findTachysImport(mod, source, base)
   const importDecl =
     hasExisting === null
-      ? `import { ${specifiers.join(", ")} } from "tachys";\n`
+      ? `import { ${specifiers.join(", ")} } from "tachys/compiled";\n`
       : ""
 
   const helperDecls = hoistedHelpers

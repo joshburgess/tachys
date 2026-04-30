@@ -33,13 +33,15 @@ import type { PortalFn } from "./portal"
 import type { CompiledComponent } from "./compiled"
 import type { RefObject } from "./ref"
 import {
+  appendAfterWork,
   getCurrentLane,
   Lane,
+  R,
   runAfterPaint,
   scheduleUpdate,
   setCurrentLane,
   signalTransitionSuspended,
-} from "./scheduler"
+} from "./scheduler-shim"
 import {
   isThenable,
   popSuspendHandler,
@@ -48,8 +50,6 @@ import {
 } from "./suspense"
 import type { ComponentFn } from "./vnode"
 import { VNode } from "./vnode"
-import { R } from "./render-state"
-import { appendAfterWork } from "./work-loop"
 
 // --- Component instance ---
 

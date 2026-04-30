@@ -21,7 +21,7 @@ import { ChildFlags, VNodeFlags } from "./flags"
 import { mountProps, setRootContainer } from "./patch"
 import { registerMount } from "./reconcile-bridge"
 import { setRef } from "./ref"
-import { R } from "./render-state"
+import { R } from "./scheduler-shim"
 import type { DangerousInnerHTML, VNode } from "./vnode"
 
 const SVG_NS = "http://www.w3.org/2000/svg"

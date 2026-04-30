@@ -170,6 +170,40 @@ export default [
     ],
     plugins,
   },
+  {
+    input: "src/compiled.ts",
+    output: [
+      {
+        file: "dist/compiled.js",
+        format: "es",
+        sourcemap: true,
+      },
+      {
+        file: "dist/compiled.cjs",
+        format: "cjs",
+        sourcemap: true,
+        exports: "named",
+      },
+    ],
+    plugins,
+  },
+  {
+    input: "src/hydrate-root.ts",
+    output: [
+      {
+        file: "dist/hydrate.js",
+        format: "es",
+        sourcemap: true,
+      },
+      {
+        file: "dist/hydrate.cjs",
+        format: "cjs",
+        sourcemap: true,
+        exports: "named",
+      },
+    ],
+    plugins,
+  },
   // --- Minified builds ---
   {
     input: "src/index.ts",
@@ -220,6 +254,24 @@ export default [
     input: "src/tags.ts",
     output: {
       file: "dist/tags.min.js",
+      format: "es",
+      sourcemap: true,
+    },
+    plugins: minPlugins,
+  },
+  {
+    input: "src/compiled.ts",
+    output: {
+      file: "dist/compiled.min.js",
+      format: "es",
+      sourcemap: true,
+    },
+    plugins: minPlugins,
+  },
+  {
+    input: "src/hydrate-root.ts",
+    output: {
+      file: "dist/hydrate.min.js",
       format: "es",
       sourcemap: true,
     },

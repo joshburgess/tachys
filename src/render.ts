@@ -10,12 +10,10 @@
 import { patch } from "./diff"
 import { __DEV__ } from "./dev"
 import { __devtools_notifyRender, __devtools_setRootTrees } from "./devtools-hook"
-import { hydrate } from "./hydrate"
 import { mountRoot } from "./mount"
+import { rootTrees } from "./root-trees"
 import { unmount } from "./unmount"
 import type { VNode } from "./vnode"
-
-const rootTrees = new WeakMap<Element, VNode>()
 
 // Share rootTrees with the devtools hook so it can walk the tree
 if (__DEV__) {
@@ -88,30 +86,3 @@ export function createRoot(container: Element): Root {
   }
 }
 
-/**
- * Create a root and hydrate server-rendered content.
- *
- * Usage:
- *   const root = hydrateRoot(document.getElementById("app")!, h(App, null))
- *
- * @param container - The DOM element containing server-rendered HTML
- * @param initialChildren - The VNode tree matching the server-rendered content
- * @returns A Root object with render() and unmount() methods
- */
-export function hydrateRoot(container: Element, initialChildren: VNode): Root {
-  hydrate(initialChildren, container)
-  rootTrees.set(container, initialChildren)
-
-  if (__DEV__) {
-    __devtools_notifyRender(container)
-  }
-
-  return {
-    render(children: VNode): void {
-      render(children, container)
-    },
-    unmount(): void {
-      render(null!, container)
-    },
-  }
-}

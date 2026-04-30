@@ -103,13 +103,18 @@ function rawExpr(src: string): D.JsExpr {
 /**
  * Value expression for a text slot. Composite slots embed the template
  * literal directly (template literals stringify their interpolations);
- * simple slots wrap the prop read in `String(...)`.
+ * simple slots pass the prop read through unchanged. The DOM
+ * `CharacterData.data` setter and `document.createTextNode` both coerce
+ * via spec ToString, so an explicit `String(...)` wrap is redundant — and
+ * worse, calling `String(n)` on small integers in JS pollutes V8's
+ * `smi_string_cache` (~64 KB) for the workload's lifetime, which we'd
+ * rather not retain across run/clear cycles in the memory bench.
  */
 function textValueExpr(slot: IRTextSlot): D.JsExpr {
   if (slot.composite !== undefined) {
     return rawExpr(slot.composite.srcExpr)
   }
-  return D.call(D.id("String"), [D.member(D.id("props"), slot.propName)])
+  return D.member(D.id("props"), slot.propName)
 }
 
 /**

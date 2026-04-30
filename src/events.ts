@@ -36,7 +36,7 @@ interface TachysEvent extends Event {
   __tachysStopAt?: Element
 }
 
-import { batchedUpdates } from "./scheduler"
+import { batchedUpdates } from "./scheduler-shim"
 
 /**
  * Events that do not bubble and must use direct addEventListener.

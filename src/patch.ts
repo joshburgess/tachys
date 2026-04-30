@@ -15,7 +15,7 @@
 
 import { pushThunk } from "./effects"
 import { cleanupEvents, updateEvent } from "./events"
-import { R } from "./render-state"
+import { R } from "./scheduler-shim"
 
 /**
  * Map React-style prop names to their corresponding HTML attribute names.

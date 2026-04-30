@@ -25,24 +25,7 @@ export {
   useTransition,
 } from "./component"
 export type { EffectCleanup } from "./component"
-export {
-  _mountAlt,
-  _mountCond,
-  _mountList,
-  _patchAlt,
-  _patchCond,
-  _patchList,
-  _template,
-  markCompiled,
-} from "./compiled"
 export { _attachEvent } from "./events"
-export type {
-  CompiledAltState,
-  CompiledComponent,
-  CompiledCondState,
-  CompiledListState,
-  CompiledMount,
-} from "./compiled"
 export { createContext, useContext } from "./context"
 export { __DEV__, getComponentName } from "./dev"
 export type { TachysDevToolsHook, SerializedNode } from "./devtools-hook"
@@ -60,7 +43,7 @@ export { mount, mountRoot } from "./mount"
 export { EMPTY_PROPS } from "./patch"
 export { clearPool, getPoolSize } from "./pool"
 export { createRef } from "./ref"
-export { createRoot, hydrateRoot, render } from "./render"
+export { createRoot, render } from "./render"
 export type { Root } from "./render"
 export type { Ref, RefCallback, RefObject } from "./ref"
 export {
@@ -70,8 +53,8 @@ export {
   hasPendingWork,
   Lane,
   shouldYield,
-} from "./scheduler"
-export type { Lane as LaneType } from "./scheduler"
+} from "./scheduler-shim"
+export type { Lane as LaneType } from "./scheduler-shim"
 export { lazy } from "./suspense"
 export { unmount } from "./unmount"
 export {

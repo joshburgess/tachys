@@ -16,8 +16,8 @@ describe("swc-plugin-tachys (static JSX)", () => {
     `
     const out = await transform(input)
 
-    expect(out).toMatch(/import \{[^}]*markCompiled[^}]*\} from "tachys"/)
-    expect(out).toMatch(/import \{[^}]*_template[^}]*\} from "tachys"/)
+    expect(out).toMatch(/import \{[^}]*markCompiled[^}]*\} from "tachys\/compiled"/)
+    expect(out).toMatch(/import \{[^}]*_template[^}]*\} from "tachys\/compiled"/)
     expect(out).toContain(
       '_template("<span class=\\"greeting\\">hello</span>")',
     )
@@ -201,7 +201,8 @@ describe("swc-plugin-tachys (attr and event slots)", () => {
     `
     const out = await transform(input)
     expect(out).toContain("markCompiled")
-    expect(out).toContain("onclick")
+    expect(out).toContain("_attachEvent")
+    expect(out).toContain('"click"')
     expect(out).toContain("props.handler")
   })
 

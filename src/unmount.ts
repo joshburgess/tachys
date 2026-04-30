@@ -11,7 +11,7 @@ import { ChildFlags, VNodeFlags } from "./flags"
 import { releaseVNode } from "./pool"
 import { registerUnmount } from "./reconcile-bridge"
 import { clearRef } from "./ref"
-import { R } from "./render-state"
+import { R } from "./scheduler-shim"
 import type { VNode } from "./vnode"
 
 /**

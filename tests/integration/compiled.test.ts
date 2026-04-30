@@ -7,12 +7,9 @@ import {
   _patchCond,
   _patchList,
   _template,
-  h,
   markCompiled,
-  mount,
-  patch,
-  unmount,
-} from "../../src/index"
+} from "../../src/compiled"
+import { h, mount, patch, unmount } from "../../src/index"
 import type { VNode } from "../../src/vnode"
 
 function flushMicrotasks(): Promise<void> {

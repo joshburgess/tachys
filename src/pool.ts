@@ -8,7 +8,7 @@
  * All properties are reset to their initial types to maintain hidden class consistency.
  */
 
-import { R } from "./render-state"
+import { R } from "./scheduler-shim"
 import type { ChildFlag, VNodeFlag } from "./flags"
 import type { VNodeType } from "./vnode"
 import { VNode } from "./vnode"

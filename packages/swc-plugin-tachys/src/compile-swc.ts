@@ -538,6 +538,34 @@ function resolveListExpr(
   }
   if (keySrc === null) return null
 
+  // Detect propSpecs of form `<keySrc> === props.<X>` so the runtime can
+  // skip the full row iteration when only those parent deps change. This
+  // mirrors the babel-plugin's logic. SWC's IR is source-string-based, so
+  // we compare normalized source (whitespace-stripped) instead of AST
+  // structural equivalence.
+  const normalizedKey = keySrc.replace(/\s+/g, "")
+  const selectionDepSet = new Set<number>()
+  for (const spec of propSpecs) {
+    const m = spec.valueSrc.match(/^(.+?)\s*===\s*(.+?)$/)
+    if (m === null) continue
+    const lhs = m[1]!.replace(/\s+/g, "")
+    const rhs = m[2]!.replace(/\s+/g, "")
+    let depName: string | null = null
+    const propMatch = (s: string): string | null => {
+      const pm = s.match(/^props\.([A-Za-z_$][\w$]*)$/)
+      return pm === null ? null : pm[1]!
+    }
+    if (lhs === normalizedKey) depName = propMatch(rhs)
+    else if (rhs === normalizedKey) depName = propMatch(lhs)
+    if (depName === null) continue
+    const idx = parentPropDeps.indexOf(depName)
+    if (idx >= 0) selectionDepSet.add(idx)
+  }
+  const selectionDepIndices: number[] = []
+  for (let i = 0; i < parentPropDeps.length; i++) {
+    if (selectionDepSet.has(i)) selectionDepIndices.push(i)
+  }
+
   return {
     kind: "list",
     path,
@@ -547,6 +575,8 @@ function resolveListExpr(
     keySrc,
     propSpecs,
     parentPropDeps,
+    selectionDepIndices,
+    tailOfParent: false,
   }
 }
 

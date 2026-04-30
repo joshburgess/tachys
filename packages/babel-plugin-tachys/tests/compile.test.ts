@@ -25,8 +25,8 @@ describe("babel-plugin-tachys (v0.1 static JSX)", () => {
     `
     const out = transform(input)
 
-    expect(out).toMatch(/import \{[^}]*markCompiled[^}]*\} from "tachys"/)
-    expect(out).toMatch(/import \{[^}]*_template[^}]*\} from "tachys"/)
+    expect(out).toMatch(/import \{[^}]*markCompiled[^}]*\} from "tachys\/compiled"/)
+    expect(out).toMatch(/import \{[^}]*_template[^}]*\} from "tachys\/compiled"/)
     expect(out).toContain(
       '_template("<span class=\\"greeting\\">hello</span>")',
     )
@@ -138,8 +138,12 @@ describe("babel-plugin-tachys (v0.1 static JSX)", () => {
       function A() { return <span>a</span>; }
     `
     const out = transform(input)
-    const importMatches = out.match(/from "tachys"/g) ?? []
-    expect(importMatches.length).toBe(1)
+    // The existing `from "tachys"` line stays untouched; compiled-runtime
+    // helpers go into a separate `from "tachys/compiled"` import.
+    const bareTachys = out.match(/from "tachys"(?!\/)/g) ?? []
+    expect(bareTachys.length).toBe(1)
+    const compiledTachys = out.match(/from "tachys\/compiled"/g) ?? []
+    expect(compiledTachys.length).toBe(1)
     expect(out).toContain("_template")
     expect(out).toContain("markCompiled")
   })
@@ -212,7 +216,8 @@ describe("babel-plugin-tachys (v0.1 text slots)", () => {
     expect(out).toContain('_template("<div><p> </p></div>")')
     // _root.firstChild reaches <p>, .firstChild reaches the text placeholder.
     expect(out).toMatch(/_root\.firstChild\.firstChild/)
-    expect(out).toMatch(/_t\d+\.data\s*=\s*String\(props\.x\)/)
+    expect(out).toMatch(/_t\d+\.data\s*=\s*props\.x/)
+    expect(out).not.toContain("String(props.x)")
   })
 
   it("does not rebind the same prop twice in state", () => {
@@ -256,8 +261,10 @@ describe("babel-plugin-tachys (v0.1 text slots)", () => {
     const out = transform(input)
     expect(out).toContain("markCompiled")
     expect(out).toContain('_template("<div><!><!></div>")')
-    expect(out).toContain("String(props.a)")
-    expect(out).toContain("String(props.b)")
+    expect(out).toContain("createTextNode(props.a)")
+    expect(out).toContain("createTextNode(props.b)")
+    expect(out).not.toContain("String(props.a)")
+    expect(out).not.toContain("String(props.b)")
   })
 
   it("flattens nested fragments", () => {
@@ -269,9 +276,12 @@ describe("babel-plugin-tachys (v0.1 text slots)", () => {
     const out = transform(input)
     expect(out).toContain("markCompiled")
     expect(out).toContain('_template("<div><!><!><!></div>")')
-    expect(out).toContain("String(props.a)")
-    expect(out).toContain("String(props.b)")
-    expect(out).toContain("String(props.c)")
+    expect(out).toContain("createTextNode(props.a)")
+    expect(out).toContain("createTextNode(props.b)")
+    expect(out).toContain("createTextNode(props.c)")
+    expect(out).not.toContain("String(props.a)")
+    expect(out).not.toContain("String(props.b)")
+    expect(out).not.toContain("String(props.c)")
   })
 
   it("flattens a fragment containing static text and a slot", () => {
@@ -283,7 +293,8 @@ describe("babel-plugin-tachys (v0.1 text slots)", () => {
     const out = transform(input)
     expect(out).toContain("markCompiled")
     expect(out).toContain('_template("<span>hello <!></span>")')
-    expect(out).toContain("String(props.name)")
+    expect(out).toContain("createTextNode(props.name)")
+    expect(out).not.toContain("String(props.name)")
   })
 
   it("bails on a fragment at the top level of the return", () => {
@@ -600,7 +611,8 @@ describe("babel-plugin-tachys (v0.3 event handlers)", () => {
     // `{label}` is the sole child of <td>, so it uses a prealloc text node:
     // navigate to it and write .data directly, no createTextNode.
     expect(out).toMatch(/_t\d+\s*=\s*_root\.firstChild\.firstChild/)
-    expect(out).toMatch(/_t\d+\.data\s*=\s*String\(props\.label\)/)
+    expect(out).toMatch(/_t\d+\.data\s*=\s*props\.label/)
+    expect(out).not.toContain("String(props.label)")
     expect(out).not.toContain("document.createTextNode")
   })
 })
@@ -617,7 +629,7 @@ describe("babel-plugin-tachys (runtime smoke)", () => {
       }
     `
     const out = transform(input)
-    const stubbed = out.replace(/import \{[^}]*\} from "tachys";?/g, "")
+    const stubbed = out.replace(/import \{[^}]*\} from "tachys(?:\/compiled)?";?/g, "")
 
     const markCompiled = (
       mount: (p: Record<string, unknown>) => { dom: Element; state: Record<string, unknown> },
@@ -671,7 +683,7 @@ describe("babel-plugin-tachys (runtime smoke)", () => {
 
     // Replace the tachys imports with stubs so we can eval the output.
     const stubbed = out.replace(
-      /import \{[^}]*\} from "tachys";?/g,
+      /import \{[^}]*\} from "tachys(?:\/compiled)?";?/g,
       "",
     )
 
@@ -737,7 +749,7 @@ describe("babel-plugin-tachys (runtime smoke)", () => {
       }
     `
     const out = transform(input)
-    const stubbed = out.replace(/import \{[^}]*\} from "tachys";?/g, "")
+    const stubbed = out.replace(/import \{[^}]*\} from "tachys(?:\/compiled)?";?/g, "")
 
     const markCompiled = (
       mount: (p: Record<string, unknown>) => { dom: Element; state: Record<string, unknown> },
@@ -866,7 +878,7 @@ describe("babel-plugin-tachys (v0.5 template literal slots)", () => {
     expect(out).toContain("const _d0 = state.cls !== props.cls")
     expect(out).toContain("const _d1 = state.name !== props.name")
     // The simple text slot gets its own guarded write.
-    expect(out).toMatch(/if \(_d1\) \{[\s\S]*?\.data\s*=\s*String\(props\.name\)/)
+    expect(out).toMatch(/if \(_d1\) \{[\s\S]*?\.data\s*=\s*props\.name/)
     // The composite attr slot gets its single-dep guard.
     expect(out).toMatch(/if \(_d0\) \{[\s\S]*?\.className\s*=\s*`row-\$\{props\.cls\}`/)
   })
@@ -894,7 +906,7 @@ describe("babel-plugin-tachys (v0.5 template literal slots)", () => {
       }
     `
     const out = transform(input)
-    const stubbed = out.replace(/import \{[^}]*\} from "tachys";?/g, "")
+    const stubbed = out.replace(/import \{[^}]*\} from "tachys(?:\/compiled)?";?/g, "")
 
     const markCompiled = (
       mount: (p: Record<string, unknown>) => { dom: Element; state: Record<string, unknown> },
@@ -1023,7 +1035,7 @@ describe("babel-plugin-tachys (v0.7 nested compiled components)", () => {
     expect(out).toContain("const _d0 = state.title !== props.title")
     expect(out).toContain("const _d1 = state.badge !== props.badge")
     // Text slot guarded by its single dep.
-    expect(out).toMatch(/if \(_d0\) \{[\s\S]*?\.data\s*=\s*String\(props\.title\)/)
+    expect(out).toMatch(/if \(_d0\) \{[\s\S]*?\.data\s*=\s*props\.title/)
     // Component slot guarded by its single dep.
     expect(out).toMatch(/if \(_d1\) \{[\s\S]*?Badge\.patch/)
   })
@@ -1157,7 +1169,7 @@ describe("babel-plugin-tachys (v0.7 nested compiled components)", () => {
       function App({ badge }) { return <div><Row label={badge} /></div>; }
     `
     const out = transform(input)
-    const stubbed = out.replace(/import \{[^}]*\} from "tachys";?/g, "")
+    const stubbed = out.replace(/import \{[^}]*\} from "tachys(?:\/compiled)?";?/g, "")
 
     const markCompiled = (
       mount: (p: Record<string, unknown>) => { dom: Element; state: Record<string, unknown> },
@@ -1218,7 +1230,7 @@ describe("babel-plugin-tachys (v0.7 nested compiled components)", () => {
       }
     `
     const out = transform(input)
-    const stubbed = out.replace(/import \{[^}]*\} from "tachys";?/g, "")
+    const stubbed = out.replace(/import \{[^}]*\} from "tachys(?:\/compiled)?";?/g, "")
 
     const markCompiled = (
       mount: (p: Record<string, unknown>) => { dom: Element; state: Record<string, unknown> },
@@ -1328,8 +1340,8 @@ describe("babel-plugin-tachys (v0.8 keyed list compilation)", () => {
     // Rows are appended directly via parent.appendChild.
     expect(out).toContain('_template("<ul></ul>")')
     // Runtime imports got added.
-    expect(out).toMatch(/import \{[^}]*_mountList[^}]*\} from "tachys"/)
-    expect(out).toMatch(/import \{[^}]*_patchList[^}]*\} from "tachys"/)
+    expect(out).toMatch(/import \{[^}]*_mountList[^}]*\} from "tachys\/compiled"/)
+    expect(out).toMatch(/import \{[^}]*_patchList[^}]*\} from "tachys\/compiled"/)
     // Module-level helpers emitted with component-scoped names.
     // makeProps is a mutator over a scratch arg so _patchList can reuse
     // one props object per row instead of allocating per iteration.
@@ -1464,7 +1476,7 @@ describe("babel-plugin-tachys (v0.8 keyed list compilation)", () => {
       }
     `
     const out = transform(input)
-    const stubbed = out.replace(/import \{[^}]*\} from "tachys";?/g, "")
+    const stubbed = out.replace(/import \{[^}]*\} from "tachys(?:\/compiled)?";?/g, "")
 
     type MountResult = { dom: Element; state: Record<string, unknown> }
 
@@ -1606,7 +1618,7 @@ describe("babel-plugin-tachys (v0.8 keyed list compilation)", () => {
     // Inline closure reads props.selectedId.
     expect(out).toMatch(/item\.id === props\.selectedId/)
 
-    const stubbed = out.replace(/import \{[^}]*\} from "tachys";?/g, "")
+    const stubbed = out.replace(/import \{[^}]*\} from "tachys(?:\/compiled)?";?/g, "")
 
     type MountResult = { dom: Element; state: Record<string, unknown> }
 
@@ -1816,7 +1828,7 @@ describe("babel-plugin-tachys (v0.9 conditional compiled children)", () => {
       }
     `
     const out = transform(input)
-    const stubbed = out.replace(/import \{[^}]*\} from "tachys";?/g, "")
+    const stubbed = out.replace(/import \{[^}]*\} from "tachys(?:\/compiled)?";?/g, "")
 
     type MountResult = { dom: Element; state: Record<string, unknown> }
 
@@ -1968,7 +1980,7 @@ describe("babel-plugin-tachys (v1.0 ternary alt slots)", () => {
       }
     `
     const out = transform(input)
-    const stubbed = out.replace(/import \{[^}]*\} from "tachys";?/g, "")
+    const stubbed = out.replace(/import \{[^}]*\} from "tachys(?:\/compiled)?";?/g, "")
 
     type MountResult = { dom: Element; state: Record<string, unknown> }
 
