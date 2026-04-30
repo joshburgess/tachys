@@ -31,6 +31,18 @@ const swcPlugin = swc({
 
 const plugins = [resolve({ extensions: [".ts", ".js"] }), swcPlugin]
 
+// Resolves any `./scheduler-shim` import to `./scheduler-shim-sync` so the
+// resulting bundle drops scheduler.ts / work-loop.ts / lane plumbing and
+// runs all updates synchronously. Used for the `dist/sync.*` outputs.
+const syncShimAlias = {
+  name: "tachys-sync-shim-alias",
+  resolveId(source, importer) {
+    if (source !== "./scheduler-shim") return null
+    if (importer === undefined) return null
+    return this.resolve("./scheduler-shim-sync", importer, { skipSelf: true })
+  },
+}
+
 const terserOpts = terser({
   compress: {
     passes: 2,
@@ -55,6 +67,15 @@ const prodReplace = replace({
 })
 
 const minPlugins = [prodReplace, resolve({ extensions: [".ts", ".js"] }), swcPlugin, terserOpts]
+
+const syncPlugins = [resolve({ extensions: [".ts", ".js"] }), syncShimAlias, swcPlugin]
+const syncMinPlugins = [
+  prodReplace,
+  resolve({ extensions: [".ts", ".js"] }),
+  syncShimAlias,
+  swcPlugin,
+  terserOpts,
+]
 
 const benchPlugins = [
   replace({
@@ -276,6 +297,33 @@ export default [
       sourcemap: true,
     },
     plugins: minPlugins,
+  },
+  // --- Sync build (drops scheduler/work-loop/lane plumbing) ---
+  {
+    input: "src/index.ts",
+    output: [
+      {
+        file: "dist/sync.js",
+        format: "es",
+        sourcemap: true,
+      },
+      {
+        file: "dist/sync.cjs",
+        format: "cjs",
+        sourcemap: true,
+        exports: "named",
+      },
+    ],
+    plugins: syncPlugins,
+  },
+  {
+    input: "src/index.ts",
+    output: {
+      file: "dist/sync.min.js",
+      format: "es",
+      sourcemap: true,
+    },
+    plugins: syncMinPlugins,
   },
   {
     input: "benchmarks/browser/inferno-bench-entry.js",
