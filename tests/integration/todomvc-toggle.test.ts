@@ -1,17 +1,17 @@
-import { describe, it, expect } from "vitest"
+import { describe, expect, it } from "vitest"
 import {
   createContext,
-  useContext,
-  useState,
+  flushUpdates,
+  h,
+  memo,
+  mount,
   useCallback,
-  useMemo,
-  useRef,
+  useContext,
   useEffect,
   useId,
-  memo,
-  h,
-  mount,
-  flushUpdates,
+  useMemo,
+  useRef,
+  useState,
 } from "../../src/index"
 import { jsxDEV } from "../../src/jsx-dev-runtime"
 import type { VNode } from "../../src/vnode"
@@ -87,46 +87,74 @@ describe("TodoMVC toggle repro - exact app structure", () => {
         setEditText((e.target as HTMLInputElement).value)
       }, [])
 
-      const className = [
-        todo.completed ? "completed" : "",
-        editing ? "editing" : "",
-      ]
+      const className = [todo.completed ? "completed" : "", editing ? "editing" : ""]
         .filter(Boolean)
         .join(" ")
 
       // Exact same JSX transform output as Vite produces
-      return jsxDEV("li", {
-        className: className || undefined,
-        children: [
-          jsxDEV("div", {
-            className: "view",
-            children: [
-              jsxDEV("input", {
-                className: "toggle",
-                type: "checkbox",
-                checked: todo.completed,
-                onChange: handleToggle,
-              }, undefined, false),
-              jsxDEV("label", {
-                onDblClick: handleDoubleClick,
-                children: todo.title,
-              }, undefined, false),
-              jsxDEV("button", {
-                className: "destroy",
-                onClick: handleDestroy,
-              }, undefined, false),
-            ],
-          }, undefined, true),
-          editing && jsxDEV("input", {
-            ref: inputRef,
-            className: "edit",
-            value: editText,
-            onBlur: handleSubmit,
-            onKeyDown: handleKeyDown,
-            onInput: handleChange,
-          }, undefined, false),
-        ],
-      }, undefined, true)
+      return jsxDEV(
+        "li",
+        {
+          className: className || undefined,
+          children: [
+            jsxDEV(
+              "div",
+              {
+                className: "view",
+                children: [
+                  jsxDEV(
+                    "input",
+                    {
+                      className: "toggle",
+                      type: "checkbox",
+                      checked: todo.completed,
+                      onChange: handleToggle,
+                    },
+                    undefined,
+                    false,
+                  ),
+                  jsxDEV(
+                    "label",
+                    {
+                      onDblClick: handleDoubleClick,
+                      children: todo.title,
+                    },
+                    undefined,
+                    false,
+                  ),
+                  jsxDEV(
+                    "button",
+                    {
+                      className: "destroy",
+                      onClick: handleDestroy,
+                    },
+                    undefined,
+                    false,
+                  ),
+                ],
+              },
+              undefined,
+              true,
+            ),
+            editing &&
+              jsxDEV(
+                "input",
+                {
+                  ref: inputRef,
+                  className: "edit",
+                  value: editText,
+                  onBlur: handleSubmit,
+                  onKeyDown: handleKeyDown,
+                  onInput: handleChange,
+                },
+                undefined,
+                false,
+              ),
+          ],
+        },
+        undefined,
+        true,
+      )
     })
 
     // Exact Header
@@ -151,21 +179,31 @@ describe("TodoMVC toggle repro - exact app structure", () => {
         setText((e.target as HTMLInputElement).value)
       }, [])
 
-      return jsxDEV("header", {
-        className: "header",
-        children: [
-          jsxDEV("h1", { children: "todos" }, undefined, false),
-          jsxDEV("input", {
-            id: inputId,
-            className: "new-todo",
-            placeholder: "What needs to be done?",
-            value: text,
-            onKeyDown: handleKeyDown,
-            onInput: handleInput,
-            autoFocus: true,
-          }, undefined, false),
-        ],
-      }, undefined, true)
+      return jsxDEV(
+        "header",
+        {
+          className: "header",
+          children: [
+            jsxDEV("h1", { children: "todos" }, undefined, false),
+            jsxDEV(
+              "input",
+              {
+                id: inputId,
+                className: "new-todo",
+                placeholder: "What needs to be done?",
+                value: text,
+                onKeyDown: handleKeyDown,
+                onInput: handleInput,
+                autoFocus: true,
+              },
+              undefined,
+              false,
+            ),
+          ],
+        },
+        undefined,
+        true,
+      )
     }
 
     // Exact Footer
@@ -178,49 +216,100 @@ describe("TodoMVC toggle repro - exact app structure", () => {
       const { count, completedCount, filter, onClearCompleted } = props
       const itemWord = count === 1 ? "item" : "items"
 
-      return jsxDEV("footer", {
-        className: "footer",
-        children: [
-          jsxDEV("span", {
-            className: "todo-count",
-            children: [
-              jsxDEV("strong", { children: count }, undefined, false),
-              ` ${itemWord} left`,
-            ],
-          }, undefined, true),
-          jsxDEV("ul", {
-            className: "filters",
-            children: [
-              jsxDEV("li", {
-                children: jsxDEV("a", {
-                  className: filter === "all" ? "selected" : undefined,
-                  href: "#/",
-                  children: "All",
-                }, undefined, false),
-              }, undefined, false),
-              jsxDEV("li", {
-                children: jsxDEV("a", {
-                  className: filter === "active" ? "selected" : undefined,
-                  href: "#/active",
-                  children: "Active",
-                }, undefined, false),
-              }, undefined, false),
-              jsxDEV("li", {
-                children: jsxDEV("a", {
-                  className: filter === "completed" ? "selected" : undefined,
-                  href: "#/completed",
-                  children: "Completed",
-                }, undefined, false),
-              }, undefined, false),
-            ],
-          }, undefined, true),
-          completedCount > 0 && jsxDEV("button", {
-            className: "clear-completed",
-            onClick: onClearCompleted,
-            children: "Clear completed",
-          }, undefined, false),
-        ],
-      }, undefined, true)
+      return jsxDEV(
+        "footer",
+        {
+          className: "footer",
+          children: [
+            jsxDEV(
+              "span",
+              {
+                className: "todo-count",
+                children: [
+                  jsxDEV("strong", { children: count }, undefined, false),
+                  ` ${itemWord} left`,
+                ],
+              },
+              undefined,
+              true,
+            ),
+            jsxDEV(
+              "ul",
+              {
+                className: "filters",
+                children: [
+                  jsxDEV(
+                    "li",
+                    {
+                      children: jsxDEV(
+                        "a",
+                        {
+                          className: filter === "all" ? "selected" : undefined,
+                          href: "#/",
+                          children: "All",
+                        },
+                        undefined,
+                        false,
+                      ),
+                    },
+                    undefined,
+                    false,
+                  ),
+                  jsxDEV(
+                    "li",
+                    {
+                      children: jsxDEV(
+                        "a",
+                        {
+                          className: filter === "active" ? "selected" : undefined,
+                          href: "#/active",
+                          children: "Active",
+                        },
+                        undefined,
+                        false,
+                      ),
+                    },
+                    undefined,
+                    false,
+                  ),
+                  jsxDEV(
+                    "li",
+                    {
+                      children: jsxDEV(
+                        "a",
+                        {
+                          className: filter === "completed" ? "selected" : undefined,
+                          href: "#/completed",
+                          children: "Completed",
+                        },
+                        undefined,
+                        false,
+                      ),
+                    },
+                    undefined,
+                    false,
+                  ),
+                ],
+              },
+              undefined,
+              true,
+            ),
+            completedCount > 0 &&
+              jsxDEV(
+                "button",
+                {
+                  className: "clear-completed",
+                  onClick: onClearCompleted,
+                  children: "Clear completed",
+                },
+                undefined,
+                false,
+              ),
+          ],
+        },
+        undefined,
+        true,
+      )
     }
 
     let nextId = 1
@@ -239,25 +328,16 @@ describe("TodoMVC toggle repro - exact app structure", () => {
             setTodos((prev: Todo[]) =>
               prev.map((t) => (t.id === id ? { ...t, completed: !t.completed } : t)),
             ),
-          destroy: (id: number) =>
-            setTodos((prev: Todo[]) => prev.filter((t) => t.id !== id)),
+          destroy: (id: number) => setTodos((prev: Todo[]) => prev.filter((t) => t.id !== id)),
           edit: (id: number, title: string) =>
-            setTodos((prev: Todo[]) =>
-              prev.map((t) => (t.id === id ? { ...t, title } : t)),
-            ),
+            setTodos((prev: Todo[]) => prev.map((t) => (t.id === id ? { ...t, title } : t))),
         }),
         [],
       )
 
-      triggerToggle = useCallback(
-        (id: number) => actions.toggle(id),
-        [actions],
-      )
+      triggerToggle = useCallback((id: number) => actions.toggle(id), [actions])
 
-      const activeCount = useMemo(
-        () => todos.filter((t) => !t.completed).length,
-        [todos],
-      )
+      const activeCount = useMemo(() => todos.filter((t) => !t.completed).length, [todos])
       const completedCount = todos.length - activeCount
 
       const filteredTodos = useMemo(() => {
@@ -281,40 +361,72 @@ describe("TodoMVC toggle repro - exact app structure", () => {
       }, [])
 
       // Exact same JSX transform output as Vite produces
-      return jsxDEV(ActionsCtx.Provider, {
-        value: actions,
-        children: [
-          jsxDEV(Header, { onAdd: triggerAdd }, undefined, false),
-          todos.length > 0 && jsxDEV("section", {
-            className: "main",
-            children: [
-              jsxDEV("input", {
-                id: "toggle-all",
-                className: "toggle-all",
-                type: "checkbox",
-                checked: activeCount === 0,
-                onChange: toggleAll,
-              }, undefined, false),
-              jsxDEV("label", {
-                htmlFor: "toggle-all",
-                children: "Mark all as complete",
-              }, undefined, false),
-              jsxDEV("ul", {
-                className: "todo-list",
-                children: filteredTodos.map((todo) =>
-                  jsxDEV(TodoItem, { todo }, todo.id, false),
-                ),
-              }, undefined, false),
-            ],
-          }, undefined, true),
-          todos.length > 0 && jsxDEV(Footer, {
-            count: activeCount,
-            completedCount,
-            filter,
-            onClearCompleted: clearCompleted,
-          }, undefined, false),
-        ],
-      }, undefined, true)
+      return jsxDEV(
+        ActionsCtx.Provider,
+        {
+          value: actions,
+          children: [
+            jsxDEV(Header, { onAdd: triggerAdd }, undefined, false),
+            todos.length > 0 &&
+              jsxDEV(
+                "section",
+                {
+                  className: "main",
+                  children: [
+                    jsxDEV(
+                      "input",
+                      {
+                        id: "toggle-all",
+                        className: "toggle-all",
+                        type: "checkbox",
+                        checked: activeCount === 0,
+                        onChange: toggleAll,
+                      },
+                      undefined,
+                      false,
+                    ),
+                    jsxDEV(
+                      "label",
+                      {
+                        htmlFor: "toggle-all",
+                        children: "Mark all as complete",
+                      },
+                      undefined,
+                      false,
+                    ),
+                    jsxDEV(
+                      "ul",
+                      {
+                        className: "todo-list",
+                        children: filteredTodos.map((todo) =>
+                          jsxDEV(TodoItem, { todo }, todo.id, false),
+                        ),
+                      },
+                      undefined,
+                      false,
+                    ),
+                  ],
+                },
+                undefined,
+                true,
+              ),
+            todos.length > 0 &&
+              jsxDEV(
+                Footer,
+                {
+                  count: activeCount,
+                  completedCount,
+                  filter,
+                  onClearCompleted: clearCompleted,
+                },
+                undefined,
+                false,
+              ),
+          ],
+        },
+        undefined,
+        true,
+      )
     }
 
     const root = document.createElement("div")

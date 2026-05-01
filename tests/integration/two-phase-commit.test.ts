@@ -1,11 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import {
-  flushUpdates,
-  flushSyncWork,
-  scheduleUpdate,
-  Lane,
-  setCurrentLane,
-} from "../../src/scheduler"
+import type { ComponentInstance } from "../../src/component"
 import {
   beginCollecting,
   commitEffects,
@@ -16,7 +10,13 @@ import {
   pendingEffectCount,
   pushDeferredEffect,
 } from "../../src/effects"
-import type { ComponentInstance } from "../../src/component"
+import {
+  Lane,
+  flushSyncWork,
+  flushUpdates,
+  scheduleUpdate,
+  setCurrentLane,
+} from "../../src/scheduler"
 
 // ---------------------------------------------------------------------------
 // Helper: minimal ComponentInstance mock
@@ -147,9 +147,7 @@ describe("cross-lane scheduling", () => {
     scheduleUpdate(instance, Lane.Default)
     scheduleUpdate(instance, Lane.Transition)
 
-    expect(instance._queuedLanes).toBe(
-      (1 << Lane.Default) | (1 << Lane.Transition),
-    )
+    expect(instance._queuedLanes).toBe((1 << Lane.Default) | (1 << Lane.Transition))
 
     flushUpdates()
 
@@ -177,13 +175,7 @@ describe("deferred component effects", () => {
     flushDeferredEffects()
     order.push("after-flush")
 
-    expect(order).toEqual([
-      "before-commit",
-      "after-commit",
-      "effect-1",
-      "effect-2",
-      "after-flush",
-    ])
+    expect(order).toEqual(["before-commit", "after-commit", "effect-1", "effect-2", "after-flush"])
   })
 
   it("discardEffects also discards deferred effects", () => {

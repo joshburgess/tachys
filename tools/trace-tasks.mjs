@@ -3,8 +3,8 @@
 // for differences in event COUNTS (not duration), which can reveal
 // thrashing or extra microtasks.
 
-import fs from "fs"
-import path from "path"
+import fs from "node:fs"
+import path from "node:path"
 
 const dir = "/Users/joshburgess/code/js-framework-benchmark/webdriver-ts/traces"
 
@@ -22,11 +22,7 @@ function aggregate(prefix, range) {
     const seen = {}
     const seenDur = {}
     for (const e of events) {
-      if (
-        e.cat &&
-        (e.cat.includes("devtools.timeline") ||
-          e.cat.includes("blink.user_timing"))
-      ) {
+      if (e.cat && (e.cat.includes("devtools.timeline") || e.cat.includes("blink.user_timing"))) {
         seen[e.name] = (seen[e.name] || 0) + 1
         if (e.dur) seenDur[e.name] = (seenDur[e.name] || 0) + e.dur
       }
@@ -46,10 +42,7 @@ const i = aggregate("inferno-v8.2.2-keyed_07_create10k_", [40, 60])
 
 const median = (vs) => vs.slice().sort((a, b) => a - b)[Math.floor(vs.length / 2)]
 
-const allNames = new Set([
-  ...Object.keys(t.counts),
-  ...Object.keys(i.counts),
-])
+const allNames = new Set([...Object.keys(t.counts), ...Object.keys(i.counts)])
 const rows = []
 for (const n of allNames) {
   const tc = t.counts[n] ? median(t.counts[n]) : 0
@@ -59,15 +52,7 @@ for (const n of allNames) {
   rows.push({ n, tc, ic, dc: tc - ic, td, id, dd: td - id })
 }
 rows.sort((a, b) => Math.abs(b.dd) - Math.abs(a.dd))
-console.log(
-  "name".padEnd(36),
-  "tachys-cnt",
-  "inf-cnt",
-  "Δcnt",
-  "tachys-ms",
-  "inf-ms",
-  "Δms",
-)
+console.log("name".padEnd(36), "tachys-cnt", "inf-cnt", "Δcnt", "tachys-ms", "inf-ms", "Δms")
 for (const r of rows.slice(0, 30)) {
   console.log(
     r.n.padEnd(36),

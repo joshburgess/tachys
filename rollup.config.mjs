@@ -54,7 +54,8 @@ const syncShimAlias = {
 // `_defaultValue`, `_portalContainer`) is intentionally NOT in this
 // list -- the babel plugin emits those names and the runtime reads
 // them, so the writer and reader must agree on the literal name.
-const internalPropPattern = /^_(hooks|effects|hookCount|passiveQueued|queuedLanes|rerender|contexts|mounted|rendered|parentDom|type|props|vnode)$/
+const internalPropPattern =
+  /^_(hooks|effects|hookCount|passiveQueued|queuedLanes|rerender|contexts|mounted|rendered|parentDom|type|props|vnode)$/
 
 const terserOpts = terser({
   compress: {
@@ -124,11 +125,7 @@ const syncCoreMinPlugins = [
   terserOpts,
 ]
 
-const benchPlugins = [
-  fullReplace,
-  resolve({ extensions: [".ts", ".js"] }),
-  swcPlugin,
-]
+const benchPlugins = [fullReplace, resolve({ extensions: [".ts", ".js"] }), swcPlugin]
 
 export default [
   {

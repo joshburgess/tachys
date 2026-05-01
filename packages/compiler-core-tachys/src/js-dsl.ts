@@ -187,17 +187,11 @@ export function bin(op: BinaryOp, lhs: JsExpr, rhs: JsExpr): JsExpr {
 }
 
 export function and(lhs: JsExpr, rhs: JsExpr): JsExpr {
-  return makeExpr(
-    `${wrap(lhs, PREC.AND)} && ${wrap(rhs, PREC.AND + 1)}`,
-    PREC.AND,
-  )
+  return makeExpr(`${wrap(lhs, PREC.AND)} && ${wrap(rhs, PREC.AND + 1)}`, PREC.AND)
 }
 
 export function or(lhs: JsExpr, rhs: JsExpr): JsExpr {
-  return makeExpr(
-    `${wrap(lhs, PREC.OR)} || ${wrap(rhs, PREC.OR + 1)}`,
-    PREC.OR,
-  )
+  return makeExpr(`${wrap(lhs, PREC.OR)} || ${wrap(rhs, PREC.OR + 1)}`, PREC.OR)
 }
 
 export function not(e: JsExpr): JsExpr {
@@ -213,10 +207,7 @@ export function ternary(cond: JsExpr, cons: JsExpr, alt: JsExpr): JsExpr {
 
 export function assign(lhs: JsExpr, rhs: JsExpr): JsExpr {
   // Assignment is right-associative: lhs binds tighter.
-  return makeExpr(
-    `${wrap(lhs, PREC.ASSIGN + 1)} = ${wrap(rhs, PREC.ASSIGN)}`,
-    PREC.ASSIGN,
-  )
+  return makeExpr(`${wrap(lhs, PREC.ASSIGN + 1)} = ${wrap(rhs, PREC.ASSIGN)}`, PREC.ASSIGN)
 }
 
 // ---------------------------------------------------------------------
@@ -224,22 +215,15 @@ export function assign(lhs: JsExpr, rhs: JsExpr): JsExpr {
 // ---------------------------------------------------------------------
 
 export function arrow(params: readonly string[], body: JsExpr): JsExpr {
-  const paramSrc =
-    params.length === 1 ? params[0]! : `(${params.join(", ")})`
+  const paramSrc = params.length === 1 ? params[0]! : `(${params.join(", ")})`
   // If body is an object literal, wrap in parens so the parser doesn't
   // read the `{` as a block.
-  const bodySrc = body.src.startsWith("{")
-    ? `(${body.src})`
-    : wrap(body, PREC.ASSIGN)
+  const bodySrc = body.src.startsWith("{") ? `(${body.src})` : wrap(body, PREC.ASSIGN)
   return makeExpr(`${paramSrc} => ${bodySrc}`, PREC.ASSIGN)
 }
 
-export function arrowBlock(
-  params: readonly string[],
-  body: readonly JsStmt[],
-): JsExpr {
-  const paramSrc =
-    params.length === 1 ? params[0]! : `(${params.join(", ")})`
+export function arrowBlock(params: readonly string[], body: readonly JsStmt[]): JsExpr {
+  const paramSrc = params.length === 1 ? params[0]! : `(${params.join(", ")})`
   if (body.length === 0) return makeExpr(`${paramSrc} => {}`, PREC.ASSIGN)
   // Arrow function body spans multiple lines; we render it as a block
   // statement. The emitter's top-level renderStmts handles indent.
@@ -248,7 +232,7 @@ export function arrowBlock(
   for (const stmt of body) {
     for (const line of stmt.render("  ")) renderedLines.push(line)
   }
-  renderedLines.push(`}`)
+  renderedLines.push("}")
   // This is a multi-line expression. We stash the joined form in .src and
   // rely on the surrounding context to emit it as-is. Callers that need
   // pretty indent should use `renderMultilineArrow` (below) or pass it
@@ -260,11 +244,7 @@ export function arrowBlock(
 // Statements
 // ---------------------------------------------------------------------
 
-export function vdecl(
-  kind: "const" | "let" | "var",
-  name: string,
-  init: JsExpr,
-): JsStmt {
+export function vdecl(kind: "const" | "let" | "var", name: string, init: JsExpr): JsStmt {
   return makeStmt((indent) => [`${indent}${kind} ${name} = ${init.src};`])
 }
 
@@ -280,11 +260,7 @@ export function retVoid(): JsStmt {
   return makeStmt((indent) => [`${indent}return;`])
 }
 
-export function ifStmt(
-  cond: JsExpr,
-  cons: readonly JsStmt[],
-  alt?: readonly JsStmt[],
-): JsStmt {
+export function ifStmt(cond: JsExpr, cons: readonly JsStmt[], alt?: readonly JsStmt[]): JsStmt {
   return makeStmt((indent) => {
     const inner = `${indent}  `
     const lines: string[] = []
@@ -313,10 +289,7 @@ export function block(stmts: readonly JsStmt[]): JsStmt {
  * Render a list of statements to a single source string with newline
  * separators, rooted at the given base indent.
  */
-export function renderStmts(
-  stmts: readonly JsStmt[],
-  indent: string = "",
-): string {
+export function renderStmts(stmts: readonly JsStmt[], indent = ""): string {
   const out: string[] = []
   for (const s of stmts) for (const l of s.render(indent)) out.push(l)
   return out.join("\n")

@@ -10,8 +10,8 @@
  * (button clicks, form inputs) into the Aeon reactive world.
  */
 
-import type { Event } from "aeon-types"
 import { createAdapter } from "aeon-core"
+import type { Event } from "aeon-types"
 import { useMemo } from "tachys"
 
 /**

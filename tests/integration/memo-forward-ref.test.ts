@@ -1,18 +1,18 @@
 import { describe, expect, it, vi } from "vitest"
 import {
+  createRef,
   flushUpdates,
+  forwardRef,
   h,
+  memo,
   mount,
   patch,
-  memo,
-  forwardRef,
-  useState,
   useRef,
-  createRef,
+  useState,
 } from "../../src/index"
 import type { MemoComponentFn } from "../../src/index"
-import type { VNode } from "../../src/vnode"
 import type { Ref } from "../../src/ref"
+import type { VNode } from "../../src/vnode"
 
 // ---------------------------------------------------------------------------
 // memo()
@@ -85,7 +85,9 @@ describe("memo()", () => {
       }
 
       // Custom compare always returns true (always equal — never re-render)
-      const compare = vi.fn((_prev: Record<string, unknown>, _next: Record<string, unknown>) => true)
+      const compare = vi.fn(
+        (_prev: Record<string, unknown>, _next: Record<string, unknown>) => true,
+      )
       const MemoComp = memo(Inner, compare)
 
       const old = h(MemoComp, { count: 1 })
@@ -111,7 +113,9 @@ describe("memo()", () => {
       }
 
       // Custom compare always returns false (never equal — always re-render)
-      const compare = vi.fn((_prev: Record<string, unknown>, _next: Record<string, unknown>) => false)
+      const compare = vi.fn(
+        (_prev: Record<string, unknown>, _next: Record<string, unknown>) => false,
+      )
       const MemoComp = memo(Inner, compare)
 
       const old = h(MemoComp, { count: 5 })
@@ -138,10 +142,8 @@ describe("memo()", () => {
       }
 
       // Only compare the "important" prop; ignore "ignored" prop changes
-      const compare = (
-        prev: Record<string, unknown>,
-        next: Record<string, unknown>,
-      ) => prev["important"] === next["important"]
+      const compare = (prev: Record<string, unknown>, next: Record<string, unknown>) =>
+        prev["important"] === next["important"]
 
       const MemoComp = memo(Inner, compare)
 

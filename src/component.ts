@@ -6,48 +6,43 @@
  * for hook registration.
  */
 
+import type { CompiledComponent } from "./compiled"
 import type { Context, ProviderFunction } from "./context"
 import { __DEV__, getComponentName, warn } from "./dev"
-import {
-  type ErrorBoundaryFn,
-  popErrorHandler,
-  propagateRenderError,
-  pushErrorHandler,
-} from "./error-boundary"
 import {
   domAppendChild,
   domRemoveChild,
   pushDeferredEffect,
   pushTransitionRestorer,
 } from "./effects"
+import {
+  type ErrorBoundaryFn,
+  popErrorHandler,
+  propagateRenderError,
+  pushErrorHandler,
+} from "./error-boundary"
 import { ChildFlags, ComponentMeta, VNodeFlags } from "./flags"
 import type { MemoComponentFn } from "./memo"
+import { acquireVNode, releaseVNode } from "./pool"
+import type { PortalFn } from "./portal"
 import {
   bridgeMount as mountInternal,
   bridgePatch as patchVNode,
-  bridgeUnmount as unmount,
   registerRerender,
+  bridgeUnmount as unmount,
 } from "./reconcile-bridge"
-import { acquireVNode, releaseVNode } from "./pool"
-import type { PortalFn } from "./portal"
-import type { CompiledComponent } from "./compiled"
 import type { RefObject } from "./ref"
 import {
-  appendAfterWork,
-  getCurrentLane,
   Lane,
   R,
+  appendAfterWork,
+  getCurrentLane,
   runAfterPaint,
   scheduleUpdate,
   setCurrentLane,
   signalTransitionSuspended,
 } from "./scheduler-shim"
-import {
-  isThenable,
-  popSuspendHandler,
-  propagateSuspend,
-  pushSuspendHandler,
-} from "./suspense"
+import { isThenable, popSuspendHandler, propagateSuspend, pushSuspendHandler } from "./suspense"
 import type { ComponentFn } from "./vnode"
 import { VNode } from "./vnode"
 
@@ -513,10 +508,7 @@ export function finalizeSuspenseComponent(
  * Switch a hydrated Suspense boundary to its fallback state.
  * Used when a child throws a promise during hydration.
  */
-export function switchSuspenseToFallback(
-  vnode: VNode,
-  instance: ComponentInstance,
-): VNode {
+export function switchSuspenseToFallback(vnode: VNode, instance: ComponentInstance): VNode {
   instance._hooks[0]!.value = true
   const fallback = renderComponent(instance, instance._props)
   instance._rendered = fallback
@@ -559,9 +551,7 @@ export function patchComponent(oldVNode: VNode, newVNode: VNode, parentDom: Elem
   if (
     propsEqual &&
     oldInstance._queuedLanes === 0 &&
-    (!__SUPPORTS_CONTEXT__ ||
-      oldInstance._contexts === null ||
-      !contextValuesChanged(oldInstance))
+    (!__SUPPORTS_CONTEXT__ || oldInstance._contexts === null || !contextValuesChanged(oldInstance))
   ) {
     // Props unchanged — skip re-render, carry forward references
     newVNode.children = oldInstance._rendered
@@ -586,7 +576,10 @@ export function patchComponent(oldVNode: VNode, newVNode: VNode, parentDom: Elem
 
   // Compiled components: props differed, dispatch slot-diff patch.
   if ((meta & ComponentMeta.Compiled) !== 0) {
-    const compiled = oldInstance._rendered as unknown as { dom: Element; state: Record<string, unknown> }
+    const compiled = oldInstance._rendered as unknown as {
+      dom: Element
+      state: Record<string, unknown>
+    }
     ;(newType as unknown as CompiledComponent).patch(compiled.state, newProps)
     newVNode.dom = compiled.dom
     newVNode.children = compiled as unknown as VNode
@@ -639,8 +632,16 @@ export function patchComponent(oldVNode: VNode, newVNode: VNode, parentDom: Elem
   // post-patch work (dom ref, suspense/EB handling, effects, provider cleanup).
   if (R.pending) {
     deferPatchComponentPostWork(
-      oldInstance, oldVNode, newVNode, newRendered, newProps,
-      patchParent, portalTarget, providerCtx, isSuspense, isEB,
+      oldInstance,
+      oldVNode,
+      newVNode,
+      newRendered,
+      newProps,
+      patchParent,
+      portalTarget,
+      providerCtx,
+      isSuspense,
+      isEB,
       suspendedPromise,
     )
     return
@@ -759,9 +760,7 @@ export function unmountComponent(vnode: VNode, parentDom: Element): void {
 
 function hookOutsideError(name: string): never {
   throw new Error(
-    name +
-      " must be called inside a component render. " +
-      "Make sure you are not calling hooks outside of a component function.",
+    `${name} must be called inside a component render. Make sure you are not calling hooks outside of a component function.`,
   )
 }
 
@@ -935,10 +934,7 @@ export function useEffect(callback: () => EffectCleanup, deps?: readonly unknown
  * @param callback - The effect function (may return a cleanup function)
  * @param deps - Dependency array (undefined = run every render, [] = run once)
  */
-export function useLayoutEffect(
-  callback: () => EffectCleanup,
-  deps?: readonly unknown[],
-): void {
+export function useLayoutEffect(callback: () => EffectCleanup, deps?: readonly unknown[]): void {
   registerEffect(callback, deps, true, "useLayoutEffect")
 }
 
@@ -957,10 +953,7 @@ export function useLayoutEffect(
  * @param callback - The effect function (may return a cleanup function)
  * @param deps - Dependency array (undefined = run every render, [] = run once)
  */
-export function useInsertionEffect(
-  callback: () => EffectCleanup,
-  deps?: readonly unknown[],
-): void {
+export function useInsertionEffect(callback: () => EffectCleanup, deps?: readonly unknown[]): void {
   registerEffect(callback, deps, true, "useInsertionEffect")
 }
 
@@ -1372,7 +1365,8 @@ export function useDeferredValue<T>(value: T, initialValue?: T): T {
 
   // When initialValue is provided, the first mount returns initialValue
   // instead of value, then a Transition update catches up to value.
-  const initial = arguments.length >= 2 ? initialValue as T : value
+  // biome-ignore lint/style/noArguments: distinguishes "no arg" from "explicit undefined"
+  const initial = arguments.length >= 2 ? (initialValue as T) : value
   const [deferredValue, setDeferredValue] = useState(initial)
 
   // Schedule the catch-up update in an effect (runs after paint, not during render)
@@ -1744,8 +1738,14 @@ function rerenderComponent(instance: ComponentInstance): void {
   // post-patch work (dom ref, suspense/EB handling, effects, provider cleanup).
   if (R.pending) {
     deferRerenderComponentPostWork(
-      instance, newRendered, patchParent, portalTarget,
-      providerCtx, isSuspense, isEB, suspendedPromise,
+      instance,
+      newRendered,
+      patchParent,
+      portalTarget,
+      providerCtx,
+      isSuspense,
+      isEB,
+      suspendedPromise,
     )
     return
   }

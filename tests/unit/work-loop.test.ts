@@ -211,9 +211,10 @@ describe("simulated yield in children loop", () => {
 
     resumePendingWork()
     expect(log).toEqual([
-      "child-0", "child-1", // before yield
-      "child-2",            // after resume
-      "run-effects",        // afterWork LIFO
+      "child-0",
+      "child-1", // before yield
+      "child-2", // after resume
+      "run-effects", // afterWork LIFO
       "ref-update",
     ])
   })

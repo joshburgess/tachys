@@ -10,21 +10,11 @@
  * unaware of which frontend produced its input.
  */
 
-import * as generatorNs from "@babel/generator"
 import type * as BabelCore from "@babel/core"
+import * as generatorNs from "@babel/generator"
 
-import type {
-  ChildPropEntry,
-  CompiledResult,
-  CompositeExpr,
-  Slot,
-} from "./compile"
-import type {
-  CompiledIR,
-  IRChildPropEntry,
-  IRCompositeExpr,
-  IRSlot,
-} from "compiler-core-tachys"
+import type { CompiledIR, IRChildPropEntry, IRCompositeExpr, IRSlot } from "compiler-core-tachys"
+import type { ChildPropEntry, CompiledResult, CompositeExpr, Slot } from "./compile"
 
 /**
  * `@babel/generator` ships the generator function under different export

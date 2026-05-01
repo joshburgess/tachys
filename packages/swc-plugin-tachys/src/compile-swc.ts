@@ -22,15 +22,6 @@
  */
 
 import type {
-  CompiledIR,
-  IRAttrSlot,
-  IRComponentSlot,
-  IREventSlot,
-  IRListSlot,
-  IRSlot,
-  IRTextSlot,
-} from "compiler-core-tachys"
-import type {
   ArrowFunctionExpression,
   CallExpression,
   ConditionalExpression,
@@ -45,8 +36,17 @@ import type {
   ObjectPattern,
   Pattern,
 } from "@swc/types"
+import type {
+  CompiledIR,
+  IRAttrSlot,
+  IRComponentSlot,
+  IREventSlot,
+  IRListSlot,
+  IRSlot,
+  IRTextSlot,
+} from "compiler-core-tachys"
 
-import { collectPropRefs, printExpr, type PrintContext } from "./print-expr"
+import { type PrintContext, collectPropRefs, printExpr } from "./print-expr"
 
 const VOID_ELEMENTS = new Set([
   "area",
@@ -71,16 +71,11 @@ interface CompileCtx {
 }
 
 function htmlEscapeText(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
 }
 
 function htmlEscapeAttr(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/"/g, "&quot;")
+  return s.replace(/&/g, "&amp;").replace(/"/g, "&quot;")
 }
 
 function isHostTag(name: string): boolean {
@@ -95,9 +90,7 @@ function printCtx(ctx: CompileCtx): PrintContext {
 /**
  * Entry point. Returns `null` for anything outside the supported grammar.
  */
-export function compileComponentSwc(
-  fn: FunctionDeclaration,
-): CompiledIR | null {
+export function compileComponentSwc(fn: FunctionDeclaration): CompiledIR | null {
   if (fn.async || fn.generator) return null
   if (fn.params.length > 1) return null
 
@@ -151,11 +144,7 @@ function isCollapsibleJsxWhitespace(s: string): boolean {
   return /\n/.test(s) && s.trim() === ""
 }
 
-function renderElement(
-  el: JSXElement,
-  ctx: CompileCtx,
-  path: number[],
-): string | null {
+function renderElement(el: JSXElement, ctx: CompileCtx, path: number[]): string | null {
   const nameNode = el.opening.name
   if (nameNode.type !== "Identifier") return null
   const name = (nameNode as Identifier).value
@@ -180,15 +169,9 @@ function renderElement(
     (c) => !(c.type === "JSXText" && isCollapsibleJsxWhitespace(c.value)),
   )
   const soleDynamicChild =
-    significantChildren.length === 1 &&
-    significantChildren[0]!.type === "JSXExpressionContainer"
+    significantChildren.length === 1 && significantChildren[0]!.type === "JSXExpressionContainer"
 
-  const children = renderChildren(
-    el.children,
-    ctx,
-    path,
-    soleDynamicChild,
-  )
+  const children = renderChildren(el.children, ctx, path, soleDynamicChild)
   if (children === null) return null
 
   return `<${name}${attrs}>${children}</${name}>`
@@ -260,18 +243,10 @@ function renderChildren(
   let html = ""
   let childIndex = 0
   for (const child of children) {
-    if (
-      child.type === "JSXText" &&
-      isCollapsibleJsxWhitespace(child.value)
-    ) {
+    if (child.type === "JSXText" && isCollapsibleJsxWhitespace(child.value)) {
       continue
     }
-    const result = renderChild(
-      child,
-      ctx,
-      [...parentPath, childIndex],
-      soleDynamicChild,
-    )
+    const result = renderChild(child, ctx, [...parentPath, childIndex], soleDynamicChild)
     if (result === null) return null
     html += result
     childIndex++
@@ -428,11 +403,7 @@ function renderAttributes(
  * Returns a complete `IRListSlot` (caller pushes to `ctx.slots`). Returns
  * null for anything outside the grammar so callers fall through.
  */
-function resolveListExpr(
-  expr: Expression,
-  ctx: CompileCtx,
-  path: number[],
-): IRListSlot | null {
+function resolveListExpr(expr: Expression, ctx: CompileCtx, path: number[]): IRListSlot | null {
   if (expr.type !== "CallExpression") return null
   const call = expr as CallExpression
   if (call.callee.type !== "MemberExpression") return null
@@ -453,8 +424,7 @@ function resolveListExpr(
     ((arrayObj as MemberExpression).object as Identifier).value === "props" &&
     (arrayObj as MemberExpression).property.type === "Identifier"
   ) {
-    arrayPropName = ((arrayObj as MemberExpression).property as Identifier)
-      .value
+    arrayPropName = ((arrayObj as MemberExpression).property as Identifier).value
   } else {
     return null
   }

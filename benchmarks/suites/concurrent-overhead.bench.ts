@@ -10,15 +10,15 @@
  */
 import { bench, describe } from "vitest"
 import {
+  flushUpdates,
   h,
-  render,
   mount,
   patch,
+  render,
   unmount,
-  flushUpdates,
-  useState,
   useCallback,
   useMemo,
+  useState,
 } from "../../src/index"
 import type { VNode } from "../../src/vnode"
 
@@ -129,12 +129,13 @@ describe("Concurrent overhead: Sync/Default hot path", () => {
       const newTree = h(
         "table",
         null,
-        h("tbody", null, ...newData.map((r) =>
-          h("tr", { key: r.id },
-            h("td", null, String(r.id)),
-            h("td", null, r.label),
+        h(
+          "tbody",
+          null,
+          ...newData.map((r) =>
+            h("tr", { key: r.id }, h("td", null, String(r.id)), h("td", null, r.label)),
           ),
-        )),
+        ),
       )
       patch(currentTree!, newTree, container as Element)
       currentTree = newTree
@@ -146,12 +147,13 @@ describe("Concurrent overhead: Sync/Default hot path", () => {
         currentTree = h(
           "table",
           null,
-          h("tbody", null, ...data.map((r) =>
-            h("tr", { key: r.id },
-              h("td", null, String(r.id)),
-              h("td", null, r.label),
+          h(
+            "tbody",
+            null,
+            ...data.map((r) =>
+              h("tr", { key: r.id }, h("td", null, String(r.id)), h("td", null, r.label)),
             ),
-          )),
+          ),
         )
         mount(currentTree, container as Element)
       },
@@ -172,12 +174,18 @@ describe("Concurrent overhead: Sync/Default hot path", () => {
       const newTree = h(
         "table",
         null,
-        h("tbody", null, ...newData.map((r) =>
-          h("tr", { key: r.id, className: (r as { selected?: boolean }).selected ? "danger" : "" },
-            h("td", null, String(r.id)),
-            h("td", null, r.label),
+        h(
+          "tbody",
+          null,
+          ...newData.map((r) =>
+            h(
+              "tr",
+              { key: r.id, className: (r as { selected?: boolean }).selected ? "danger" : "" },
+              h("td", null, String(r.id)),
+              h("td", null, r.label),
+            ),
           ),
-        )),
+        ),
       )
       patch(currentTree!, newTree, container as Element)
       currentTree = newTree
@@ -189,12 +197,18 @@ describe("Concurrent overhead: Sync/Default hot path", () => {
         currentTree = h(
           "table",
           null,
-          h("tbody", null, ...currentData.map((r) =>
-            h("tr", { key: r.id, className: "" },
-              h("td", null, String(r.id)),
-              h("td", null, r.label),
+          h(
+            "tbody",
+            null,
+            ...currentData.map((r) =>
+              h(
+                "tr",
+                { key: r.id, className: "" },
+                h("td", null, String(r.id)),
+                h("td", null, r.label),
+              ),
             ),
-          )),
+          ),
         )
         mount(currentTree, container as Element)
       },

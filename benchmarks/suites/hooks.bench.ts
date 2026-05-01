@@ -5,7 +5,7 @@
  * and the scheduler flush cycle with component re-renders.
  */
 import { bench, describe } from "vitest"
-import { h, render, flushUpdates, useState, useReducer, useCallback } from "../../src/index"
+import { flushUpdates, h, render, useCallback, useReducer, useState } from "../../src/index"
 
 describe("Hooks hot path", () => {
   let container: HTMLElement
@@ -86,10 +86,7 @@ describe("Hooks hot path", () => {
         document.body.appendChild(container)
         dispatch = null
         function App() {
-          const [val, d] = useReducer(
-            (s: number, a: string) => (a === "increment" ? s + 1 : s),
-            0,
-          )
+          const [val, d] = useReducer((s: number, a: string) => (a === "increment" ? s + 1 : s), 0)
           dispatch = d
           return h("div", null, String(val))
         }

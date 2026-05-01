@@ -1,14 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
+import type { ComponentInstance } from "../../src/component"
 import {
-  flushUpdates,
-  flushSyncWork,
-  scheduleUpdate,
   Lane,
-  setCurrentLane,
+  flushSyncWork,
+  flushUpdates,
   getCurrentLane,
+  scheduleUpdate,
+  setCurrentLane,
   shouldYield,
 } from "../../src/scheduler"
-import type { ComponentInstance } from "../../src/component"
 
 // ---------------------------------------------------------------------------
 // Helper: build a minimal ComponentInstance mock.
@@ -21,7 +21,9 @@ import type { ComponentInstance } from "../../src/component"
 
 function makeInstance(rerenderFn?: () => void): ComponentInstance {
   const instance: ComponentInstance = {
-    _type: () => { throw new Error("not a real component") },
+    _type: () => {
+      throw new Error("not a real component")
+    },
     _props: {},
     _vnode: null as never,
     _rendered: null,
@@ -418,7 +420,11 @@ describe("shouldYield()", () => {
     const instances: ComponentInstance[] = []
 
     for (let i = 0; i < count; i++) {
-      instances.push(makeInstance(() => { processed++ }))
+      instances.push(
+        makeInstance(() => {
+          processed++
+        }),
+      )
     }
 
     for (const inst of instances) {
@@ -434,7 +440,9 @@ describe("shouldYield()", () => {
 describe("per-lane queuing", () => {
   it("allows the same instance to be queued in multiple lanes", () => {
     let renderCount = 0
-    const instance = makeInstance(() => { renderCount++ })
+    const instance = makeInstance(() => {
+      renderCount++
+    })
 
     scheduleUpdate(instance, Lane.Default)
     scheduleUpdate(instance, Lane.Transition)
@@ -451,7 +459,9 @@ describe("per-lane queuing", () => {
 
   it("deduplicates within the same lane but not across lanes", () => {
     let renderCount = 0
-    const instance = makeInstance(() => { renderCount++ })
+    const instance = makeInstance(() => {
+      renderCount++
+    })
 
     scheduleUpdate(instance, Lane.Default)
     scheduleUpdate(instance, Lane.Default) // duplicate - should be ignored

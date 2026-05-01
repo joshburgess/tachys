@@ -1,10 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import {
-  flushUpdates,
-  scheduleUpdate,
-  Lane,
-  setCurrentLane,
-} from "../../src/scheduler"
+import type { ComponentInstance } from "../../src/component"
 import {
   beginCollecting,
   clearTransitionRestorers,
@@ -16,9 +11,9 @@ import {
   pushTransitionRestorer,
   restoreTransitionState,
 } from "../../src/effects"
-import { acquireVNode, clearPool, getPoolSize, releaseVNode } from "../../src/pool"
 import { ChildFlags, VNodeFlags } from "../../src/flags"
-import type { ComponentInstance } from "../../src/component"
+import { acquireVNode, clearPool, getPoolSize, releaseVNode } from "../../src/pool"
+import { Lane, flushUpdates, scheduleUpdate, setCurrentLane } from "../../src/scheduler"
 
 // ---------------------------------------------------------------------------
 // Helper: minimal ComponentInstance mock

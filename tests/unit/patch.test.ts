@@ -139,7 +139,18 @@ describe("patchProp: events", () => {
     document.body.appendChild(container)
 
     let clicked = false
-    mount(h("button", { onClick: () => { clicked = true } }, "click me"), container)
+    mount(
+      h(
+        "button",
+        {
+          onClick: () => {
+            clicked = true
+          },
+        },
+        "click me",
+      ),
+      container,
+    )
 
     const button = container.querySelector("button")!
     button.click()

@@ -2,18 +2,18 @@
  * Tests for tachys-aeon bridge hooks.
  */
 
-import { describe, it, expect, beforeEach } from "vitest"
-import { createAdapter, stepper, readBehavior, constantB, map, tap } from "aeon-core"
+import { constantB, createAdapter, map, readBehavior, stepper, tap } from "aeon-core"
 import { DefaultScheduler } from "aeon-scheduler"
 import type { Scheduler } from "aeon-types"
-import { h, render, flushUpdates } from "tachys"
+import { flushUpdates, h, render } from "tachys"
+import { beforeEach, describe, expect, it } from "vitest"
 
+import { Reactive, bindAttr, bindText } from "./reactive.js"
+import { useAccum } from "./useAccum.js"
+import { useAdapter } from "./useAdapter.js"
 import { useBehavior } from "./useBehavior.js"
 import { useEvent } from "./useEvent.js"
-import { useAdapter } from "./useAdapter.js"
 import { useStepper } from "./useStepper.js"
-import { useAccum } from "./useAccum.js"
-import { Reactive, bindText, bindAttr } from "./reactive.js"
 
 let container: HTMLDivElement
 let scheduler: Scheduler
@@ -72,7 +72,13 @@ describe("useEvent", () => {
     const received: string[] = []
 
     function App() {
-      useEvent(event, (val) => { received.push(val) }, scheduler)
+      useEvent(
+        event,
+        (val) => {
+          received.push(val)
+        },
+        scheduler,
+      )
       return h("div", null, "listening")
     }
 
@@ -91,7 +97,13 @@ describe("useEvent", () => {
     const received: number[] = []
 
     function App() {
-      useEvent(event, (val) => { received.push(val) }, scheduler)
+      useEvent(
+        event,
+        (val) => {
+          received.push(val)
+        },
+        scheduler,
+      )
       return h("div", null, "up")
     }
 
@@ -118,7 +130,13 @@ describe("useAdapter", () => {
 
     function App() {
       const [pushVal, event] = useAdapter<number>()
-      useEvent(event, (v) => { received.push(v) }, scheduler)
+      useEvent(
+        event,
+        (v) => {
+          received.push(v)
+        },
+        scheduler,
+      )
 
       return h("div", { onClick: () => pushVal(42) }, "click me")
     }

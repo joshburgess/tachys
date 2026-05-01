@@ -11,17 +11,17 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import {
-  h,
-  render,
-  useState,
-  startTransition,
-  useTransition,
-  flushUpdates,
   Suspense,
+  flushUpdates,
+  h,
   lazy,
+  render,
+  startTransition,
+  useState,
+  useTransition,
 } from "../../src"
-import { isCollecting, discardEffects } from "../../src/effects"
-import { hasPendingWork, Lane, setCurrentLane } from "../../src/scheduler"
+import { discardEffects, isCollecting } from "../../src/effects"
+import { Lane, hasPendingWork, setCurrentLane } from "../../src/scheduler"
 
 let container: HTMLDivElement
 
@@ -45,10 +45,7 @@ function nextFrame(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 20))
 }
 
-async function waitForStable(
-  el: HTMLElement = container,
-  maxIterations = 200,
-): Promise<void> {
+async function waitForStable(el: HTMLElement = container, maxIterations = 200): Promise<void> {
   let prevHTML = el.innerHTML
   let stableCount = 0
   for (let i = 0; i < maxIterations; i++) {
@@ -97,11 +94,7 @@ describe("Suspense in Sync/Default lane", () => {
     const { SuspendingChild, resolve } = createSuspendingComponent("loaded")
 
     function App() {
-      return h(
-        Suspense,
-        { fallback: h("div", null, "loading...") },
-        h(SuspendingChild, null),
-      )
+      return h(Suspense, { fallback: h("div", null, "loading...") }, h(SuspendingChild, null))
     }
 
     render(h(App, null), container)
@@ -144,9 +137,7 @@ describe("Suspense in Transition lane", () => {
         h(
           Suspense,
           { fallback: h("div", null, "loading...") },
-          showSuspending
-            ? h(SuspendingChild, null)
-            : h("span", null, "initial"),
+          showSuspending ? h(SuspendingChild, null) : h("span", null, "initial"),
         ),
       )
     }
@@ -183,11 +174,7 @@ describe("Suspense in Transition lane", () => {
     const { SuspendingChild, resolve } = createSuspendingComponent("loaded")
 
     function App() {
-      return h(
-        Suspense,
-        { fallback: h("div", null, "loading...") },
-        h(SuspendingChild, null),
-      )
+      return h(Suspense, { fallback: h("div", null, "loading...") }, h(SuspendingChild, null))
     }
 
     // Mount inside a startTransition

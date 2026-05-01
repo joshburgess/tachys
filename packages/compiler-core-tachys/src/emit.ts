@@ -10,7 +10,6 @@
  * `.toContain` and regex `.toMatch`) keeps passing without retargeting.
  */
 
-import * as D from "./js-dsl"
 import type {
   CompiledIR,
   IRAltSlot,
@@ -21,6 +20,7 @@ import type {
   IRSlot,
   IRTextSlot,
 } from "./ir"
+import * as D from "./js-dsl"
 
 type ListHelpers =
   | {
@@ -130,11 +130,7 @@ function attrValueExpr(slot: import("./ir").IRAttrSlot): D.JsExpr {
   }
   const propRef = D.member(D.id("props"), slot.propName)
   if (slot.ternary !== undefined) {
-    return D.ternary(
-      propRef,
-      D.str(slot.ternary.ifTrue ?? ""),
-      D.str(slot.ternary.ifFalse ?? ""),
-    )
+    return D.ternary(propRef, D.str(slot.ternary.ifTrue ?? ""), D.str(slot.ternary.ifFalse ?? ""))
   }
   return D.call(D.id("String"), [propRef])
 }
@@ -150,10 +146,7 @@ function attrValueExpr(slot: import("./ir").IRAttrSlot): D.JsExpr {
  * CSS selectors, and skipping the write avoids the per-row style
  * invalidation that the assignment otherwise triggers.
  */
-function mountAttrStmts(
-  slot: import("./ir").IRAttrSlot,
-  elExpr: D.JsExpr,
-): D.JsStmt | null {
+function mountAttrStmts(slot: import("./ir").IRAttrSlot, elExpr: D.JsExpr): D.JsStmt | null {
   const t = slot.ternary
   if (t !== undefined) {
     const trueSkip = isMountSkippableBranch(t.ifTrue, slot.strategy)
@@ -164,9 +157,7 @@ function mountAttrStmts(
       return D.ifStmt(propRef, [attrWriteStmt(slot, elExpr, D.str(t.ifTrue!))])
     }
     if (trueSkip && !falseSkip) {
-      return D.ifStmt(D.not(propRef), [
-        attrWriteStmt(slot, elExpr, D.str(t.ifFalse!)),
-      ])
+      return D.ifStmt(D.not(propRef), [attrWriteStmt(slot, elExpr, D.str(t.ifFalse!))])
     }
   }
   return attrWriteStmt(slot, elExpr, attrValueExpr(slot))
@@ -197,10 +188,7 @@ function isMountSkippableBranch(
  * `removeAttribute("class")` on Blink and visually equivalent for the
  * bench's `:not(.danger)` selectors.
  */
-function patchAttrStmt(
-  slot: import("./ir").IRAttrSlot,
-  elExpr: D.JsExpr,
-): D.JsStmt {
+function patchAttrStmt(slot: import("./ir").IRAttrSlot, elExpr: D.JsExpr): D.JsStmt {
   const t = slot.ternary
   if (
     t !== undefined &&
@@ -209,9 +197,7 @@ function patchAttrStmt(
   ) {
     const propRef = D.member(D.id("props"), slot.propName)
     const setStmt = (val: string) =>
-      D.exprStmt(
-        D.call(D.member(elExpr, "setAttribute"), [D.str(slot.attrName), D.str(val)]),
-      )
+      D.exprStmt(D.call(D.member(elExpr, "setAttribute"), [D.str(slot.attrName), D.str(val)]))
     const removeStmt = D.exprStmt(
       D.call(D.member(elExpr, "removeAttribute"), [D.str(slot.attrName)]),
     )
@@ -233,9 +219,7 @@ function attrWriteStmt(
   if (slot.strategy === "className") {
     return D.exprStmt(D.assign(D.member(elExpr, "className"), value))
   }
-  return D.exprStmt(
-    D.call(D.member(elExpr, "setAttribute"), [D.str(slot.attrName), value]),
-  )
+  return D.exprStmt(D.call(D.member(elExpr, "setAttribute"), [D.str(slot.attrName), value]))
 }
 
 /**
@@ -311,11 +295,7 @@ function propsClosure(entries: readonly IRChildPropEntry[]): D.JsExpr {
 function listMakePropsExpr(slot: IRListSlot): D.JsExpr {
   const stmts: D.JsStmt[] = []
   for (const p of slot.propSpecs) {
-    stmts.push(
-      D.exprStmt(
-        D.assign(D.member(D.id("__r"), p.name), rawExpr(p.valueSrc)),
-      ),
-    )
+    stmts.push(D.exprStmt(D.assign(D.member(D.id("__r"), p.name), rawExpr(p.valueSrc))))
   }
   stmts.push(D.ret(D.id("__r")))
   return D.arrowBlock([slot.itemParamName, "__r = {}"], stmts)
@@ -344,29 +324,17 @@ function listMakePropsOrDiffExpr(slot: IRListSlot): D.JsExpr {
   slot.propSpecs.forEach((p, i) => {
     stmts.push(D.vdecl("const", `__v${i}`, rawExpr(p.valueSrc)))
   })
-  let bail: D.JsExpr = D.bin(
-    "===",
-    D.member(D.id("__p"), slot.propSpecs[0]!.name),
-    D.id("__v0"),
-  )
+  let bail: D.JsExpr = D.bin("===", D.member(D.id("__p"), slot.propSpecs[0]!.name), D.id("__v0"))
   for (let i = 1; i < slot.propSpecs.length; i++) {
     bail = D.and(
       bail,
-      D.bin(
-        "===",
-        D.member(D.id("__p"), slot.propSpecs[i]!.name),
-        D.id(`__v${i}`),
-      ),
+      D.bin("===", D.member(D.id("__p"), slot.propSpecs[i]!.name), D.id(`__v${i}`)),
     )
   }
   stmts.push(D.ifStmt(bail, [D.ret(D.nullLit)]))
-  stmts.push(
-    D.exprStmt(D.assign(D.id("__r"), D.or(D.id("__r"), D.obj([])))),
-  )
+  stmts.push(D.exprStmt(D.assign(D.id("__r"), D.or(D.id("__r"), D.obj([])))))
   slot.propSpecs.forEach((p, i) => {
-    stmts.push(
-      D.exprStmt(D.assign(D.member(D.id("__r"), p.name), D.id(`__v${i}`))),
-    )
+    stmts.push(D.exprStmt(D.assign(D.member(D.id("__r"), p.name), D.id(`__v${i}`))))
   })
   stmts.push(D.ret(D.id("__r")))
   return D.arrowBlock([slot.itemParamName, "__r", "__p"], stmts)
@@ -382,23 +350,13 @@ function listKeyOfExpr(slot: IRListSlot): D.JsExpr {
 /**
  * Build the mount function as a single `JsExpr` arrow.
  */
-function emitMount(
-  ir: CompiledIR,
-  tplId: string,
-  listHelpers: Map<number, ListHelpers>,
-): D.JsExpr {
+function emitMount(ir: CompiledIR, tplId: string, listHelpers: Map<number, ListHelpers>): D.JsExpr {
   const stmts: D.JsStmt[] = []
   const slots = ir.slots
   const propsName = ir.propsParamName
 
   // const _root = <tpl>.cloneNode(true);
-  stmts.push(
-    D.vdecl(
-      "const",
-      "_root",
-      D.call(D.member(D.id(tplId), "cloneNode"), [D.bool(true)]),
-    ),
-  )
+  stmts.push(D.vdecl("const", "_root", D.call(D.member(D.id(tplId), "cloneNode"), [D.bool(true)])))
 
   const stateEntries: D.ObjEntry[] = []
   const seenPropNames = new Set<string>()
@@ -467,11 +425,7 @@ function emitMount(
       if (slot.placeholder === "prealloc") {
         stmts.push(D.vdecl("const", refName, pathFrom(slot.path)))
         registerPath(slot.path, refName)
-        stmts.push(
-          D.exprStmt(
-            D.assign(D.member(D.id(refName), "data"), textValueExpr(slot)),
-          ),
-        )
+        stmts.push(D.exprStmt(D.assign(D.member(D.id(refName), "data"), textValueExpr(slot))))
       } else {
         const markerName = `_m${i}`
         stmts.push(D.vdecl("const", markerName, pathFrom(slot.path)))
@@ -480,9 +434,7 @@ function emitMount(
           D.vdecl(
             "const",
             refName,
-            D.call(D.member(D.id("document"), "createTextNode"), [
-              textValueExpr(slot),
-            ]),
+            D.call(D.member(D.id("document"), "createTextNode"), [textValueExpr(slot)]),
           ),
         )
         stmts.push(
@@ -520,8 +472,7 @@ function emitMount(
       const helpers = listHelpers.get(i)!
       const makeProps =
         helpers.kind === "hoisted" ? D.id(helpers.makePropsId) : listMakePropsExpr(slot)
-      const keyOf =
-        helpers.kind === "hoisted" ? D.id(helpers.keyOfId) : listKeyOfExpr(slot)
+      const keyOf = helpers.kind === "hoisted" ? D.id(helpers.keyOfId) : listKeyOfExpr(slot)
 
       // tailOfParent lists skip the `<!>` marker (it's not in the template
       // HTML). Pass the parent element directly; the runtime detects a
@@ -546,13 +497,9 @@ function emitMount(
         anchorArg,
       ]
       if (slot.parentPropDeps.length > 0) {
-        args.push(
-          D.arr(slot.parentPropDeps.map((d) => D.member(D.id(propsName), d))),
-        )
+        args.push(D.arr(slot.parentPropDeps.map((d) => D.member(D.id(propsName), d))))
       }
-      stmts.push(
-        D.vdecl("const", instName, D.call(D.id("_mountList"), args)),
-      )
+      stmts.push(D.vdecl("const", instName, D.call(D.id("_mountList"), args)))
       stateEntries.push({ kind: "shorthand", name: instName })
       registerSlotProps(slot)
       continue
@@ -610,11 +557,7 @@ function emitMount(
       stmts.push(D.vdecl("const", markerName, pathFrom(slot.path)))
       registerPath(slot.path, markerName)
       stmts.push(
-        D.vdecl(
-          "const",
-          instName,
-          D.call(D.id(slot.componentRef), [childPropsObj(slot.props)]),
-        ),
+        D.vdecl("const", instName, D.call(D.id(slot.componentRef), [childPropsObj(slot.props)])),
       )
       stmts.push(
         D.exprStmt(
@@ -626,7 +569,6 @@ function emitMount(
       )
       stateEntries.push({ kind: "shorthand", name: instName })
       registerSlotProps(slot)
-      continue
     }
   }
 
@@ -655,17 +597,9 @@ function emitMount(
   for (const slot of slots) {
     if (slot.kind !== "event") continue
     const elName = ensureElementRef(slot.path)
-    const eventName = slot.domProp.startsWith("on")
-      ? slot.domProp.slice(2)
-      : slot.domProp
-    const wrapper = rawExpr(
-      `function (ev) { return state.${slot.propName}.call(this, ev); }`,
-    )
-    stmts.push(
-      D.exprStmt(
-        D.call(D.id("_attachEvent"), [D.id(elName), D.str(eventName), wrapper]),
-      ),
-    )
+    const eventName = slot.domProp.startsWith("on") ? slot.domProp.slice(2) : slot.domProp
+    const wrapper = rawExpr(`function (ev) { return state.${slot.propName}.call(this, ev); }`)
+    stmts.push(D.exprStmt(D.call(D.id("_attachEvent"), [D.id(elName), D.str(eventName), wrapper])))
   }
 
   stmts.push(
@@ -693,10 +627,7 @@ function emitSlotWrite(
   if (slot.kind === "text") {
     const refName = slotRefName(index)
     return D.exprStmt(
-      D.assign(
-        D.member(D.member(D.id("state"), refName), "data"),
-        textValueExpr(slot),
-      ),
+      D.assign(D.member(D.member(D.id("state"), refName), "data"), textValueExpr(slot)),
     )
   }
   if (slot.kind === "attr") {
@@ -716,17 +647,12 @@ function emitSlotWrite(
     const listSlot = slot as IRListSlot
     const helpers = listHelpers.get(index)!
     const makeProps =
-      helpers.kind === "hoisted"
-        ? D.id(helpers.makePropsId)
-        : listMakePropsExpr(listSlot)
+      helpers.kind === "hoisted" ? D.id(helpers.makePropsId) : listMakePropsExpr(listSlot)
     const makePropsOrDiff =
       helpers.kind === "hoisted"
         ? D.id(helpers.makePropsOrDiffId)
         : listMakePropsOrDiffExpr(listSlot)
-    const keyOf =
-      helpers.kind === "hoisted"
-        ? D.id(helpers.keyOfId)
-        : listKeyOfExpr(listSlot)
+    const keyOf = helpers.kind === "hoisted" ? D.id(helpers.keyOfId) : listKeyOfExpr(listSlot)
     const args: D.JsExpr[] = [
       D.member(D.id("state"), listInstanceName(index)),
       D.member(D.id("props"), listSlot.arrayPropName),
@@ -736,13 +662,9 @@ function emitSlotWrite(
       makePropsOrDiff,
     ]
     if (listSlot.parentPropDeps.length > 0) {
-      args.push(
-        D.arr(listSlot.parentPropDeps.map((d) => D.member(D.id("props"), d))),
-      )
+      args.push(D.arr(listSlot.parentPropDeps.map((d) => D.member(D.id("props"), d))))
       if (listSlot.selectionDepIndices.length > 0) {
-        args.push(
-          D.arr(listSlot.selectionDepIndices.map((i) => D.num(i))),
-        )
+        args.push(D.arr(listSlot.selectionDepIndices.map((i) => D.num(i))))
       }
     }
     return D.exprStmt(D.call(D.id("_patchList"), args))
@@ -778,10 +700,7 @@ function emitSlotWrite(
  * Rebuild the element ref name assigned in mount for a given path so
  * patch writes can read it off `state`. Mirrors the original's replay.
  */
-function stateElementExpr(
-  slots: readonly IRSlot[],
-  path: readonly number[],
-): D.JsExpr {
+function stateElementExpr(slots: readonly IRSlot[], path: readonly number[]): D.JsExpr {
   if (path.length === 0) return D.member(D.id("state"), "_root")
   const key = pathKey(path)
   let counter = 0
@@ -805,10 +724,7 @@ function emitLeadingBail(propNames: readonly string[], propsName: string): D.JsS
   return D.ifStmt(expr, [D.retVoid()])
 }
 
-function emitPatchSimple(
-  ir: CompiledIR,
-  listHelpers: Map<number, ListHelpers>,
-): D.JsExpr {
+function emitPatchSimple(ir: CompiledIR, listHelpers: Map<number, ListHelpers>): D.JsExpr {
   const propsName = ir.propsParamName
   const slots = ir.slots
   const grouped = new Map<string, Array<{ slot: IRSlot; index: number }>>()
@@ -837,20 +753,11 @@ function emitPatchSimple(
       if (w !== null) writes.push(w)
     }
     writes.push(
-      D.exprStmt(
-        D.assign(
-          D.member(D.id("state"), propName),
-          D.member(D.id(propsName), propName),
-        ),
-      ),
+      D.exprStmt(D.assign(D.member(D.id("state"), propName), D.member(D.id(propsName), propName))),
     )
     stmts.push(
       D.ifStmt(
-        D.bin(
-          "!==",
-          D.member(D.id("state"), propName),
-          D.member(D.id(propsName), propName),
-        ),
+        D.bin("!==", D.member(D.id("state"), propName), D.member(D.id(propsName), propName)),
         writes,
       ),
     )
@@ -859,10 +766,7 @@ function emitPatchSimple(
   return D.arrowBlock(["state", propsName], stmts)
 }
 
-function emitPatchComposite(
-  ir: CompiledIR,
-  listHelpers: Map<number, ListHelpers>,
-): D.JsExpr {
+function emitPatchComposite(ir: CompiledIR, listHelpers: Map<number, ListHelpers>): D.JsExpr {
   const propsName = ir.propsParamName
   const slots = ir.slots
   const propNames = collectReactiveProps(slots)
@@ -879,11 +783,7 @@ function emitPatchComposite(
       D.vdecl(
         "const",
         local,
-        D.bin(
-          "!==",
-          D.member(D.id("state"), name),
-          D.member(D.id(propsName), name),
-        ),
+        D.bin("!==", D.member(D.id("state"), name), D.member(D.id(propsName), name)),
       ),
     )
   })
@@ -904,12 +804,7 @@ function emitPatchComposite(
     const local = dirtyLocals.get(name)!
     stmts.push(
       D.ifStmt(D.id(local), [
-        D.exprStmt(
-          D.assign(
-            D.member(D.id("state"), name),
-            D.member(D.id(propsName), name),
-          ),
-        ),
+        D.exprStmt(D.assign(D.member(D.id("state"), name), D.member(D.id(propsName), name))),
       ]),
     )
   })
@@ -917,10 +812,7 @@ function emitPatchComposite(
   return D.arrowBlock(["state", propsName], stmts)
 }
 
-function emitPatch(
-  ir: CompiledIR,
-  listHelpers: Map<number, ListHelpers>,
-): D.JsExpr {
+function emitPatch(ir: CompiledIR, listHelpers: Map<number, ListHelpers>): D.JsExpr {
   if (ir.slots.length === 0) {
     return D.arrowBlock(["state", ir.propsParamName], [])
   }
@@ -932,9 +824,7 @@ function emitPatch(
       s.kind === "alt" ||
       ((s.kind === "text" || s.kind === "attr") && s.composite !== undefined),
   )
-  return hasComposite
-    ? emitPatchComposite(ir, listHelpers)
-    : emitPatchSimple(ir, listHelpers)
+  return hasComposite ? emitPatchComposite(ir, listHelpers) : emitPatchSimple(ir, listHelpers)
 }
 
 /**

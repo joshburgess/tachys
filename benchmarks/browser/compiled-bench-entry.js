@@ -129,9 +129,7 @@ const SelectRow = markCompiled(
     }
   },
   (prev, next) =>
-    prev.id === next.id &&
-    prev.label === next.label &&
-    prev.selected === next.selected,
+    prev.id === next.id && prev.label === next.label && prev.selected === next.selected,
 )
 
 // ── Compiled Table (exactly what the plugin emits for the list case) ────
@@ -146,9 +144,7 @@ const SelectRow = markCompiled(
 //     )
 //   }
 
-const _tpl$Table_0 = _template(
-  '<table class="table table-hover"><tbody><!></tbody></table>',
-)
+const _tpl$Table_0 = _template('<table class="table table-hover"><tbody><!></tbody></table>')
 const _lp$Table_0 = (row) => ({ id: row.id, label: row.label })
 const _lk$Table_0 = (row) => row.id
 
@@ -172,9 +168,7 @@ const Table = markCompiled(
 
 // ── Compiled TableSelect (uses SelectRow + precomputed `selected` field) ─
 
-const _tpl$TableSelect_0 = _template(
-  '<table class="table table-hover"><tbody><!></tbody></table>',
-)
+const _tpl$TableSelect_0 = _template('<table class="table table-hover"><tbody><!></tbody></table>')
 const _lp$TableSelect_0 = (row) => ({
   id: row.id,
   label: row.label,
@@ -186,26 +180,14 @@ const TableSelect = markCompiled(
   (props) => {
     const _root = _tpl$TableSelect_0.cloneNode(true)
     const _lm0 = _root.firstChild.firstChild
-    const _ls0 = _mountList(
-      props.data,
-      SelectRow,
-      _lp$TableSelect_0,
-      _lk$TableSelect_0,
-      _lm0,
-    )
+    const _ls0 = _mountList(props.data, SelectRow, _lp$TableSelect_0, _lk$TableSelect_0, _lm0)
     const state = { _ls0, data: props.data }
     return { dom: _root, state }
   },
   (state, props) => {
     const _d0 = state.data !== props.data
     if (_d0) {
-      _patchList(
-        state._ls0,
-        props.data,
-        SelectRow,
-        _lp$TableSelect_0,
-        _lk$TableSelect_0,
-      )
+      _patchList(state._ls0, props.data, SelectRow, _lp$TableSelect_0, _lk$TableSelect_0)
     }
     if (_d0) state.data = props.data
   },
@@ -374,9 +356,7 @@ export function runTachysCompiledBenchmarks(container) {
         return { inst, data }
       },
       (state) => {
-        const newData = state.data.map((r, i) =>
-          i === 5 ? { ...r, selected: true } : r,
-        )
+        const newData = state.data.map((r, i) => (i === 5 ? { ...r, selected: true } : r))
         TableSelect.patch(state.inst.state, { data: newData })
       },
       () => {

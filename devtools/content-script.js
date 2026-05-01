@@ -105,10 +105,7 @@ function pageScript() {
         const el = document.querySelector(event.data.selector)
         if (el) {
           const events = hook.getEvents(el)
-          window.postMessage(
-            { source: "tachys-devtools-page", type: "tachys-events", events },
-            "*",
-          )
+          window.postMessage({ source: "tachys-devtools-page", type: "tachys-events", events }, "*")
         }
       }
     }

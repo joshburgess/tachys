@@ -86,10 +86,7 @@ describe("use() with Context", () => {
     }
 
     const container = document.createElement("div")
-    mount(
-      h(Ctx.Provider, { value: "from-provider" }, h(Comp, { useCtx: true })),
-      container,
-    )
+    mount(h(Ctx.Provider, { value: "from-provider" }, h(Comp, { useCtx: true })), container)
     expect(container.innerHTML).toBe("<span>from-provider</span>")
   })
 })
@@ -108,10 +105,7 @@ describe("use() with Promise", () => {
     }
 
     const container = document.createElement("div")
-    mount(
-      h(Suspense, { fallback: h("div", null, "Loading") }, h(Comp, null)),
-      container,
-    )
+    mount(h(Suspense, { fallback: h("div", null, "Loading") }, h(Comp, null)), container)
 
     // First render suspends (Promise.then callback is a microtask)
     expect(container.innerHTML).toBe("<div>Loading</div>")
@@ -137,10 +131,7 @@ describe("use() with Promise", () => {
     }
 
     const container = document.createElement("div")
-    mount(
-      h(Suspense, { fallback: h("div", null, "Loading...") }, h(Comp, null)),
-      container,
-    )
+    mount(h(Suspense, { fallback: h("div", null, "Loading...") }, h(Comp, null)), container)
 
     // Should show fallback while pending
     expect(container.innerHTML).toBe("<div>Loading...</div>")
@@ -169,10 +160,7 @@ describe("use() with Promise", () => {
     }
 
     const container = document.createElement("div")
-    mount(
-      h(Suspense, { fallback: h("div", null, "Loading") }, h(Comp, null)),
-      container,
-    )
+    mount(h(Suspense, { fallback: h("div", null, "Loading") }, h(Comp, null)), container)
 
     // Suspense shows fallback while pending
     expect(container.innerHTML).toBe("<div>Loading</div>")
@@ -236,10 +224,7 @@ describe("use() with Promise", () => {
     }
 
     const container = document.createElement("div")
-    mount(
-      h(Suspense, { fallback: h("div", null, "...") }, h(Comp, null)),
-      container,
-    )
+    mount(h(Suspense, { fallback: h("div", null, "...") }, h(Comp, null)), container)
 
     // First render suspends
     expect(container.innerHTML).toBe("<div>...</div>")

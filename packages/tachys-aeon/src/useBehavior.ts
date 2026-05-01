@@ -12,8 +12,8 @@
  * or `useAccum` which handle both Behavior creation and subscriptions.
  */
 
-import type { Behavior, Event, Scheduler } from "aeon-types"
 import { readBehavior } from "aeon-core"
+import type { Behavior, Event, Scheduler } from "aeon-types"
 import { useEffect, useReducer, useRef } from "tachys"
 import { runEvent } from "./internal.js"
 import { createScheduler } from "./scheduler.js"
@@ -52,7 +52,9 @@ export function useBehavior<A>(
     const disposable = runEvent(
       trig,
       {
-        event() { forceRender() },
+        event() {
+          forceRender()
+        },
         error() {},
         end() {},
       },

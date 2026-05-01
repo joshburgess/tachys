@@ -114,7 +114,7 @@ const PAINT = new Set([
 // Find clear-start-N and clear-end-N user-timing marks; pair them.
 const marks = new Map() // index -> { start, end }
 for (const e of events) {
-  if (e.cat && e.cat.includes("blink.user_timing")) {
+  if (e.cat?.includes("blink.user_timing")) {
     const m = /^clear-(start|end)-(\d+)$/.exec(e.name)
     if (!m) continue
     const idx = +m[2]
@@ -135,11 +135,14 @@ const xEvents = events.filter((e) => e.ph === "X" && typeof e.dur === "number")
 // For each window, sum merged script-category time and paint time.
 function intervalMerge(intervals) {
   intervals.sort((a, b) => a[0] - b[0])
-  let total = 0, cs = -1, ce = -1
+  let total = 0
+  let cs = -1
+  let ce = -1
   for (const [s, e] of intervals) {
     if (s >= ce) {
       if (cs >= 0) total += ce - cs
-      cs = s; ce = e
+      cs = s
+      ce = e
     } else if (e > ce) ce = e
   }
   if (cs >= 0) total += ce - cs
@@ -157,7 +160,9 @@ function sumInWindow(eventNames, ws, we) {
   return intervalMerge(ivals) / 1000
 }
 
-let totalScript = 0, totalPaint = 0, totalWall = 0
+let totalScript = 0
+let totalPaint = 0
+let totalWall = 0
 const perIterScript = []
 const nameTotals = new Map()
 for (const [ws, we] of windows) {
@@ -182,9 +187,15 @@ for (const [ws, we] of windows) {
 
 const N = windows.length
 console.log(`\nClear-only timing across ${N} iterations:`)
-console.log(`  Wall time:   ${totalWall.toFixed(2)} ms total | ${(totalWall / N).toFixed(3)} ms/clear`)
-console.log(`  Script time: ${totalScript.toFixed(2)} ms total | ${(totalScript / N).toFixed(3)} ms/clear`)
-console.log(`  Paint time:  ${totalPaint.toFixed(2)} ms total | ${(totalPaint / N).toFixed(3)} ms/clear`)
+console.log(
+  `  Wall time:   ${totalWall.toFixed(2)} ms total | ${(totalWall / N).toFixed(3)} ms/clear`,
+)
+console.log(
+  `  Script time: ${totalScript.toFixed(2)} ms total | ${(totalScript / N).toFixed(3)} ms/clear`,
+)
+console.log(
+  `  Paint time:  ${totalPaint.toFixed(2)} ms total | ${(totalPaint / N).toFixed(3)} ms/clear`,
+)
 
 // Median per-iter script
 perIterScript.sort((a, b) => a - b)
@@ -195,7 +206,9 @@ console.log("\nScript-category breakdown across all clear windows:")
 console.log("  total_ms    count   name")
 console.log("  --------    -----   ----")
 for (const [name, v] of [...nameTotals.entries()].sort((a, b) => b[1].totalUs - a[1].totalUs)) {
-  console.log(`  ${(v.totalUs / 1000).toFixed(3).padStart(8)}    ${String(v.count).padStart(5)}   ${name}`)
+  console.log(
+    `  ${(v.totalUs / 1000).toFixed(3).padStart(8)}    ${String(v.count).padStart(5)}   ${name}`,
+  )
 }
 
 console.log(`\nWrote raw trace to ${OUT}`)

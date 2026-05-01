@@ -296,7 +296,7 @@ async function asyncRenderElement(vnode: VNode): Promise<string> {
   }
 
   if (VOID_ELEMENTS.has(tag)) {
-    return html + ">"
+    return `${html}>`
   }
 
   html += ">"
@@ -397,17 +397,18 @@ async function asyncRenderChildren(vnode: VNode): Promise<string> {
 // --- Streaming API ---
 
 /** Inline script that swaps a Suspense placeholder with resolved content. */
-const SWAP_SCRIPT = `function $ph(id){` +
-  `var t=document.getElementById("ph:"+id);` +
-  `var r=document.getElementById("phr:"+id);` +
-  `if(t&&r){` +
-  `var p=t.parentNode;` +
-  `var f=document.createDocumentFragment();` +
-  `while(r.firstChild)f.appendChild(r.firstChild);` +
-  `p.replaceChild(f,t);` +
-  `r.remove()` +
-  `}` +
-  `}`
+const SWAP_SCRIPT =
+  "function $ph(id){" +
+  'var t=document.getElementById("ph:"+id);' +
+  'var r=document.getElementById("phr:"+id);' +
+  "if(t&&r){" +
+  "var p=t.parentNode;" +
+  "var f=document.createDocumentFragment();" +
+  "while(r.firstChild)f.appendChild(r.firstChild);" +
+  "p.replaceChild(f,t);" +
+  "r.remove()" +
+  "}" +
+  "}"
 
 /**
  * Render a VNode tree to a ReadableStream of HTML strings.
@@ -438,13 +439,19 @@ export function renderToReadableStream(vnode: VNode): ReadableStream<string> {
   return new ReadableStream<string>({
     async start(controller) {
       resetIdCounter()
-      streamNode(vnode, controller, () => suspenseId++, pending, () => {
-        if (!swapScriptEmitted) {
-          swapScriptEmitted = true
-          return true
-        }
-        return false
-      })
+      streamNode(
+        vnode,
+        controller,
+        () => suspenseId++,
+        pending,
+        () => {
+          if (!swapScriptEmitted) {
+            swapScriptEmitted = true
+            return true
+          }
+          return false
+        },
+      )
 
       // Wait for all Suspense boundaries to resolve and stream their content
       while (pending.length > 0) {
@@ -551,7 +558,7 @@ function streamComponent(
           if (fallback != null) {
             controller.enqueue(`<span id="ph:${id}">`)
             streamNode(fallback, controller, nextId, pending, needsSwapScript)
-            controller.enqueue(`</span>`)
+            controller.enqueue("</span>")
           } else {
             controller.enqueue(`<span id="ph:${id}"></span>`)
           }
@@ -567,7 +574,7 @@ function streamComponent(
             controller.enqueue(`<div hidden id="phr:${id}">`)
             // Re-render the children now that the promise has resolved
             streamNode(children, controller, nextId, pending, needsSwapScript)
-            controller.enqueue(`</div>`)
+            controller.enqueue("</div>")
 
             // Emit the swap call
             controller.enqueue(`<script>$ph(${id})</script>`)

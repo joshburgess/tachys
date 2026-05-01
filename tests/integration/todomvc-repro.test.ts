@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest"
-import { createContext, useState, useCallback, h, mount, flushUpdates } from "../../src/index"
+import { describe, expect, it } from "vitest"
+import { createContext, flushUpdates, h, mount, useCallback, useState } from "../../src/index"
 import { jsxDEV } from "../../src/jsx-dev-runtime"
 
 describe("Regression: Provider with conditional children expansion", () => {
@@ -14,7 +14,9 @@ describe("Regression: Provider with conditional children expansion", () => {
         setItems((prev: string[]) => [...prev, "item"])
       }, [])
 
-      return h(Ctx.Provider, { value: { action: () => {} } },
+      return h(
+        Ctx.Provider,
+        { value: { action: () => {} } },
         h("header", null, "Header"),
         items.length > 0 ? h("section", null, "List") : null,
         items.length > 0 ? h("footer", null, "Footer") : null,
@@ -27,7 +29,9 @@ describe("Regression: Provider with conditional children expansion", () => {
 
     triggerAdd!()
     flushUpdates()
-    expect(root.innerHTML).toBe("<header>Header</header><section>List</section><footer>Footer</footer>")
+    expect(root.innerHTML).toBe(
+      "<header>Header</header><section>List</section><footer>Footer</footer>",
+    )
   })
 
   it("jsxDEV - expands from 1 to 3 children when state changes", () => {
@@ -41,14 +45,19 @@ describe("Regression: Provider with conditional children expansion", () => {
         setItems((prev: string[]) => [...prev, "item"])
       }, [])
 
-      return jsxDEV(Ctx.Provider, {
-        value: { action: () => {} },
-        children: [
-          jsxDEV("header", { children: "Header" }),
-          items.length > 0 && jsxDEV("section", { children: "List" }),
-          items.length > 0 && jsxDEV("footer", { children: "Footer" }),
-        ],
-      }, undefined, true)
+      return jsxDEV(
+        Ctx.Provider,
+        {
+          value: { action: () => {} },
+          children: [
+            jsxDEV("header", { children: "Header" }),
+            items.length > 0 && jsxDEV("section", { children: "List" }),
+            items.length > 0 && jsxDEV("footer", { children: "Footer" }),
+          ],
+        },
+        undefined,
+        true,
+      )
     }
 
     const root = document.createElement("div")
@@ -57,6 +66,8 @@ describe("Regression: Provider with conditional children expansion", () => {
 
     triggerAdd!()
     flushUpdates()
-    expect(root.innerHTML).toBe("<header>Header</header><section>List</section><footer>Footer</footer>")
+    expect(root.innerHTML).toBe(
+      "<header>Header</header><section>List</section><footer>Footer</footer>",
+    )
   })
 })

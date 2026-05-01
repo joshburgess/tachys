@@ -116,7 +116,9 @@ describe("deferred effects see committed DOM", () => {
     let observedText = ""
 
     beginCollecting()
-    pushThunk(() => { el.textContent = "new" })
+    pushThunk(() => {
+      el.textContent = "new"
+    })
 
     pushDeferredEffect(() => {
       observedText = el.textContent ?? ""

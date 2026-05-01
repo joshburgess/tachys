@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
+import { resetWarnings } from "../../src/dev"
 import {
   __DEV__,
   flushUpdates,
@@ -11,7 +12,6 @@ import {
   useState,
   useSyncExternalStore,
 } from "../../src/index"
-import { resetWarnings } from "../../src/dev"
 import type { VNode } from "../../src/vnode"
 
 function flushMicrotasks(): Promise<void> {
@@ -236,7 +236,7 @@ describe("hook order validation", () => {
     let condition = true
     let triggerRender: (() => void) | null = null
 
-    const Comp = function () {
+    const Comp = () => {
       const [, setCount] = useState(0)
       triggerRender = () => setCount((c) => c + 1)
       if (condition) useState("extra")
@@ -251,7 +251,7 @@ describe("hook order validation", () => {
     flushUpdates()
 
     expect(warnSpy).toHaveBeenCalled()
-    expect((warnSpy.mock.calls[0]![0] as string)).toContain("MyWidget")
+    expect(warnSpy.mock.calls[0]![0] as string).toContain("MyWidget")
 
     warnSpy.mockRestore()
   })
@@ -471,7 +471,10 @@ describe("useSyncExternalStore", () => {
 
     function Comp() {
       const value = useSyncExternalStore(
-        (cb: () => void) => { cb; return () => {} },
+        (cb: () => void) => {
+          cb
+          return () => {}
+        },
         () => "client",
         () => "server",
       )

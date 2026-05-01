@@ -10,8 +10,8 @@
  * are used.
  */
 
-import { useState, useReducer, useCallback, startTransition } from "./component"
-import { getActiveLane, Lane, flushUpdates } from "./scheduler"
+import { startTransition, useCallback, useReducer, useState } from "./component"
+import { Lane, flushUpdates, getActiveLane } from "./scheduler"
 
 // --- react ---
 
@@ -131,7 +131,11 @@ export async function act(callback: () => void | Promise<void>): Promise<void> {
   const result = callback()
   flushUpdates()
   // If the callback returned a promise, await it and flush again
-  if (result !== undefined && result !== null && typeof (result as Promise<void>).then === "function") {
+  if (
+    result !== undefined &&
+    result !== null &&
+    typeof (result as Promise<void>).then === "function"
+  ) {
     await result
     flushUpdates()
   }
@@ -166,11 +170,14 @@ export function useOptimistic<T, A = T>(
   const inTransition = activeLane === Lane.Transition
   const current = optimistic.active && !inTransition ? optimistic.value : passthrough
 
-  const addOptimistic = useCallback((action: A) => {
-    const base = optimistic.active ? optimistic.value : passthrough
-    const newValue = updateFn !== undefined ? updateFn(base, action) : (action as unknown as T)
-    setOptimistic({ value: newValue, active: true })
-  }, [optimistic, passthrough, updateFn])
+  const addOptimistic = useCallback(
+    (action: A) => {
+      const base = optimistic.active ? optimistic.value : passthrough
+      const newValue = updateFn !== undefined ? updateFn(base, action) : (action as unknown as T)
+      setOptimistic({ value: newValue, active: true })
+    },
+    [optimistic, passthrough, updateFn],
+  )
 
   return [current, addOptimistic]
 }
@@ -192,33 +199,40 @@ export function useActionState<S, P>(
   const [state, setState] = useState(initialState)
   const [isPending, setIsPending] = useState(false)
 
-  const dispatch = useCallback((payload: P) => {
-    // Set isPending=true at urgent priority so it's visible immediately,
-    // then resolve the action result inside a Transition so the state
-    // update renders at lower priority (matching useTransition semantics).
-    setIsPending(true)
-    const result = action(state, payload)
-    if (result !== null && typeof result === "object" && typeof (result as Promise<S>).then === "function") {
-      ;(result as Promise<S>).then(
-        (newState) => {
-          startTransition(() => {
-            setState(newState as S)
-            setIsPending(false)
-          })
-        },
-        () => {
-          startTransition(() => {
-            setIsPending(false)
-          })
-        },
-      )
-    } else {
-      startTransition(() => {
-        setState(result as S)
-        setIsPending(false)
-      })
-    }
-  }, [action, state])
+  const dispatch = useCallback(
+    (payload: P) => {
+      // Set isPending=true at urgent priority so it's visible immediately,
+      // then resolve the action result inside a Transition so the state
+      // update renders at lower priority (matching useTransition semantics).
+      setIsPending(true)
+      const result = action(state, payload)
+      if (
+        result !== null &&
+        typeof result === "object" &&
+        typeof (result as Promise<S>).then === "function"
+      ) {
+        ;(result as Promise<S>).then(
+          (newState) => {
+            startTransition(() => {
+              setState(newState as S)
+              setIsPending(false)
+            })
+          },
+          () => {
+            startTransition(() => {
+              setIsPending(false)
+            })
+          },
+        )
+      } else {
+        startTransition(() => {
+          setState(result as S)
+          setIsPending(false)
+        })
+      }
+    },
+    [action, state],
+  )
 
   return [state, dispatch, isPending]
 }
@@ -318,10 +332,7 @@ export function preloadModule(href: string, options?: { as?: "script" }): void {
   injectLink("modulepreload", href, options as Record<string, string | undefined> | undefined)
 }
 
-export function preinit(
-  href: string,
-  options: PreinitOptions & { as: "style" | "script" },
-): void {
+export function preinit(href: string, options: PreinitOptions & { as: "style" | "script" }): void {
   if (typeof document === "undefined") return
   const head = document.head
   if (head === null) return

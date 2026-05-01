@@ -8,9 +8,9 @@
 // --- State ---
 let currentTree = null
 let selectedNodeId = null
-let expandedNodes = new Set()
+const expandedNodes = new Set()
 let searchFilter = ""
-let allNodes = new Map() // id -> node for fast lookup
+const allNodes = new Map() // id -> node for fast lookup
 
 // --- DOM refs ---
 const emptyState = document.getElementById("empty-state")
@@ -57,7 +57,7 @@ function pollForUpdates() {
 }
 
 // Poll every 1.5 seconds for tree updates
-let pollInterval = setInterval(pollForUpdates, 1500)
+const pollInterval = setInterval(pollForUpdates, 1500)
 
 // Initial check
 pollForUpdates()
@@ -158,9 +158,10 @@ function renderTreeNode(node, depth) {
     tag.textContent = `<${node.name}>`
   } else if (node.type === "text") {
     const textContent = node.props?.text || ""
-    tag.textContent = typeof textContent === "string" && textContent.length > 40
-      ? `"${textContent.slice(0, 40)}..."`
-      : `"${textContent}"`
+    tag.textContent =
+      typeof textContent === "string" && textContent.length > 40
+        ? `"${textContent.slice(0, 40)}..."`
+        : `"${textContent}"`
   } else if (node.type === "fragment") {
     tag.textContent = node.name
   } else {

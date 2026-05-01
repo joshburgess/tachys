@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest"
-import { h, useState, createContext, useContext } from "../../src/index"
-import { renderToString, hydrate } from "../../src/server"
+import { createContext, h, useContext, useState } from "../../src/index"
+import { hydrate, renderToString } from "../../src/server"
 import type { VNode } from "../../src/vnode"
 
 /**
@@ -42,9 +42,7 @@ describe("hydrate", () => {
         h("li", null, "three"),
       )
       const container = ssrAndHydrate(vnode)
-      expect(container.innerHTML).toBe(
-        "<ul><li>one</li><li>two</li><li>three</li></ul>",
-      )
+      expect(container.innerHTML).toBe("<ul><li>one</li><li>two</li><li>three</li></ul>")
     })
   })
 

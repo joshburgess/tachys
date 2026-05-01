@@ -10,21 +10,11 @@
  * and skip this step.
  */
 
-import { parseExpression } from "@babel/parser"
 import type * as BabelCore from "@babel/core"
+import { parseExpression } from "@babel/parser"
 
-import type {
-  ChildPropEntry,
-  CompiledResult,
-  CompositeExpr,
-  Slot,
-} from "./compile"
-import type {
-  CompiledIR,
-  IRChildPropEntry,
-  IRCompositeExpr,
-  IRSlot,
-} from "compiler-core-tachys"
+import type { CompiledIR, IRChildPropEntry, IRCompositeExpr, IRSlot } from "compiler-core-tachys"
+import type { ChildPropEntry, CompiledResult, CompositeExpr, Slot } from "./compile"
 
 type T = typeof BabelCore.types
 
@@ -42,10 +32,7 @@ function parseSrc(src: string): BabelCore.types.Expression {
  * node. Template-literal slots go through a dedicated accessor because
  * the emitter reaches into `.expressions` / `.quasis` fields directly.
  */
-function parseTemplateLiteral(
-  t: T,
-  src: string,
-): BabelCore.types.TemplateLiteral {
+function parseTemplateLiteral(t: T, src: string): BabelCore.types.TemplateLiteral {
   const parsed = parseSrc(src)
   if (!t.isTemplateLiteral(parsed)) {
     throw new Error(

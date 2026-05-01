@@ -151,12 +151,11 @@ describe("deeply nested consumer", () => {
     const tree = h(
       Ctx.Provider,
       { value: "deep-value" },
-      h("div", null,
-        h("div", null,
-          h("div", null,
-            h("div", null,
-              h("div", null,
-                h(DeepConsumer, null)))))),
+      h(
+        "div",
+        null,
+        h("div", null, h("div", null, h("div", null, h("div", null, h(DeepConsumer, null))))),
+      ),
     )
     mount(tree, container)
     expect(container.querySelector("span")!.textContent).toBe("deep-value")

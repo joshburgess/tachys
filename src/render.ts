@@ -7,9 +7,9 @@
  * Also provides React 18 root APIs (createRoot, hydrateRoot) for compat.
  */
 
-import { patch } from "./diff"
 import { __DEV__ } from "./dev"
 import { __devtools_notifyRender, __devtools_setRootTrees } from "./devtools-hook"
+import { patch } from "./diff"
 import { mountRoot } from "./mount"
 import { rootTrees } from "./root-trees"
 import { unmount } from "./unmount"
@@ -85,4 +85,3 @@ export function createRoot(container: Element): Root {
     },
   }
 }
-

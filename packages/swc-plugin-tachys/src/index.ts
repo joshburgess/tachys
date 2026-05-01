@@ -29,14 +29,9 @@
  */
 
 import { parse } from "@swc/core"
-import type {
-  FunctionDeclaration,
-  Module,
-  ModuleItem,
-  Statement,
-} from "@swc/types"
+import type { FunctionDeclaration, Module, ModuleItem, Statement } from "@swc/types"
 
-import { emitComponent, type ListHelpers } from "compiler-core-tachys"
+import { type ListHelpers, emitComponent } from "compiler-core-tachys"
 
 import { compileComponentSwc, isPascalCase } from "./compile-swc"
 
@@ -79,7 +74,10 @@ interface ImportFlags {
  * nested node spans live in the same absolute frame. We convert them to
  * 0-based string indices for `String.prototype.slice`.
  */
-function toZeroBased(span: { start: number; end: number }, base: number): {
+function toZeroBased(
+  span: { start: number; end: number },
+  base: number,
+): {
   start: number
   end: number
 } {
@@ -238,13 +236,9 @@ function buildPrelude(
 
   const hasExisting = findTachysImport(mod, source, base)
   const importDecl =
-    hasExisting === null
-      ? `import { ${specifiers.join(", ")} } from "tachys/compiled";\n`
-      : ""
+    hasExisting === null ? `import { ${specifiers.join(", ")} } from "tachys/compiled";\n` : ""
 
-  const helperDecls = hoistedHelpers
-    .map((h) => `const ${h.id} = ${h.src};\n`)
-    .join("")
+  const helperDecls = hoistedHelpers.map((h) => `const ${h.id} = ${h.src};\n`).join("")
   const tplDecls = templates
     .map((t) => `const ${t.id} = _template(${JSON.stringify(t.html)});\n`)
     .join("")

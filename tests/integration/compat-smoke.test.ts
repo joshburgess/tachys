@@ -12,12 +12,12 @@ import { describe, expect, it } from "vitest"
 import {
   Children,
   Fragment,
-  Suspense,
   StrictMode,
+  Suspense,
   cloneElement,
   createContext,
-  createRoot,
   createElement,
+  createRoot,
   flushSync,
   forwardRef,
   isValidElement,
@@ -178,7 +178,11 @@ describe("forwardRef + useImperativeHandle", () => {
     const container = document.createElement("div")
 
     const Panel = forwardRef((props: Record<string, unknown>, _ref) => {
-      return createElement("section", { id: props["panelId"] as string }, props["children"] as VNode)
+      return createElement(
+        "section",
+        { id: props["panelId"] as string },
+        props["children"] as VNode,
+      )
     })
 
     mount(
@@ -236,11 +240,7 @@ describe("createContext + useContext", () => {
       createElement(
         SizeCtx.Provider,
         { value: "md" },
-        createElement(
-          SizeCtx.Provider,
-          { value: "lg" },
-          createElement(SizeDisplay, null),
-        ),
+        createElement(SizeCtx.Provider, { value: "lg" }, createElement(SizeDisplay, null)),
       ),
       container,
     )

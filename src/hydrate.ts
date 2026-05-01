@@ -22,11 +22,11 @@
 
 import {
   finalizeHydratedComponent,
+  finalizeSuspenseComponent,
   hydrateComponentInstance,
   hydrateSuspenseInstance,
-  finalizeSuspenseComponent,
-  switchSuspenseToFallback,
   resetIdCounter,
+  switchSuspenseToFallback,
 } from "./component"
 import type { ComponentInstance } from "./component"
 import { ChildFlags, VNodeFlags } from "./flags"
@@ -35,7 +35,7 @@ import { mountProps, setRootContainer } from "./patch"
 import { bridgeRerender } from "./reconcile-bridge"
 import { setRef } from "./ref"
 import { scheduleUpdate } from "./scheduler-shim"
-import { isSuspenseFn, isThenable, pushSuspendHandler, popSuspendHandler } from "./suspense"
+import { isSuspenseFn, isThenable, popSuspendHandler, pushSuspendHandler } from "./suspense"
 import type { ComponentFn } from "./vnode"
 import type { VNode } from "./vnode"
 
@@ -383,11 +383,7 @@ function handleSuspenseDuringHydration(
  * Check if a DOM node is a streaming placeholder span (id="ph:N").
  */
 function findStreamingPlaceholder(domNode: ChildNode | null): HTMLSpanElement | null {
-  if (
-    domNode !== null &&
-    domNode.nodeType === 1 &&
-    (domNode as Element).tagName === "SPAN"
-  ) {
+  if (domNode !== null && domNode.nodeType === 1 && (domNode as Element).tagName === "SPAN") {
     const id = (domNode as Element).id
     if (id.indexOf("ph:") === 0) {
       return domNode as HTMLSpanElement
@@ -453,8 +449,14 @@ function hydrateStreamedSuspense(
       hydrateNode(fallback, parentDom, currentDom)
       finalizeSuspenseComponent(vnode, instance, fallback)
       err.then(
-        () => { instance._hooks[0]!.value = false; scheduleUpdate(instance) },
-        () => { instance._hooks[0]!.value = false; scheduleUpdate(instance) },
+        () => {
+          instance._hooks[0]!.value = false
+          scheduleUpdate(instance)
+        },
+        () => {
+          instance._hooks[0]!.value = false
+          scheduleUpdate(instance)
+        },
       )
       return next
     }
@@ -468,8 +470,14 @@ function hydrateStreamedSuspense(
     hydrateNode(fallback, parentDom, currentDom)
     finalizeSuspenseComponent(vnode, instance, fallback)
     ;(streamSuspendedPromise as Promise<unknown>).then(
-      () => { instance._hooks[0]!.value = false; scheduleUpdate(instance) },
-      () => { instance._hooks[0]!.value = false; scheduleUpdate(instance) },
+      () => {
+        instance._hooks[0]!.value = false
+        scheduleUpdate(instance)
+      },
+      () => {
+        instance._hooks[0]!.value = false
+        scheduleUpdate(instance)
+      },
     )
     return next
   }

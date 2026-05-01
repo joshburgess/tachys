@@ -1,13 +1,13 @@
 import {
   createContext,
-  useContext,
-  useState,
+  memo,
   useCallback,
-  useMemo,
-  useRef,
+  useContext,
   useEffect,
   useId,
-  memo,
+  useMemo,
+  useRef,
+  useState,
 } from "tachys"
 import type { VNode } from "tachys"
 
@@ -87,10 +87,7 @@ const TodoItem = memo(function TodoItem(props: {
     setEditText((e.target as HTMLInputElement).value)
   }, [])
 
-  const className = [
-    todo.completed ? "completed" : "",
-    editing ? "editing" : "",
-  ]
+  const className = [todo.completed ? "completed" : "", editing ? "editing" : ""]
     .filter(Boolean)
     .join(" ")
 
@@ -103,8 +100,9 @@ const TodoItem = memo(function TodoItem(props: {
           checked={todo.completed}
           onChange={handleToggle}
         />
+        {/* biome-ignore lint/a11y/noLabelWithoutControl: TodoMVC spec requires this exact markup */}
         <label onDblClick={handleDoubleClick}>{todo.title}</label>
-        <button className="destroy" onClick={handleDestroy} />
+        <button type="button" className="destroy" onClick={handleDestroy} />
       </div>
       {editing && (
         <input
@@ -151,6 +149,7 @@ function Header(props: { onAdd: (title: string) => void }) {
         value={text}
         onKeyDown={handleKeyDown}
         onInput={handleInput}
+        // biome-ignore lint/a11y/noAutofocus: TodoMVC spec requires autofocus on the new-todo input
         autoFocus={true}
       />
     </header>
@@ -174,6 +173,7 @@ function Footer(props: {
       </span>
       <ul className="filters">
         <li>
+          {/* biome-ignore lint/a11y/useValidAnchor: TodoMVC spec uses anchors for hash routing */}
           <a
             className={filter === "all" ? "selected" : undefined}
             href="#/"
@@ -186,6 +186,7 @@ function Footer(props: {
           </a>
         </li>
         <li>
+          {/* biome-ignore lint/a11y/useValidAnchor: TodoMVC spec uses anchors for hash routing */}
           <a
             className={filter === "active" ? "selected" : undefined}
             href="#/active"
@@ -198,6 +199,7 @@ function Footer(props: {
           </a>
         </li>
         <li>
+          {/* biome-ignore lint/a11y/useValidAnchor: TodoMVC spec uses anchors for hash routing */}
           <a
             className={filter === "completed" ? "selected" : undefined}
             href="#/completed"
@@ -211,7 +213,7 @@ function Footer(props: {
         </li>
       </ul>
       {completedCount > 0 && (
-        <button className="clear-completed" onClick={onClearCompleted}>
+        <button type="button" className="clear-completed" onClick={onClearCompleted}>
           Clear completed
         </button>
       )}
@@ -237,20 +239,14 @@ export function App() {
         setTodos((prev: Todo[]) =>
           prev.map((t) => (t.id === id ? { ...t, completed: !t.completed } : t)),
         ),
-      destroy: (id: number) =>
-        setTodos((prev: Todo[]) => prev.filter((t) => t.id !== id)),
+      destroy: (id: number) => setTodos((prev: Todo[]) => prev.filter((t) => t.id !== id)),
       edit: (id: number, title: string) =>
-        setTodos((prev: Todo[]) =>
-          prev.map((t) => (t.id === id ? { ...t, title } : t)),
-        ),
+        setTodos((prev: Todo[]) => prev.map((t) => (t.id === id ? { ...t, title } : t))),
     }),
     [],
   )
 
-  const activeCount = useMemo(
-    () => todos.filter((t) => !t.completed).length,
-    [todos],
-  )
+  const activeCount = useMemo(() => todos.filter((t) => !t.completed).length, [todos])
   const completedCount = todos.length - activeCount
 
   const filteredTodos = useMemo(() => {

@@ -44,29 +44,35 @@ await page.click("#run")
 await page.locator("tbody tr:nth-child(1000)").waitFor()
 
 for (let i = 0; i < WARMUP; i++) {
-  await page.evaluate((idx) => {
-    document.querySelector("tbody").children[idx].querySelector("td.col-md-4 a").click()
-  }, (i + 1) * 50)
+  await page.evaluate(
+    (idx) => {
+      document.querySelector("tbody").children[idx].querySelector("td.col-md-4 a").click()
+    },
+    (i + 1) * 50,
+  )
   await page.waitForTimeout(20)
 }
 
 const samples = []
 for (let i = 0; i < ITERATIONS; i++) {
-  const dur = await page.evaluate((idx) => {
-    return new Promise((resolve) => {
-      const row = document.querySelector("tbody").children[idx]
-      const observer = new MutationObserver(() => {
-        if (row.className === "danger") {
-          const t1 = performance.now()
-          observer.disconnect()
-          resolve(t1 - t0)
-        }
+  const dur = await page.evaluate(
+    (idx) => {
+      return new Promise((resolve) => {
+        const row = document.querySelector("tbody").children[idx]
+        const observer = new MutationObserver(() => {
+          if (row.className === "danger") {
+            const t1 = performance.now()
+            observer.disconnect()
+            resolve(t1 - t0)
+          }
+        })
+        observer.observe(row, { attributes: true, attributeFilter: ["class"] })
+        const t0 = performance.now()
+        row.querySelector("td.col-md-4 a").click()
       })
-      observer.observe(row, { attributes: true, attributeFilter: ["class"] })
-      const t0 = performance.now()
-      row.querySelector("td.col-md-4 a").click()
-    })
-  }, (i % 19) * 47 + 100)
+    },
+    (i % 19) * 47 + 100,
+  )
   samples.push(dur)
   await page.waitForTimeout(20)
 }
@@ -78,10 +84,8 @@ const N = samples.length
 const sum = samples.reduce((a, b) => a + b, 0)
 const mean = sum / N
 const median = samples[Math.floor(N / 2)]
-const stddev = Math.sqrt(
-  samples.reduce((acc, x) => acc + (x - mean) ** 2, 0) / N,
-)
+const stddev = Math.sqrt(samples.reduce((acc, x) => acc + (x - mean) ** 2, 0) / N)
 
 console.log(
-  `${LABEL} select (CPU x${CPU_THROTTLE}, ${N} iters): min=${samples[0].toFixed(2)} median=${median.toFixed(2)} mean=${mean.toFixed(2)} max=${samples[N-1].toFixed(2)} stddev=${stddev.toFixed(2)}`,
+  `${LABEL} select (CPU x${CPU_THROTTLE}, ${N} iters): min=${samples[0].toFixed(2)} median=${median.toFixed(2)} mean=${mean.toFixed(2)} max=${samples[N - 1].toFixed(2)} stddev=${stddev.toFixed(2)}`,
 )

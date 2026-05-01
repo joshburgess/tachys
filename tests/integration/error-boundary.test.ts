@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest"
-import { ErrorBoundary, Suspense, flushUpdates, h, lazy, mount, patch, unmount } from "../../src/index"
+import {
+  ErrorBoundary,
+  Suspense,
+  flushUpdates,
+  h,
+  lazy,
+  mount,
+  patch,
+  unmount,
+} from "../../src/index"
 import type { ComponentFn } from "../../src/vnode"
 import type { VNode } from "../../src/vnode"
 
@@ -41,14 +50,9 @@ describe("ErrorBoundary", () => {
   it("catches error from child component and renders fallback", () => {
     const container = setup()
 
-    const fallback = (_err: unknown, _reset: () => void): VNode =>
-      h("div", null, "caught an error")
+    const fallback = (_err: unknown, _reset: () => void): VNode => h("div", null, "caught an error")
 
-    const vnode = h(
-      ErrorBoundary,
-      { fallback },
-      h(ThrowingComponent, { shouldThrow: true }),
-    )
+    const vnode = h(ErrorBoundary, { fallback }, h(ThrowingComponent, { shouldThrow: true }))
     mount(vnode, container)
 
     expect(container.innerHTML).toBe("<div>caught an error</div>")
@@ -64,11 +68,7 @@ describe("ErrorBoundary", () => {
       return h("div", null, "error ui")
     }
 
-    const vnode = h(
-      ErrorBoundary,
-      { fallback },
-      h(ThrowingComponent, { shouldThrow: true }),
-    )
+    const vnode = h(ErrorBoundary, { fallback }, h(ThrowingComponent, { shouldThrow: true }))
     mount(vnode, container)
 
     expect(capturedError).toBeInstanceOf(Error)
@@ -87,20 +87,12 @@ describe("ErrorBoundary", () => {
       return h("div", null, "fallback")
     }
 
-    const oldVNode = h(
-      ErrorBoundary,
-      { fallback },
-      h(ThrowingComponent, { shouldThrow: false }),
-    )
+    const oldVNode = h(ErrorBoundary, { fallback }, h(ThrowingComponent, { shouldThrow: false }))
     mount(oldVNode, container)
     expect(container.innerHTML).toBe("<span>ok</span>")
 
     // Patch to a throwing child to trigger the fallback
-    const errorVNode = h(
-      ErrorBoundary,
-      { fallback },
-      h(ThrowingComponent, { shouldThrow: true }),
-    )
+    const errorVNode = h(ErrorBoundary, { fallback }, h(ThrowingComponent, { shouldThrow: true }))
     patch(oldVNode, errorVNode, container)
     expect(container.innerHTML).toBe("<div>fallback</div>")
     expect(resetFn).not.toBeNull()
@@ -130,8 +122,7 @@ describe("ErrorBoundary", () => {
       throw new Error("mount error")
     }
 
-    const fallback = (_err: unknown, _reset: () => void): VNode =>
-      h("p", null, "mount failed")
+    const fallback = (_err: unknown, _reset: () => void): VNode => h("p", null, "mount failed")
 
     const vnode = h(ErrorBoundary, { fallback }, h(AlwaysThrows, null))
     mount(vnode, container)
@@ -147,20 +138,12 @@ describe("ErrorBoundary", () => {
       h("div", null, "patch error caught")
 
     // Mount successfully first
-    const oldVNode = h(
-      ErrorBoundary,
-      { fallback },
-      h(ThrowingComponent, { shouldThrow: false }),
-    )
+    const oldVNode = h(ErrorBoundary, { fallback }, h(ThrowingComponent, { shouldThrow: false }))
     mount(oldVNode, container)
     expect(container.innerHTML).toBe("<span>ok</span>")
 
     // Patch with props that cause a throw
-    const newVNode = h(
-      ErrorBoundary,
-      { fallback },
-      h(ThrowingComponent, { shouldThrow: true }),
-    )
+    const newVNode = h(ErrorBoundary, { fallback }, h(ThrowingComponent, { shouldThrow: true }))
     patch(oldVNode, newVNode, container)
 
     expect(container.innerHTML).toBe("<div>patch error caught</div>")
@@ -193,8 +176,7 @@ describe("ErrorBoundary", () => {
       return h("article", null, h(Middle, null))
     }
 
-    const fallback = (_err: unknown, _reset: () => void): VNode =>
-      h("span", null, "deep caught")
+    const fallback = (_err: unknown, _reset: () => void): VNode => h("span", null, "deep caught")
 
     const vnode = h(ErrorBoundary, { fallback }, h(Outer, null))
     mount(vnode, container)
@@ -215,11 +197,7 @@ describe("ErrorBoundary", () => {
     const vnode = h(
       ErrorBoundary,
       { fallback: outerFallback },
-      h(
-        ErrorBoundary,
-        { fallback: innerFallback },
-        h(ThrowingComponent, { shouldThrow: true }),
-      ),
+      h(ErrorBoundary, { fallback: innerFallback }, h(ThrowingComponent, { shouldThrow: true })),
     )
     mount(vnode, container)
 
@@ -268,31 +246,19 @@ describe("ErrorBoundary", () => {
     }
 
     // Initial successful mount
-    const oldVNode = h(
-      ErrorBoundary,
-      { fallback },
-      h(ThrowingComponent, { shouldThrow: false }),
-    )
+    const oldVNode = h(ErrorBoundary, { fallback }, h(ThrowingComponent, { shouldThrow: false }))
     mount(oldVNode, container)
     expect(container.innerHTML).toBe("<span>ok</span>")
 
     // Patch with throwing props to trigger the fallback
-    const errorVNode = h(
-      ErrorBoundary,
-      { fallback },
-      h(ThrowingComponent, { shouldThrow: true }),
-    )
+    const errorVNode = h(ErrorBoundary, { fallback }, h(ThrowingComponent, { shouldThrow: true }))
     patch(oldVNode, errorVNode, container)
     expect(container.innerHTML).toBe("<div>patch fallback</div>")
     expect(resetFn).not.toBeNull()
 
     // Reset clears the error hook, then patch with safe children to recover
     resetFn!()
-    const safeVNode = h(
-      ErrorBoundary,
-      { fallback },
-      h(ThrowingComponent, { shouldThrow: false }),
-    )
+    const safeVNode = h(ErrorBoundary, { fallback }, h(ThrowingComponent, { shouldThrow: false }))
     patch(errorVNode, safeVNode, container)
     // Drain any pending scheduled re-render from the reset
     flushUpdates()
@@ -304,8 +270,7 @@ describe("ErrorBoundary", () => {
   it("unmounts cleanly when in error state", () => {
     const container = setup()
 
-    const fallback = (_err: unknown, _reset: () => void): VNode =>
-      h("div", null, "error state")
+    const fallback = (_err: unknown, _reset: () => void): VNode => h("div", null, "error state")
 
     const vnode = h(ErrorBoundary, { fallback }, h(ThrowingComponent, { shouldThrow: true }))
     mount(vnode, container)
@@ -320,8 +285,7 @@ describe("ErrorBoundary", () => {
   it("renders empty placeholder when no children are provided", () => {
     const container = setup()
 
-    const fallback = (_err: unknown, _reset: () => void): VNode =>
-      h("div", null, "error")
+    const fallback = (_err: unknown, _reset: () => void): VNode => h("div", null, "error")
 
     const vnode = h(ErrorBoundary, { fallback })
     mount(vnode, container)
@@ -356,17 +320,12 @@ describe("ErrorBoundary + Suspense", () => {
       throw new Error("sync error")
     }
 
-    const fallback = (err: unknown): VNode =>
-      h("div", null, `caught: ${(err as Error).message}`)
+    const fallback = (err: unknown): VNode => h("div", null, `caught: ${(err as Error).message}`)
 
     const vnode = h(
       ErrorBoundary,
       { fallback },
-      h(
-        Suspense,
-        { fallback: h("span", null, "loading...") },
-        h(Thrower, null),
-      ),
+      h(Suspense, { fallback: h("span", null, "loading...") }, h(Thrower, null)),
     )
 
     mount(vnode, container)
@@ -386,11 +345,7 @@ describe("ErrorBoundary + Suspense", () => {
     const vnode = h(
       ErrorBoundary,
       { fallback },
-      h(
-        Suspense,
-        { fallback: h("span", null, "loading...") },
-        h(LazyGreeting, null),
-      ),
+      h(Suspense, { fallback: h("span", null, "loading...") }, h(LazyGreeting, null)),
     )
 
     mount(vnode, container)
@@ -411,11 +366,7 @@ describe("ErrorBoundary + Suspense", () => {
 
     const LazyBroken = lazy(() => Promise.reject(new Error("load failed")))
 
-    const vnode = h(
-      Suspense,
-      { fallback: h("span", null, "loading...") },
-      h(LazyBroken, null),
-    )
+    const vnode = h(Suspense, { fallback: h("span", null, "loading...") }, h(LazyBroken, null))
 
     mount(vnode, container)
     expect(container.innerHTML).toBe("<span>loading...</span>")
@@ -442,11 +393,7 @@ describe("ErrorBoundary + Suspense", () => {
     const vnode = h(
       Suspense,
       { fallback: h("span", null, "loading...") },
-      h(
-        ErrorBoundary,
-        { fallback: errorFallback },
-        h(LazyBroken, null),
-      ),
+      h(ErrorBoundary, { fallback: errorFallback }, h(LazyBroken, null)),
     )
 
     mount(vnode, container)

@@ -5,22 +5,45 @@
  * not just hand-picked examples.
  */
 
-import { describe, it, expect, beforeEach } from "vitest"
 import fc from "fast-check"
-import { VNode } from "../../src/vnode"
-import { VNodeFlags, ChildFlags } from "../../src/flags"
-import type { VNodeFlag, ChildFlag } from "../../src/flags"
-import { acquireVNode, releaseVNode, clearPool, getPoolSize } from "../../src/pool"
-import { jsx, jsxs } from "../../src/jsx-runtime"
-import { jsxDEV } from "../../src/jsx-dev-runtime"
-import { h, mount, flushUpdates, useState, useEffect, useCallback, useMemo, useRef } from "../../src/index"
+import { beforeEach, describe, expect, it } from "vitest"
+import { ChildFlags, VNodeFlags } from "../../src/flags"
+import type { ChildFlag, VNodeFlag } from "../../src/flags"
+import {
+  flushUpdates,
+  h,
+  mount,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "../../src/index"
 import { createTextVNode } from "../../src/jsx"
+import { jsxDEV } from "../../src/jsx-dev-runtime"
+import { jsx, jsxs } from "../../src/jsx-runtime"
+import { acquireVNode, clearPool, getPoolSize, releaseVNode } from "../../src/pool"
+import { VNode } from "../../src/vnode"
 
 // --- Arbitraries ---
 
-const arbTagName = fc.constantFrom("div", "span", "p", "ul", "li", "a", "button", "input", "h1", "section")
+const arbTagName = fc.constantFrom(
+  "div",
+  "span",
+  "p",
+  "ul",
+  "li",
+  "a",
+  "button",
+  "input",
+  "h1",
+  "section",
+)
 
-const arbKey = fc.oneof(fc.string({ minLength: 1, maxLength: 10 }), fc.integer({ min: 0, max: 1000 }))
+const arbKey = fc.oneof(
+  fc.string({ minLength: 1, maxLength: 10 }),
+  fc.integer({ min: 0, max: 1000 }),
+)
 
 const arbClassName = fc.oneof(fc.constant(null), fc.string({ minLength: 1, maxLength: 30 }))
 
@@ -103,9 +126,25 @@ describe("Property: VNode pool", () => {
     fc.assert(
       fc.property(arbTagName, arbClassName, (tag, className) => {
         clearPool()
-        const v1 = acquireVNode(VNodeFlags.Element, tag, null, null, null, ChildFlags.NoChildren, className)
+        const v1 = acquireVNode(
+          VNodeFlags.Element,
+          tag,
+          null,
+          null,
+          null,
+          ChildFlags.NoChildren,
+          className,
+        )
         releaseVNode(v1)
-        const v2 = acquireVNode(VNodeFlags.Text, null, null, null, "hello", ChildFlags.NoChildren, null)
+        const v2 = acquireVNode(
+          VNodeFlags.Text,
+          null,
+          null,
+          null,
+          "hello",
+          ChildFlags.NoChildren,
+          null,
+        )
         expect(v2).toBe(v1) // same object reused
         expect(v2.flags).toBe(VNodeFlags.Text)
         expect(v2.type).toBeNull()
@@ -119,7 +158,15 @@ describe("Property: VNode pool", () => {
     fc.assert(
       fc.property(arbTagName, arbProps, (tag, props) => {
         clearPool()
-        const v = acquireVNode(VNodeFlags.Element, tag, null, props, null, ChildFlags.NoChildren, null)
+        const v = acquireVNode(
+          VNodeFlags.Element,
+          tag,
+          null,
+          props,
+          null,
+          ChildFlags.NoChildren,
+          null,
+        )
         releaseVNode(v)
         expect(v.type).toBeNull()
         expect(v.props).toBeNull()
@@ -165,7 +212,7 @@ describe("Property: jsx/jsxs runtime", () => {
     fc.assert(
       fc.property(fc.string({ minLength: 1, maxLength: 10 }), (name) => {
         const Comp = Object.defineProperty(() => jsx("div", {}), "name", { value: name })
-        const vnode = jsx(Comp as any, {})
+        const vnode = jsx(Comp as () => VNode, {})
         expect(vnode.flags & VNodeFlags.Component).toBeTruthy()
         expect(vnode.type).toBe(Comp)
       }),
@@ -269,16 +316,13 @@ describe("Property: mount and patch", () => {
 
   it("mounting N children produces N DOM nodes", () => {
     fc.assert(
-      fc.property(
-        fc.array(arbTagName, { minLength: 0, maxLength: 10 }),
-        (tags) => {
-          const root = document.createElement("div")
-          const children = tags.map((tag) => h(tag, null))
-          mount(h("div", null, ...children), root)
-          const inner = root.firstElementChild!
-          expect(inner.childNodes.length).toBe(tags.length)
-        },
-      ),
+      fc.property(fc.array(arbTagName, { minLength: 0, maxLength: 10 }), (tags) => {
+        const root = document.createElement("div")
+        const children = tags.map((tag) => h(tag, null))
+        mount(h("div", null, ...children), root)
+        const inner = root.firstElementChild!
+        expect(inner.childNodes.length).toBe(tags.length)
+      }),
       { numRuns: 50 },
     )
   })
@@ -313,11 +357,7 @@ describe("Property: mount and patch", () => {
               items = [...items].reverse()
               setList(items)
             }
-            return h(
-              "ul",
-              null,
-              ...list.map((item) => h("li", { key: item.id }, item.text)),
-            )
+            return h("ul", null, ...list.map((item) => h("li", { key: item.id }, item.text)))
           }
 
           const root = document.createElement("div")
@@ -441,42 +481,38 @@ describe("Property: hooks", () => {
 
   it("mixed hooks (useEffect + useCallback + useState) work without index corruption", () => {
     fc.assert(
-      fc.property(
-        fc.integer({ min: 0, max: 100 }),
-        fc.integer({ min: 0, max: 100 }),
-        (a, b) => {
-          let effectRan = false
-          let trigger: (v: number) => void
-          let cbResult: number
+      fc.property(fc.integer({ min: 0, max: 100 }), fc.integer({ min: 0, max: 100 }), (a, b) => {
+        let effectRan = false
+        let trigger: (v: number) => void
+        let cbResult: number
 
-          function App() {
-            const [val, setVal] = useState(a)
-            trigger = setVal
+        function App() {
+          const [val, setVal] = useState(a)
+          trigger = setVal
 
-            useEffect(() => {
-              effectRan = true
-            }, [])
+          useEffect(() => {
+            effectRan = true
+          }, [])
 
-            const doubled = useCallback(() => val * 2, [val])
-            cbResult = doubled()
+          const doubled = useCallback(() => val * 2, [val])
+          cbResult = doubled()
 
-            return h("span", null, String(val))
-          }
+          return h("span", null, String(val))
+        }
 
-          const root = document.createElement("div")
-          mount(h(App, null), root)
+        const root = document.createElement("div")
+        mount(h(App, null), root)
 
-          expect(root.textContent).toBe(String(a))
-          expect(effectRan).toBe(true)
-          expect(cbResult!).toBe(a * 2)
+        expect(root.textContent).toBe(String(a))
+        expect(effectRan).toBe(true)
+        expect(cbResult!).toBe(a * 2)
 
-          trigger!(b)
-          flushUpdates()
+        trigger!(b)
+        flushUpdates()
 
-          expect(root.textContent).toBe(String(b))
-          expect(cbResult!).toBe(b * 2)
-        },
-      ),
+        expect(root.textContent).toBe(String(b))
+        expect(cbResult!).toBe(b * 2)
+      }),
       { numRuns: 50 },
     )
   })

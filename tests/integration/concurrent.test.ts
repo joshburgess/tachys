@@ -8,22 +8,17 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import {
+  flushUpdates,
   h,
   render,
-  flushUpdates,
-  useState,
   startTransition,
-  useTransition,
+  useCallback,
   useDeferredValue,
   useEffect,
-  useCallback,
+  useState,
+  useTransition,
 } from "../../src"
-import {
-  Lane,
-  getCurrentLane,
-  setCurrentLane,
-  scheduleUpdate,
-} from "../../src/scheduler"
+import { Lane, getCurrentLane, scheduleUpdate, setCurrentLane } from "../../src/scheduler"
 
 let container: HTMLDivElement
 
@@ -260,9 +255,9 @@ describe("useTransition", () => {
     // (the data update is at Transition lane, not applied during Default render)
     // The Transition-lane render should see isPending=false and data="new"
     expect(snapshots).toEqual([
-      { pending: false, data: "old" },   // initial mount
-      { pending: true, data: "old" },    // Default-lane render
-      { pending: false, data: "new" },   // Transition-lane render
+      { pending: false, data: "old" }, // initial mount
+      { pending: true, data: "old" }, // Default-lane render
+      { pending: false, data: "new" }, // Transition-lane render
     ])
   })
 })

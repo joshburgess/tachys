@@ -84,7 +84,7 @@ type DOMEffect = AppendEffect | InsertEffect | RemoveEffect | ThunkEffect
 let _collecting = false
 
 /** The effect queue. Cleared on commit or discard. */
-let _effects: DOMEffect[] = []
+const _effects: DOMEffect[] = []
 
 /**
  * Deferred component effect callbacks. During Transition-lane rendering,
@@ -96,7 +96,7 @@ let _effects: DOMEffect[] = []
  * Each entry is a closure that runs the component's pending effects.
  * Using closures avoids importing ComponentInstance (circular dep).
  */
-let _deferredEffects: (() => void)[] = []
+const _deferredEffects: (() => void)[] = []
 
 /**
  * Transition state restorers. Before each component render during
@@ -105,7 +105,7 @@ let _deferredEffects: (() => void)[] = []
  * pre-render values. On Transition abandonment, these are run in
  * reverse order so the VNode tree matches the live DOM.
  */
-let _transitionRestorers: (() => void)[] = []
+const _transitionRestorers: (() => void)[] = []
 
 // --- Collection lifecycle ---
 

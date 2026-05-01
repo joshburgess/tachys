@@ -7,7 +7,7 @@
  */
 
 import { describe, expect, it, vi } from "vitest"
-import { h, Suspense, lazy, flushUpdates } from "../../src/index"
+import { Suspense, flushUpdates, h, lazy } from "../../src/index"
 import { hydrate } from "../../src/server"
 
 // ---------------------------------------------------------------------------
@@ -32,9 +32,7 @@ describe("selective hydration", () => {
     }
 
     // Use a promise that resolves on the microtask queue (not setTimeout)
-    const LazyContent = lazy(
-      () => Promise.resolve({ default: Content }),
-    )
+    const LazyContent = lazy(() => Promise.resolve({ default: Content }))
 
     // Simulate SSR fallback DOM
     const container = document.createElement("div")
@@ -42,11 +40,7 @@ describe("selective hydration", () => {
     document.body.appendChild(container)
 
     try {
-      const vnode = h(
-        Suspense,
-        { fallback: h("span", null, "Loading...") },
-        h(LazyContent, null),
-      )
+      const vnode = h(Suspense, { fallback: h("span", null, "Loading...") }, h(LazyContent, null))
 
       hydrate(vnode, container)
 
@@ -105,11 +99,7 @@ describe("selective hydration", () => {
 
     try {
       hydrate(
-        h(
-          Suspense,
-          { fallback: h("span", null, "Please wait...") },
-          h(LazyContent, null),
-        ),
+        h(Suspense, { fallback: h("span", null, "Please wait...") }, h(LazyContent, null)),
         container,
       )
 
@@ -142,16 +132,12 @@ describe("selective hydration", () => {
     const LazyContent = lazy(() => loaderPromise)
 
     const container = document.createElement("div")
-    container.innerHTML = '<span>Loading form...</span>'
+    container.innerHTML = "<span>Loading form...</span>"
     document.body.appendChild(container)
 
     try {
       hydrate(
-        h(
-          Suspense,
-          { fallback: h("span", null, "Loading form...") },
-          h(LazyContent, null),
-        ),
+        h(Suspense, { fallback: h("span", null, "Loading form...") }, h(LazyContent, null)),
         container,
       )
 

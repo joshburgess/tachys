@@ -45,10 +45,7 @@ describe("CompiledIR (portable boundary)", () => {
     }
 
     // Re-hydrating the IR yields an equivalent CompiledResult.
-    const roundTripped = irToCompiled(
-      t as unknown as typeof import("@babel/core").types,
-      ir,
-    )
+    const roundTripped = irToCompiled(t as unknown as typeof import("@babel/core").types, ir)
     expect(roundTripped.html).toBe(compiled.html)
     expect(roundTripped.slots).toHaveLength(compiled.slots.length)
   })

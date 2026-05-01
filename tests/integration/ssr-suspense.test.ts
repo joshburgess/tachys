@@ -9,8 +9,8 @@
  */
 
 import { describe, expect, it } from "vitest"
-import { h, useState, Suspense, lazy } from "../../src/index"
-import { renderToString, renderToStringAsync, renderToReadableStream } from "../../src/server"
+import { Suspense, h, lazy, useState } from "../../src/index"
+import { renderToReadableStream, renderToString, renderToStringAsync } from "../../src/server"
 import type { VNode } from "../../src/vnode"
 import type { ComponentFn } from "../../src/vnode"
 
@@ -60,14 +60,12 @@ function createSuspendingComponent(
 /**
  * Create a lazy()-like component from a sync function with a controlled delay.
  */
-function createLazyComponent(
-  Comp: ComponentFn,
-  delay = 10,
-): ComponentFn & { displayName: string } {
-  return lazy(() =>
-    new Promise<{ default: ComponentFn }>((resolve) => {
-      setTimeout(() => resolve({ default: Comp }), delay)
-    }),
+function createLazyComponent(Comp: ComponentFn, delay = 10): ComponentFn & { displayName: string } {
+  return lazy(
+    () =>
+      new Promise<{ default: ComponentFn }>((resolve) => {
+        setTimeout(() => resolve({ default: Comp }), delay)
+      }),
   )
 }
 
@@ -100,11 +98,7 @@ describe("renderToStringAsync", () => {
     const { component: Slow, resolve } = createSuspendingComponent("loaded")
 
     function App() {
-      return h(
-        Suspense,
-        { fallback: h("div", null, "Loading...") },
-        h(Slow, null),
-      )
+      return h(Suspense, { fallback: h("div", null, "Loading...") }, h(Slow, null))
     }
 
     const promise = renderToStringAsync(h(App, null))
@@ -124,11 +118,7 @@ describe("renderToStringAsync", () => {
     const LazyGreeting = createLazyComponent(Greeting, 5)
 
     function App() {
-      return h(
-        Suspense,
-        { fallback: h("span", null, "Loading...") },
-        h(LazyGreeting, null),
-      )
+      return h(Suspense, { fallback: h("span", null, "Loading...") }, h(LazyGreeting, null))
     }
 
     const html = await renderToStringAsync(h(App, null))
@@ -136,19 +126,15 @@ describe("renderToStringAsync", () => {
   })
 
   it("handles nested Suspense boundaries", async () => {
-    const { component: SlowOuter, resolve: resolveOuter } =
-      createSuspendingComponent("outer")
-    const { component: SlowInner, resolve: resolveInner } =
-      createSuspendingComponent("inner")
+    const { component: SlowOuter, resolve: resolveOuter } = createSuspendingComponent("outer")
+    const { component: SlowInner, resolve: resolveInner } = createSuspendingComponent("inner")
 
     function App() {
-      return h("div", null,
-        h(Suspense, { fallback: h("span", null, "Loading outer") },
-          h(SlowOuter, null),
-        ),
-        h(Suspense, { fallback: h("span", null, "Loading inner") },
-          h(SlowInner, null),
-        ),
+      return h(
+        "div",
+        null,
+        h(Suspense, { fallback: h("span", null, "Loading outer") }, h(SlowOuter, null)),
+        h(Suspense, { fallback: h("span", null, "Loading inner") }, h(SlowInner, null)),
       )
     }
 
@@ -186,11 +172,7 @@ describe("renderToStringAsync", () => {
     }
 
     function App() {
-      return h(
-        Suspense,
-        { fallback: h("span", null, "fallback") },
-        h(NeverReady, null),
-      )
+      return h(Suspense, { fallback: h("span", null, "fallback") }, h(NeverReady, null))
     }
 
     const html = await renderToStringAsync(h(App, null))
@@ -207,11 +189,11 @@ describe("renderToStringAsync", () => {
     }
 
     function App() {
-      return h("div", null,
+      return h(
+        "div",
+        null,
         h(SyncPart, null),
-        h(Suspense, { fallback: h("span", null, "...") },
-          h(Slow, null),
-        ),
+        h(Suspense, { fallback: h("span", null, "...") }, h(Slow, null)),
       )
     }
 
@@ -241,18 +223,16 @@ describe("renderToReadableStream with Suspense", () => {
     // Create a component that suspends with a microtask-resolved promise.
     // The promise resolves between the synchronous walk and the pending loop.
     let resolved = false
-    const promise = Promise.resolve().then(() => { resolved = true })
+    const promise = Promise.resolve().then(() => {
+      resolved = true
+    })
     const Slow: ComponentFn = () => {
       if (!resolved) throw promise
       return h("span", null, "loaded")
     }
 
     function App() {
-      return h(
-        Suspense,
-        { fallback: h("span", null, "Loading...") },
-        h(Slow, null),
-      )
+      return h(Suspense, { fallback: h("span", null, "Loading...") }, h(Slow, null))
     }
 
     const html = await collectStream(renderToReadableStream(h(App, null)))
@@ -265,9 +245,14 @@ describe("renderToReadableStream with Suspense", () => {
   })
 
   it("includes swap script exactly once for multiple boundaries", async () => {
-    let r1 = false, r2 = false
-    const p1 = Promise.resolve().then(() => { r1 = true })
-    const p2 = Promise.resolve().then(() => { r2 = true })
+    let r1 = false
+    let r2 = false
+    const p1 = Promise.resolve().then(() => {
+      r1 = true
+    })
+    const p2 = Promise.resolve().then(() => {
+      r2 = true
+    })
 
     const Slow1: ComponentFn = () => {
       if (!r1) throw p1
@@ -279,7 +264,9 @@ describe("renderToReadableStream with Suspense", () => {
     }
 
     function App() {
-      return h("div", null,
+      return h(
+        "div",
+        null,
         h(Suspense, { fallback: h("span", null, "L1") }, h(Slow1, null)),
         h(Suspense, { fallback: h("span", null, "L2") }, h(Slow2, null)),
       )
@@ -295,9 +282,14 @@ describe("renderToReadableStream with Suspense", () => {
   })
 
   it("uses unique IDs for multiple Suspense boundaries", async () => {
-    let r1 = false, r2 = false
-    const p1 = Promise.resolve().then(() => { r1 = true })
-    const p2 = Promise.resolve().then(() => { r2 = true })
+    let r1 = false
+    let r2 = false
+    const p1 = Promise.resolve().then(() => {
+      r1 = true
+    })
+    const p2 = Promise.resolve().then(() => {
+      r2 = true
+    })
 
     const Slow1: ComponentFn = () => {
       if (!r1) throw p1
@@ -309,7 +301,9 @@ describe("renderToReadableStream with Suspense", () => {
     }
 
     function App() {
-      return h("div", null,
+      return h(
+        "div",
+        null,
         h(Suspense, { fallback: h("span", null, "F1") }, h(Slow1, null)),
         h(Suspense, { fallback: h("span", null, "F2") }, h(Slow2, null)),
       )
@@ -324,18 +318,16 @@ describe("renderToReadableStream with Suspense", () => {
 
   it("resolved content is inside hidden div with correct ID", async () => {
     let resolved = false
-    const promise = Promise.resolve().then(() => { resolved = true })
+    const promise = Promise.resolve().then(() => {
+      resolved = true
+    })
     const Slow: ComponentFn = () => {
       if (!resolved) throw promise
       return h("span", null, "resolved-content")
     }
 
     function App() {
-      return h(
-        Suspense,
-        { fallback: h("span", null, "fallback") },
-        h(Slow, null),
-      )
+      return h(Suspense, { fallback: h("span", null, "fallback") }, h(Slow, null))
     }
 
     const html = await collectStream(renderToReadableStream(h(App, null)))
@@ -351,11 +343,7 @@ describe("renderToReadableStream with Suspense", () => {
     }
 
     function App() {
-      return h(
-        Suspense,
-        { fallback: h("span", null, "Loading...") },
-        h(Ready, null),
-      )
+      return h(Suspense, { fallback: h("span", null, "Loading...") }, h(Ready, null))
     }
 
     const html = await collectStream(renderToReadableStream(h(App, null)))

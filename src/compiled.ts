@@ -36,10 +36,7 @@ export interface CompiledComponent {
   (props: Record<string, unknown>): CompiledMount
   patch(state: Record<string, unknown>, props: Record<string, unknown>): void
   _meta: number
-  _compare?: (
-    prev: Record<string, unknown>,
-    next: Record<string, unknown>,
-  ) => boolean
+  _compare?: (prev: Record<string, unknown>, next: Record<string, unknown>) => boolean
 }
 
 /**
@@ -415,16 +412,12 @@ export function _patchList<Item>(
       parentChanged = true
       anyDepChanged = true
     } else {
-      onlySelectionChanged =
-        selectionDepIndices !== undefined && selectionDepIndices.length > 0
+      onlySelectionChanged = selectionDepIndices !== undefined && selectionDepIndices.length > 0
       for (let d = 0; d < parentDeps.length; d++) {
         if (lastDeps[d] !== parentDeps[d]) {
           parentChanged = true
           anyDepChanged = true
-          if (
-            onlySelectionChanged &&
-            selectionDepIndices!.indexOf(d) < 0
-          ) {
+          if (onlySelectionChanged && selectionDepIndices!.indexOf(d) < 0) {
             onlySelectionChanged = false
           }
         }
@@ -504,9 +497,7 @@ export function _patchList<Item>(
   // other siblings we must preserve.
   if (nextLen === 0 && prevLen > 0) {
     const lastIsListEnd =
-      anchor !== null
-        ? parent.lastChild === anchor
-        : parent.lastChild === prev[prevLen - 1]!.dom
+      anchor !== null ? parent.lastChild === anchor : parent.lastChild === prev[prevLen - 1]!.dom
     if (parent.firstChild === prev[0]!.dom && lastIsListEnd) {
       ;(parent as Element).textContent = ""
       if (anchor !== null) parent.appendChild(anchor)
@@ -889,9 +880,7 @@ export function _patchList<Item>(
     matchedCount === 0 &&
     prevMiddleLen === prevLen &&
     parent.firstChild === prev[0]!.dom &&
-    (anchor !== null
-      ? parent.lastChild === anchor
-      : parent.lastChild === prev[prevLen - 1]!.dom)
+    (anchor !== null ? parent.lastChild === anchor : parent.lastChild === prev[prevLen - 1]!.dom)
   ) {
     ;(parent as Element).textContent = ""
     if (anchor !== null) parent.appendChild(anchor)

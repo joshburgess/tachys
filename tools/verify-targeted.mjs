@@ -20,7 +20,9 @@ await page.click("#run")
 await page.locator("tbody tr:nth-child(1000)").waitFor()
 
 // Reset counter after mount.
-await page.evaluate(() => { globalThis.__targetedHits = 0 })
+await page.evaluate(() => {
+  globalThis.__targetedHits = 0
+})
 
 const result = await page.evaluate((clicks) => {
   const tbody = document.querySelector("tbody")

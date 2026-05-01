@@ -457,7 +457,9 @@ describe("structural + property effects together", () => {
 
     beginCollecting()
     // Property change on existing (live) element
-    pushThunk(() => { existing.textContent = "updated" })
+    pushThunk(() => {
+      existing.textContent = "updated"
+    })
     // Structural change: add a new child
     domAppendChild(parent, newChild)
 

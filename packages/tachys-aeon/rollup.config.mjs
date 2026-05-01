@@ -10,12 +10,7 @@ const swcPlugin = swc({
   sourceMaps: true,
 })
 
-const external = [
-  "tachys",
-  "aeon-core",
-  "aeon-types",
-  "aeon-scheduler",
-]
+const external = ["tachys", "aeon-core", "aeon-types", "aeon-scheduler"]
 
 export default {
   input: "src/index.ts",

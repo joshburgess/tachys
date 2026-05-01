@@ -26,8 +26,8 @@
  *     in the concurrent build.
  */
 
-import { bridgeRerender } from "./reconcile-bridge"
 import type { ComponentInstance } from "./component"
+import { bridgeRerender } from "./reconcile-bridge"
 
 // --- Lanes (kept as constants so the type/shape matches concurrent) ---
 
@@ -93,10 +93,7 @@ export function savePendingWork(_resume: () => void): void {
 let batchDepth = 0
 const batchQueue: ComponentInstance[] = []
 
-export function scheduleUpdate(
-  instance: ComponentInstance,
-  _lane?: Lane,
-): void {
+export function scheduleUpdate(instance: ComponentInstance, _lane?: Lane): void {
   if (batchDepth > 0) {
     if (instance._queuedLanes & 1) return
     instance._queuedLanes |= 1

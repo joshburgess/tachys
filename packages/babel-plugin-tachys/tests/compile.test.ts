@@ -27,9 +27,7 @@ describe("babel-plugin-tachys (v0.1 static JSX)", () => {
 
     expect(out).toMatch(/import \{[^}]*markCompiled[^}]*\} from "tachys\/compiled"/)
     expect(out).toMatch(/import \{[^}]*_template[^}]*\} from "tachys\/compiled"/)
-    expect(out).toContain(
-      '_template("<span class=\\"greeting\\">hello</span>")',
-    )
+    expect(out).toContain('_template("<span class=\\"greeting\\">hello</span>")')
     expect(out).toContain("markCompiled(")
     expect(out).toContain("cloneNode(true)")
     // No lingering h(...) or jsx(...) call — JSX was compiled away
@@ -43,9 +41,7 @@ describe("babel-plugin-tachys (v0.1 static JSX)", () => {
       }
     `
     const out = transform(input)
-    expect(out).toContain(
-      '_template("<button class=\\"btn-primary\\">ok</button>")',
-    )
+    expect(out).toContain('_template("<button class=\\"btn-primary\\">ok</button>")')
   })
 
   it("handles nested static elements", () => {
@@ -60,9 +56,7 @@ describe("babel-plugin-tachys (v0.1 static JSX)", () => {
       }
     `
     const out = transform(input)
-    expect(out).toMatch(
-      /_template\("<div class=\\"card\\"><h2>title<\/h2> ?<p>body<\/p><\/div>"\)/,
-    )
+    expect(out).toMatch(/_template\("<div class=\\"card\\"><h2>title<\/h2> ?<p>body<\/p><\/div>"\)/)
   })
 
   it("handles void elements without children", () => {
@@ -398,9 +392,7 @@ describe("babel-plugin-tachys (v0.4b ternary attrs)", () => {
     expect(out).toContain('_root.className = props.selected ? "danger" : ""')
     // Patch: same ternary inside the grouped selected guard.
     expect(out).toContain("state.selected !== props.selected")
-    expect(out).toContain(
-      'state._root.className = props.selected ? "danger" : ""',
-    )
+    expect(out).toContain('state._root.className = props.selected ? "danger" : ""')
   })
 
   it("compiles a ternary className with a destructured prop", () => {
@@ -421,9 +413,7 @@ describe("babel-plugin-tachys (v0.4b ternary attrs)", () => {
       }
     `
     const out = transform(input)
-    expect(out).toMatch(
-      /setAttribute\("aria-pressed",\s*props\.active \? "true" : "false"\)/,
-    )
+    expect(out).toMatch(/setAttribute\("aria-pressed",\s*props\.active \? "true" : "false"\)/)
   })
 
   it("bails when a ternary branch is not a string literal", () => {
@@ -457,9 +447,7 @@ describe("babel-plugin-tachys (v0.4b ternary attrs)", () => {
     expect(out).toContain('_template("<tr><td>x</td></tr>")')
     // Mount: skip the write entirely when selected is falsy so the row's
     // <tr> stays attribute-free (no `class=""`).
-    expect(out).toMatch(
-      /if\s*\(\s*props\.selected\s*\)\s*\{?\s*_root\.className = "danger"/,
-    )
+    expect(out).toMatch(/if\s*\(\s*props\.selected\s*\)\s*\{?\s*_root\.className = "danger"/)
     // Patch: still a single assignment (null collapses to "") so a
     // true→false transition clears the className.
     expect(out).toContain('state._root.className = props.selected ? "danger" : ""')
@@ -472,9 +460,7 @@ describe("babel-plugin-tachys (v0.4b ternary attrs)", () => {
       }
     `
     const out = transform(input)
-    expect(out).toMatch(
-      /if\s*\(\s*!props\.active\s*\)\s*\{?\s*_root\.className = "muted"/,
-    )
+    expect(out).toMatch(/if\s*\(\s*!props\.active\s*\)\s*\{?\s*_root\.className = "muted"/)
   })
 
   it("compiles setAttribute ternary with null branch as set/remove", () => {
@@ -506,9 +492,7 @@ describe("babel-plugin-tachys (v0.4b ternary attrs)", () => {
     `
     for (const src of [inputFalse, inputUndefined]) {
       const out = transform(src)
-      expect(out).toMatch(
-        /if\s*\(\s*props\.x\s*\)\s*\{?\s*_root\.className = "on"/,
-      )
+      expect(out).toMatch(/if\s*\(\s*props\.x\s*\)\s*\{?\s*_root\.className = "on"/)
     }
   })
 })
@@ -640,31 +624,20 @@ describe("babel-plugin-tachys (runtime smoke)", () => {
       tpl.innerHTML = html
       return tpl.content.firstElementChild as Element
     }
-    const fn = new Function(
-      "document",
-      "markCompiled",
-      "_template",
-      `${stubbed}; return Row;`,
-    )
+    const fn = new Function("document", "markCompiled", "_template", `${stubbed}; return Row;`)
     const Row = fn(doc, markCompiled, _template) as {
       mount: (p: Record<string, unknown>) => { dom: Element; state: Record<string, unknown> }
       patch: (s: Record<string, unknown>, p: Record<string, unknown>) => void
     }
 
     const inst = Row.mount({ cls: "danger", label: "row-1" })
-    expect((inst.dom as Element).outerHTML).toBe(
-      '<tr class="danger"><td>row-1</td></tr>',
-    )
+    expect((inst.dom as Element).outerHTML).toBe('<tr class="danger"><td>row-1</td></tr>')
 
     Row.patch(inst.state, { cls: "success", label: "row-1" })
-    expect((inst.dom as Element).outerHTML).toBe(
-      '<tr class="success"><td>row-1</td></tr>',
-    )
+    expect((inst.dom as Element).outerHTML).toBe('<tr class="success"><td>row-1</td></tr>')
 
     Row.patch(inst.state, { cls: "success", label: "row-2" })
-    expect((inst.dom as Element).outerHTML).toBe(
-      '<tr class="success"><td>row-2</td></tr>',
-    )
+    expect((inst.dom as Element).outerHTML).toBe('<tr class="success"><td>row-2</td></tr>')
   })
 
   it("the emitted mount/patch functions run in jsdom and produce the right DOM", async () => {
@@ -682,18 +655,10 @@ describe("babel-plugin-tachys (runtime smoke)", () => {
     const out = transform(input)
 
     // Replace the tachys imports with stubs so we can eval the output.
-    const stubbed = out.replace(
-      /import \{[^}]*\} from "tachys(?:\/compiled)?";?/g,
-      "",
-    )
+    const stubbed = out.replace(/import \{[^}]*\} from "tachys(?:\/compiled)?";?/g, "")
 
     const markCompiledCalls: unknown[] = []
-    const fn = new Function(
-      "document",
-      "markCompiled",
-      "_template",
-      `${stubbed}; return Hello;`,
-    )
+    const fn = new Function("document", "markCompiled", "_template", `${stubbed}; return Hello;`)
 
     const markCompiled = (
       mount: (p: Record<string, unknown>) => { dom: Element; state: Record<string, unknown> },
@@ -714,17 +679,13 @@ describe("babel-plugin-tachys (runtime smoke)", () => {
     }
 
     const inst = Hello.mount({ name: "world" })
-    expect((inst.dom as Element).outerHTML).toBe(
-      '<span class="g">hello world</span>',
-    )
+    expect((inst.dom as Element).outerHTML).toBe('<span class="g">hello world</span>')
 
     Hello.patch(inst.state, { name: "there" })
-    expect((inst.dom as Element).outerHTML).toBe(
-      '<span class="g">hello there</span>',
-    )
+    expect((inst.dom as Element).outerHTML).toBe('<span class="g">hello there</span>')
 
     // Same-value patch: should not touch the DOM
-    const spy = (inst.state["_t0"] as Text)
+    const spy = inst.state["_t0"] as Text
     const before = spy.data
     Hello.patch(inst.state, { name: "there" })
     expect(spy.data).toBe(before)
@@ -760,12 +721,8 @@ describe("babel-plugin-tachys (runtime smoke)", () => {
       t.innerHTML = `<table><tbody>${html}</tbody></table>`
       return t.content.firstElementChild!.firstElementChild!.firstElementChild as Element
     }
-    const _batched = <T,>(f: () => T): T => f()
-    const _attachEvent = (
-      el: Element,
-      eventName: string,
-      handler: EventListener,
-    ): void => {
+    const _batched = <T>(f: () => T): T => f()
+    const _attachEvent = (el: Element, eventName: string, handler: EventListener): void => {
       el.addEventListener(eventName, handler)
     }
     const fn = new Function(
@@ -790,7 +747,7 @@ describe("babel-plugin-tachys (runtime smoke)", () => {
       label: "foo",
     })
     expect((inst.dom as Element).outerHTML).toBe(
-      '<tr class=""><td>x</td><td><a>foo</a></td><td><a>remove</a></td></tr>'
+      '<tr class=""><td>x</td><td><a>foo</a></td><td><a>remove</a></td></tr>',
     )
 
     // First anchor = select; click it.
@@ -811,7 +768,7 @@ describe("babel-plugin-tachys (runtime smoke)", () => {
       label: "bar",
     })
     expect((inst.dom as Element).outerHTML).toBe(
-      '<tr class="danger"><td>x</td><td><a>bar</a></td><td><a>remove</a></td></tr>'
+      '<tr class="danger"><td>x</td><td><a>bar</a></td><td><a>remove</a></td></tr>',
     )
 
     // The new handler reference should be bound too
@@ -917,12 +874,7 @@ describe("babel-plugin-tachys (v0.5 template literal slots)", () => {
       tpl.innerHTML = html
       return tpl.content.firstElementChild as Element
     }
-    const fn = new Function(
-      "document",
-      "markCompiled",
-      "_template",
-      `${stubbed}; return Row;`,
-    )
+    const fn = new Function("document", "markCompiled", "_template", `${stubbed}; return Row;`)
     const Row = fn(doc, markCompiled, _template) as {
       mount: (p: Record<string, unknown>) => { dom: Element; state: Record<string, unknown> }
       patch: (s: Record<string, unknown>, p: Record<string, unknown>) => void
@@ -992,7 +944,9 @@ describe("babel-plugin-tachys (v0.7 nested compiled components)", () => {
     expect(out).toMatch(/_cs\d+ = Badge\(\{\s*label:\s*props\.label\s*\}\)/)
     // Patch guards the child.patch call by the dep's dirty flag.
     expect(out).toContain("const _d0 = state.label !== props.label")
-    expect(out).toMatch(/if \(_d0\) \{[\s\S]*?Badge\.patch\(state\._cs\d+\.state,\s*\{\s*label:\s*props\.label/)
+    expect(out).toMatch(
+      /if \(_d0\) \{[\s\S]*?Badge\.patch\(state\._cs\d+\.state,\s*\{\s*label:\s*props\.label/,
+    )
     // State sync happens after all writes.
     expect(out).toContain("state.label = props.label")
   })
@@ -1089,9 +1043,7 @@ describe("babel-plugin-tachys (v0.7 nested compiled components)", () => {
     const out = transform(input)
     expect(out).toContain("markCompiled")
     // Order preserved: spread then explicit (so explicit wins).
-    expect(out).toMatch(
-      /Row\(\{\s*\.\.\.props\.row,\s*selected:\s*props\.selected\s*\}\)/,
-    )
+    expect(out).toMatch(/Row\(\{\s*\.\.\.props\.row,\s*selected:\s*props\.selected\s*\}\)/)
     expect(out).toContain("state.row === props.row")
     expect(out).toContain("state.selected === props.selected")
   })
@@ -1105,9 +1057,7 @@ describe("babel-plugin-tachys (v0.7 nested compiled components)", () => {
     const out = transform(input)
     expect(out).toContain("markCompiled")
     // Explicit key emitted first, then spread -- matches source order.
-    expect(out).toMatch(
-      /Row\(\{\s*selected:\s*false,\s*\.\.\.props\.row\s*\}\)/,
-    )
+    expect(out).toMatch(/Row\(\{\s*selected:\s*false,\s*\.\.\.props\.row\s*\}\)/)
   })
 
   it("compiles a child with multiple spreads", () => {
@@ -1118,9 +1068,7 @@ describe("babel-plugin-tachys (v0.7 nested compiled components)", () => {
     `
     const out = transform(input)
     expect(out).toContain("markCompiled")
-    expect(out).toMatch(
-      /Row\(\{\s*\.\.\.props\.base,\s*\.\.\.props\.overrides\s*\}\)/,
-    )
+    expect(out).toMatch(/Row\(\{\s*\.\.\.props\.base,\s*\.\.\.props\.overrides\s*\}\)/)
     expect(out).toContain("state.base === props.base")
     expect(out).toContain("state.overrides === props.overrides")
   })
@@ -1175,7 +1123,10 @@ describe("babel-plugin-tachys (v0.7 nested compiled components)", () => {
       mount: (p: Record<string, unknown>) => { dom: Element; state: Record<string, unknown> },
       patch: (s: Record<string, unknown>, p: Record<string, unknown>) => void,
     ): ((p: Record<string, unknown>) => { dom: Element; state: Record<string, unknown> }) => {
-      const callable = mount as ((p: Record<string, unknown>) => { dom: Element; state: Record<string, unknown> }) & {
+      const callable = mount as ((p: Record<string, unknown>) => {
+        dom: Element
+        state: Record<string, unknown>
+      }) & {
         patch: typeof patch
       }
       callable.patch = patch
@@ -1200,20 +1151,14 @@ describe("babel-plugin-tachys (v0.7 nested compiled components)", () => {
     }
 
     const inst = App({ badge: "one" })
-    expect((inst.dom as Element).outerHTML).toBe(
-      '<div><span class="r">one</span></div>',
-    )
+    expect((inst.dom as Element).outerHTML).toBe('<div><span class="r">one</span></div>')
 
     App.patch(inst.state, { badge: "two" })
-    expect((inst.dom as Element).outerHTML).toBe(
-      '<div><span class="r">two</span></div>',
-    )
+    expect((inst.dom as Element).outerHTML).toBe('<div><span class="r">two</span></div>')
 
     // No-op patch: same ref -> neither parent dirty nor child.patch fires.
     App.patch(inst.state, { badge: "two" })
-    expect((inst.dom as Element).outerHTML).toBe(
-      '<div><span class="r">two</span></div>',
-    )
+    expect((inst.dom as Element).outerHTML).toBe('<div><span class="r">two</span></div>')
   })
 
   it("runs spread-props child end-to-end in jsdom", async () => {
@@ -1236,7 +1181,10 @@ describe("babel-plugin-tachys (v0.7 nested compiled components)", () => {
       mount: (p: Record<string, unknown>) => { dom: Element; state: Record<string, unknown> },
       patch: (s: Record<string, unknown>, p: Record<string, unknown>) => void,
     ): ((p: Record<string, unknown>) => { dom: Element; state: Record<string, unknown> }) => {
-      const callable = mount as ((p: Record<string, unknown>) => { dom: Element; state: Record<string, unknown> }) & {
+      const callable = mount as ((p: Record<string, unknown>) => {
+        dom: Element
+        state: Record<string, unknown>
+      }) & {
         patch: typeof patch
       }
       callable.patch = patch
@@ -1263,19 +1211,13 @@ describe("babel-plugin-tachys (v0.7 nested compiled components)", () => {
     // Spread provides both label and (defaulted) tone; explicit `tone` after
     // the spread overrides the spread value since source order is preserved.
     const inst = App({ row: { label: "hi", tone: "ignored" }, tone: "ok" })
-    expect((inst.dom as Element).outerHTML).toBe(
-      '<div><span class="ok">hi</span></div>',
-    )
+    expect((inst.dom as Element).outerHTML).toBe('<div><span class="ok">hi</span></div>')
 
     App.patch(inst.state, { row: { label: "yo", tone: "ignored2" }, tone: "ok" })
-    expect((inst.dom as Element).outerHTML).toBe(
-      '<div><span class="ok">yo</span></div>',
-    )
+    expect((inst.dom as Element).outerHTML).toBe('<div><span class="ok">yo</span></div>')
 
     App.patch(inst.state, { row: { label: "yo", tone: "ignored2" }, tone: "danger" })
-    expect((inst.dom as Element).outerHTML).toBe(
-      '<div><span class="danger">yo</span></div>',
-    )
+    expect((inst.dom as Element).outerHTML).toBe('<div><span class="danger">yo</span></div>')
   })
 })
 
@@ -1348,9 +1290,7 @@ describe("babel-plugin-tachys (v0.8 keyed list compilation)", () => {
     expect(out).toMatch(/const _lp\$List_0 = \(item, __r = \{\}\) =>/)
     expect(out).toMatch(/const _lk\$List_0 = item => item\.id/)
     // Mount calls _mountList with the parent element (_root) as anchor.
-    expect(out).toMatch(
-      /_mountList\(props\.items,\s*Row,\s*_lp\$List_0,\s*_lk\$List_0,\s*_root\)/,
-    )
+    expect(out).toMatch(/_mountList\(props\.items,\s*Row,\s*_lp\$List_0,\s*_lk\$List_0,\s*_root\)/)
     // Patch calls _patchList under the items dirty-check, with the
     // hoisted makePropsOrDiff helper passed alongside makeProps and keyOf.
     expect(out).toMatch(
@@ -1416,9 +1356,7 @@ describe("babel-plugin-tachys (v0.8 keyed list compilation)", () => {
     expect(out).toMatch(/state\.items !== props\.items/)
     expect(out).toMatch(/state\.highlight !== props\.highlight/)
     // Leading-bail covers both reactive props.
-    expect(out).toMatch(
-      /state\.items === props\.items[\s\S]*state\.highlight === props\.highlight/,
-    )
+    expect(out).toMatch(/state\.items === props\.items[\s\S]*state\.highlight === props\.highlight/)
     // Parent-dep array is passed so _patchList can short-circuit item
     // identity when parent deps are unchanged.
     expect(out).toMatch(/_mountList\([\s\S]*\[props\.highlight\]\)/)
@@ -1434,9 +1372,7 @@ describe("babel-plugin-tachys (v0.8 keyed list compilation)", () => {
     `
     const out = transform(input)
     expect(out).toContain("markCompiled")
-    expect(out).toMatch(
-      /_mountList\(props\.items,\s*Row,\s*_lp\$List_0,\s*_lk\$List_0/,
-    )
+    expect(out).toMatch(/_mountList\(props\.items,\s*Row,\s*_lp\$List_0,\s*_lk\$List_0/)
   })
 
   it("accepts template literal attr values that only reference the item", () => {
@@ -1483,10 +1419,7 @@ describe("babel-plugin-tachys (v0.8 keyed list compilation)", () => {
     const markCompiled = (
       mount: (p: Record<string, unknown>) => MountResult,
       patch: (s: Record<string, unknown>, p: Record<string, unknown>) => void,
-      compare?: (
-        a: Record<string, unknown>,
-        b: Record<string, unknown>,
-      ) => boolean,
+      compare?: (a: Record<string, unknown>, b: Record<string, unknown>) => boolean,
     ): ((p: Record<string, unknown>) => MountResult) & {
       patch: typeof patch
       _compare?: typeof compare
@@ -1519,13 +1452,7 @@ describe("babel-plugin-tachys (v0.8 keyed list compilation)", () => {
       "_patchList",
       `${stubbed}; return { Row, List };`,
     )
-    const { List } = fn(
-      doc,
-      markCompiled,
-      _template,
-      _mountList,
-      _patchList,
-    ) as {
+    const { List } = fn(doc, markCompiled, _template, _mountList, _patchList) as {
       List: ((p: Record<string, unknown>) => MountResult) & {
         patch: (s: Record<string, unknown>, p: Record<string, unknown>) => void
       }
@@ -1538,31 +1465,28 @@ describe("babel-plugin-tachys (v0.8 keyed list compilation)", () => {
     ]
     const inst = List({ items })
     expect((inst.dom as Element).outerHTML).toBe(
-      '<ul>' +
+      "<ul>" +
         '<li class="row">one</li>' +
         '<li class="row">two</li>' +
         '<li class="row">three</li>' +
-      '</ul>',
+        "</ul>",
     )
 
     // Swap order: keyed diff must not re-mount anything.
     const reordered = [items[2]!, items[0]!, items[1]!]
     List.patch(inst.state, { items: reordered })
     expect((inst.dom as Element).outerHTML).toBe(
-      '<ul>' +
+      "<ul>" +
         '<li class="row">three</li>' +
         '<li class="row">one</li>' +
         '<li class="row">two</li>' +
-      '</ul>',
+        "</ul>",
     )
 
     // Remove the middle item.
     List.patch(inst.state, { items: [reordered[0]!, reordered[2]!] })
     expect((inst.dom as Element).outerHTML).toBe(
-      '<ul>' +
-        '<li class="row">three</li>' +
-        '<li class="row">two</li>' +
-      '</ul>',
+      "<ul>" + '<li class="row">three</li>' + '<li class="row">two</li>' + "</ul>",
     )
 
     // Append a new item.
@@ -1570,26 +1494,22 @@ describe("babel-plugin-tachys (v0.8 keyed list compilation)", () => {
       items: [reordered[0]!, reordered[2]!, { id: 4, label: "four" }],
     })
     expect((inst.dom as Element).outerHTML).toBe(
-      '<ul>' +
+      "<ul>" +
         '<li class="row">three</li>' +
         '<li class="row">two</li>' +
         '<li class="row">four</li>' +
-      '</ul>',
+        "</ul>",
     )
 
     // Patch an existing item's label -- key stays the same, child.patch fires.
-    const patched = [
-      { id: 3, label: "THREE" },
-      reordered[2]!,
-      { id: 4, label: "four" },
-    ]
+    const patched = [{ id: 3, label: "THREE" }, reordered[2]!, { id: 4, label: "four" }]
     List.patch(inst.state, { items: patched })
     expect((inst.dom as Element).outerHTML).toBe(
-      '<ul>' +
+      "<ul>" +
         '<li class="row">THREE</li>' +
         '<li class="row">two</li>' +
         '<li class="row">four</li>' +
-      '</ul>',
+        "</ul>",
     )
   })
 
@@ -1626,18 +1546,12 @@ describe("babel-plugin-tachys (v0.8 keyed list compilation)", () => {
     const markCompiled = (
       mount: (p: Record<string, unknown>) => MountResult,
       patch: (s: Record<string, unknown>, p: Record<string, unknown>) => void,
-      compare?: (
-        a: Record<string, unknown>,
-        b: Record<string, unknown>,
-      ) => boolean,
+      compare?: (a: Record<string, unknown>, b: Record<string, unknown>) => boolean,
     ): ((p: Record<string, unknown>) => MountResult) & {
       patch: typeof patch
       _compare?: typeof compare
     } => {
-      const wrappedPatch = (
-        s: Record<string, unknown>,
-        p: Record<string, unknown>,
-      ) => {
+      const wrappedPatch = (s: Record<string, unknown>, p: Record<string, unknown>) => {
         patchCallCount++
         patch(s, p)
       }
@@ -1666,13 +1580,7 @@ describe("babel-plugin-tachys (v0.8 keyed list compilation)", () => {
       "_patchList",
       `${stubbed}; return { Row, List };`,
     )
-    const { List } = fn(
-      doc,
-      markCompiled,
-      _template,
-      _mountList,
-      _patchList,
-    ) as {
+    const { List } = fn(doc, markCompiled, _template, _mountList, _patchList) as {
       List: ((p: Record<string, unknown>) => MountResult) & {
         patch: (s: Record<string, unknown>, p: Record<string, unknown>) => void
       }
@@ -1685,11 +1593,11 @@ describe("babel-plugin-tachys (v0.8 keyed list compilation)", () => {
     ]
     const inst = List({ items, selectedId: 1 })
     expect((inst.dom as Element).outerHTML).toBe(
-      '<ul>' +
+      "<ul>" +
         '<li class="on">one</li>' +
         '<li class="off">two</li>' +
         '<li class="off">three</li>' +
-      '</ul>',
+        "</ul>",
     )
 
     // Flip selection from 1 -> 2 keeping items identity stable. The
@@ -1700,11 +1608,11 @@ describe("babel-plugin-tachys (v0.8 keyed list compilation)", () => {
     patchCallCount = 0
     List.patch(inst.state, { items, selectedId: 2 })
     expect((inst.dom as Element).outerHTML).toBe(
-      '<ul>' +
+      "<ul>" +
         '<li class="off">one</li>' +
         '<li class="on">two</li>' +
         '<li class="off">three</li>' +
-      '</ul>',
+        "</ul>",
     )
     expect(patchCallCount).toBe(3)
   })
@@ -1835,10 +1743,7 @@ describe("babel-plugin-tachys (v0.9 conditional compiled children)", () => {
     const markCompiled = (
       mount: (p: Record<string, unknown>) => MountResult,
       patch: (s: Record<string, unknown>, p: Record<string, unknown>) => void,
-      compare?: (
-        a: Record<string, unknown>,
-        b: Record<string, unknown>,
-      ) => boolean,
+      compare?: (a: Record<string, unknown>, b: Record<string, unknown>) => boolean,
     ): ((p: Record<string, unknown>) => MountResult) & {
       patch: typeof patch
       _compare?: typeof compare
@@ -1868,13 +1773,7 @@ describe("babel-plugin-tachys (v0.9 conditional compiled children)", () => {
       "_patchCond",
       `${stubbed}; return { Badge, Panel };`,
     )
-    const { Panel } = fn(
-      doc,
-      markCompiled,
-      _template,
-      _mountCond,
-      _patchCond,
-    ) as {
+    const { Panel } = fn(doc, markCompiled, _template, _mountCond, _patchCond) as {
       Panel: ((p: Record<string, unknown>) => MountResult) & {
         patch: (s: Record<string, unknown>, p: Record<string, unknown>) => void
       }
@@ -1987,10 +1886,7 @@ describe("babel-plugin-tachys (v1.0 ternary alt slots)", () => {
     const markCompiled = (
       mount: (p: Record<string, unknown>) => MountResult,
       patch: (s: Record<string, unknown>, p: Record<string, unknown>) => void,
-      compare?: (
-        a: Record<string, unknown>,
-        b: Record<string, unknown>,
-      ) => boolean,
+      compare?: (a: Record<string, unknown>, b: Record<string, unknown>) => boolean,
     ): ((p: Record<string, unknown>) => MountResult) & {
       patch: typeof patch
       _compare?: typeof compare
@@ -2020,13 +1916,7 @@ describe("babel-plugin-tachys (v1.0 ternary alt slots)", () => {
       "_patchAlt",
       `${stubbed}; return { Panel };`,
     )
-    const { Panel } = fn(
-      doc,
-      markCompiled,
-      _template,
-      _mountAlt,
-      _patchAlt,
-    ) as {
+    const { Panel } = fn(doc, markCompiled, _template, _mountAlt, _patchAlt) as {
       Panel: ((p: Record<string, unknown>) => MountResult) & {
         patch: (s: Record<string, unknown>, p: Record<string, unknown>) => void
       }
@@ -2034,30 +1924,22 @@ describe("babel-plugin-tachys (v1.0 ternary alt slots)", () => {
 
     // Initial mount: visible=true -> Yes branch.
     const inst = Panel({ visible: true, label: "hi" })
-    expect((inst.dom as Element).outerHTML).toBe(
-      '<div><span class="yes">hi</span><!----></div>',
-    )
+    expect((inst.dom as Element).outerHTML).toBe('<div><span class="yes">hi</span><!----></div>')
     const yesBefore = (inst.dom as Element).querySelector("span.yes")!
 
     // Patch with same branch, new label: in-place update, identity preserved.
     Panel.patch(inst.state, { visible: true, label: "hello" })
-    expect((inst.dom as Element).outerHTML).toBe(
-      '<div><span class="yes">hello</span><!----></div>',
-    )
+    expect((inst.dom as Element).outerHTML).toBe('<div><span class="yes">hello</span><!----></div>')
     expect((inst.dom as Element).querySelector("span.yes")).toBe(yesBefore)
 
     // Flip cond: swap to No branch.
     Panel.patch(inst.state, { visible: false, label: "hello" })
-    expect((inst.dom as Element).outerHTML).toBe(
-      '<div><span class="no">hello</span><!----></div>',
-    )
+    expect((inst.dom as Element).outerHTML).toBe('<div><span class="no">hello</span><!----></div>')
 
     // Flip back: fresh Yes node (no stale state).
     Panel.patch(inst.state, { visible: true, label: "again" })
     const yesAfter = (inst.dom as Element).querySelector("span.yes")!
     expect(yesAfter).not.toBe(yesBefore)
-    expect((inst.dom as Element).outerHTML).toBe(
-      '<div><span class="yes">again</span><!----></div>',
-    )
+    expect((inst.dom as Element).outerHTML).toBe('<div><span class="yes">again</span><!----></div>')
   })
 })

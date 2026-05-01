@@ -286,9 +286,9 @@ export function installDevToolsHook(): void {
     highlight,
     getEvents,
   }
-
-  ;(window as unknown as { __TACHYS_DEVTOOLS_HOOK__: TachysDevToolsHook }).__TACHYS_DEVTOOLS_HOOK__ =
-    hook
+  ;(
+    window as unknown as { __TACHYS_DEVTOOLS_HOOK__: TachysDevToolsHook }
+  ).__TACHYS_DEVTOOLS_HOOK__ = hook
 
   // Dispatch event to notify extension that the hook is ready
   window.dispatchEvent(new CustomEvent("__TACHYS_DEVTOOLS_HOOK_READY__"))

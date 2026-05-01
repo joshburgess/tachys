@@ -56,7 +56,8 @@ for (let i = 0; i < ITERATIONS; i++) {
 
   const { clear, post } = await page.evaluate(() => {
     return new Promise((resolve) => {
-      let t0 = 0, t1 = 0
+      let t0 = 0
+      let t1 = 0
       const tbody = document.querySelector("tbody")
       const observer = new MutationObserver(() => {
         if (tbody.children.length === 0) {
@@ -97,15 +98,11 @@ function stats(arr) {
 
 const c = stats(samples.clear)
 const p = stats(samples.post)
-console.log(
-  `${LABEL} (CPU x${CPU_THROTTLE}, ${ITERATIONS} iters):`,
-)
+console.log(`${LABEL} (CPU x${CPU_THROTTLE}, ${ITERATIONS} iters):`)
 console.log(
   `  click→DOM-empty:   median=${c.median.toFixed(2)} mean=${c.mean.toFixed(2)} stddev=${c.sd.toFixed(2)}`,
 )
 console.log(
   `  post-empty drain:  median=${p.median.toFixed(2)} mean=${p.mean.toFixed(2)} stddev=${p.sd.toFixed(2)}`,
 )
-console.log(
-  `  combined median:   ${(c.median + p.median).toFixed(2)} ms`,
-)
+console.log(`  combined median:   ${(c.median + p.median).toFixed(2)} ms`)

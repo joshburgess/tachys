@@ -183,9 +183,7 @@ describe("useReducer", () => {
       age: number
     }
 
-    type UserAction =
-      | { type: "setName"; name: string }
-      | { type: "birthday" }
+    type UserAction = { type: "setName"; name: string } | { type: "birthday" }
 
     function reducer(state: UserState, action: UserAction): UserState {
       switch (action.type) {

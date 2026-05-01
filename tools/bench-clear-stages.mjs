@@ -108,9 +108,7 @@ function stats(arr) {
 const t = stats(samples.total)
 const d = stats(samples.domEmpty)
 const p = stats(samples.postEmpty)
-console.log(
-  `${LABEL} (CPU x${CPU_THROTTLE}, ${ITERATIONS} iters):`,
-)
+console.log(`${LABEL} (CPU x${CPU_THROTTLE}, ${ITERATIONS} iters):`)
 console.log(`  click→DOM-empty:   median=${d.median.toFixed(2)} mean=${d.mean.toFixed(2)}`)
 console.log(`  post-empty:        median=${p.median.toFixed(2)} mean=${p.mean.toFixed(2)}`)
 console.log(`  total:             median=${t.median.toFixed(2)} mean=${t.mean.toFixed(2)}`)

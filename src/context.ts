@@ -65,9 +65,7 @@ export function createContext<T>(defaultValue: T): Context<T> {
 
   const Consumer = function ContextConsumer(props: Record<string, unknown>): VNode {
     const value =
-      Context._stack.length > 0
-        ? Context._stack[Context._stack.length - 1]!
-        : Context._defaultValue
+      Context._stack.length > 0 ? Context._stack[Context._stack.length - 1]! : Context._defaultValue
     registerContextDep(Context as Context<unknown>, value)
     const children = props["children"] as (val: T) => VNode
     return children(value)

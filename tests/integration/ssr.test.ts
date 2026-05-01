@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
-import { h, useState, useMemo, useRef, createContext, useContext } from "../../src/index"
-import { renderToString, renderToReadableStream } from "../../src/server"
+import { createContext, h, useContext, useMemo, useRef, useState } from "../../src/index"
+import { renderToReadableStream, renderToString } from "../../src/server"
 import type { VNode } from "../../src/vnode"
 
 /** Collect all chunks from a ReadableStream into a single string. */
@@ -118,9 +118,7 @@ describe("renderToString", () => {
 
     it("escapes attribute values", () => {
       const vnode = h("div", { title: 'he said "hi" & waved' })
-      expect(renderToString(vnode)).toBe(
-        '<div title="he said &quot;hi&quot; &amp; waved"></div>',
-      )
+      expect(renderToString(vnode)).toBe('<div title="he said &quot;hi&quot; &amp; waved"></div>')
     })
 
     it("escapes className", () => {
@@ -216,9 +214,7 @@ describe("renderToString", () => {
       function Greeting(props: Record<string, unknown>) {
         return h("span", null, `Hello, ${props["name"]}!`)
       }
-      expect(renderToString(h(Greeting, { name: "World" }))).toBe(
-        "<span>Hello, World!</span>",
-      )
+      expect(renderToString(h(Greeting, { name: "World" }))).toBe("<span>Hello, World!</span>")
     })
 
     it("renders nested components", () => {
@@ -319,9 +315,7 @@ describe("renderToString", () => {
         { value: "outer" },
         h("div", null, h(Reader, null), h(Ctx.Provider, { value: "inner" }, h(Reader, null))),
       )
-      expect(renderToString(vnode)).toBe(
-        "<div><span>outer</span><span>inner</span></div>",
-      )
+      expect(renderToString(vnode)).toBe("<div><span>outer</span><span>inner</span></div>")
     })
   })
 

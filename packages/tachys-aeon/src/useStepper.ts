@@ -9,8 +9,8 @@
  * component re-rendering into a single hook.
  */
 
-import type { Event, Scheduler } from "aeon-types"
 import { readBehavior, stepper } from "aeon-core"
+import type { Event, Scheduler } from "aeon-types"
 import { useEffect, useMemo, useReducer } from "tachys"
 import { runEvent } from "./internal.js"
 import { createScheduler } from "./scheduler.js"
@@ -31,26 +31,21 @@ import { createScheduler } from "./scheduler.js"
  * }
  * ```
  */
-export function useStepper<A>(
-  initial: A,
-  event: Event<A, never>,
-  scheduler?: Scheduler,
-): A {
+export function useStepper<A>(initial: A, event: Event<A, never>, scheduler?: Scheduler): A {
   const sched = scheduler ?? createScheduler()
   const [, forceRender] = useReducer<number, void>((n) => n + 1, 0)
 
   // Create the stepper Behavior and its disposable once
-  const [behavior, stepperDisposable] = useMemo(
-    () => stepper(initial, event, sched),
-    [],
-  )
+  const [behavior, stepperDisposable] = useMemo(() => stepper(initial, event, sched), [])
 
   // Subscribe to the driving event to trigger re-renders
   useEffect(() => {
     const disposable = runEvent(
       event,
       {
-        event() { forceRender() },
+        event() {
+          forceRender()
+        },
         error() {},
         end() {},
       },

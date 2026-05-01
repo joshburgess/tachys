@@ -1,5 +1,15 @@
-import { describe, expect, it, beforeEach } from "vitest"
-import { h, mount, patch, createPortal, useState, flushUpdates, unmount, useEffect, createTextVNode } from "../../src/index"
+import { beforeEach, describe, expect, it } from "vitest"
+import {
+  createPortal,
+  createTextVNode,
+  flushUpdates,
+  h,
+  mount,
+  patch,
+  unmount,
+  useEffect,
+  useState,
+} from "../../src/index"
 import type { VNode } from "../../src/vnode"
 
 function setup(): HTMLDivElement {
@@ -32,9 +42,7 @@ describe("createPortal", () => {
     // The portal content is NOT in parent as an element
     expect(parent.querySelector("span")).toBeNull()
     // But there should be at least one text node (the placeholder)
-    const textNodes = Array.from(parent.childNodes).filter(
-      (n) => n.nodeType === Node.TEXT_NODE,
-    )
+    const textNodes = Array.from(parent.childNodes).filter((n) => n.nodeType === Node.TEXT_NODE)
     expect(textNodes.length).toBeGreaterThanOrEqual(1)
   })
 
@@ -76,11 +84,10 @@ describe("createPortal", () => {
   // 6. Portal with nested elements renders full subtree in target
   it("renders a deeply nested subtree into the target container", () => {
     const vnode = createPortal(
-      h("section", null,
-        h("ul", null,
-          h("li", { key: "a" }, "item A"),
-          h("li", { key: "b" }, "item B"),
-        ),
+      h(
+        "section",
+        null,
+        h("ul", null, h("li", { key: "a" }, "item A"), h("li", { key: "b" }, "item B")),
       ),
       portalTarget,
     )
@@ -112,10 +119,7 @@ describe("createPortal", () => {
   // 8. Portal works alongside regular children
   it("regular children render in parent while portal children render in target", () => {
     const portalVNode = createPortal(h("em", null, "portal child"), portalTarget)
-    const wrapper = h("div", null,
-      h("strong", null, "regular child"),
-      portalVNode,
-    )
+    const wrapper = h("div", null, h("strong", null, "regular child"), portalVNode)
     mount(wrapper, parent)
 
     // Regular child is inside parent's div
@@ -176,10 +180,7 @@ describe("createPortal", () => {
 
   // Additional: portal content is completely absent from parent's innerHTML
   it("does not leak portal content into parent's innerHTML", () => {
-    const vnode = createPortal(
-      h("dialog", null, "secret modal content"),
-      portalTarget,
-    )
+    const vnode = createPortal(h("dialog", null, "secret modal content"), portalTarget)
     mount(vnode, parent)
 
     expect(parent.innerHTML).not.toContain("dialog")

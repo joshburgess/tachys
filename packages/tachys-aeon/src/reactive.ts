@@ -14,9 +14,9 @@
  *    a Behavior subscription directly to a DOM node via refs.
  */
 
-import type { Behavior, Disposable, Scheduler } from "aeon-types"
 import { readBehavior } from "aeon-core"
-import { h, useEffect, useRef, type VNode } from "tachys"
+import type { Behavior, Disposable, Scheduler } from "aeon-types"
+import { type VNode, h, useEffect, useRef } from "tachys"
 import { runEvent } from "./internal.js"
 import { createScheduler } from "./scheduler.js"
 
@@ -132,7 +132,7 @@ export function bindAttr<A>(
   const apply = (): void => {
     const v = readBehavior(behavior, sched.currentTime())
     if (attr === "className" || attr === "class") {
-      (element as HTMLElement).className = String(v)
+      ;(element as HTMLElement).className = String(v)
     } else if (attr === "value") {
       ;(element as HTMLInputElement).value = String(v)
     } else if (attr === "checked") {
@@ -152,7 +152,9 @@ export function bindAttr<A>(
   return runEvent(
     trigger,
     {
-      event() { apply() },
+      event() {
+        apply()
+      },
       error() {},
       end() {},
     },

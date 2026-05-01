@@ -123,7 +123,8 @@ function sumByName(eventNames) {
   let curStart = -1
   let curEnd = -1
   for (const e of evs) {
-    const s = e.ts, ee = e.ts + e.dur
+    const s = e.ts
+    const ee = e.ts + e.dur
     if (s >= curEnd) {
       if (curStart >= 0) total += curEnd - curStart
       curStart = s
@@ -155,19 +156,27 @@ const scriptMs = sumByName(SCRIPT)
 const paintMs = sumByName(PAINT)
 console.log(`\nWrote raw trace to ${OUT}`)
 console.log(`Iterations: ${ITERATIONS}`)
-console.log(`Script-category merged total: ${scriptMs.toFixed(2)} ms (${(scriptMs / ITERATIONS).toFixed(3)} ms/iter)`)
-console.log(`Paint-category merged total:  ${paintMs.toFixed(2)} ms (${(paintMs / ITERATIONS).toFixed(3)} ms/iter)\n`)
+console.log(
+  `Script-category merged total: ${scriptMs.toFixed(2)} ms (${(scriptMs / ITERATIONS).toFixed(3)} ms/iter)`,
+)
+console.log(
+  `Paint-category merged total:  ${paintMs.toFixed(2)} ms (${(paintMs / ITERATIONS).toFixed(3)} ms/iter)\n`,
+)
 
 console.log("Per-name breakdown (script category):")
 console.log("  total_ms    count   name")
 console.log("  --------    -----   ----")
 for (const [name, v] of breakdownByName(SCRIPT)) {
-  console.log(`  ${(v.totalUs / 1000).toFixed(3).padStart(8)}    ${String(v.count).padStart(5)}   ${name}`)
+  console.log(
+    `  ${(v.totalUs / 1000).toFixed(3).padStart(8)}    ${String(v.count).padStart(5)}   ${name}`,
+  )
 }
 
 console.log("\nPer-name breakdown (paint category):")
 console.log("  total_ms    count   name")
 console.log("  --------    -----   ----")
 for (const [name, v] of breakdownByName(PAINT)) {
-  console.log(`  ${(v.totalUs / 1000).toFixed(3).padStart(8)}    ${String(v.count).padStart(5)}   ${name}`)
+  console.log(
+    `  ${(v.totalUs / 1000).toFixed(3).padStart(8)}    ${String(v.count).padStart(5)}   ${name}`,
+  )
 }

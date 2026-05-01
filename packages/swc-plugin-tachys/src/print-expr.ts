@@ -123,10 +123,7 @@ interface Printed {
  * Main entry point. Returns the source of the expression with parent-prop
  * identifiers rewritten to `props.*`.
  */
-export function printExpr(
-  expr: Expression,
-  ctx: PrintContext,
-): string {
+export function printExpr(expr: Expression, ctx: PrintContext): string {
   return print(expr, ctx).src
 }
 
@@ -136,7 +133,7 @@ function print(expr: Expression, ctx: PrintContext): Printed {
       const ident = expr as Identifier
       const name = ident.value
       if (ctx.bound.has(name)) return { src: name, prec: PREC.PRIMARY }
-      if (ctx.destructured !== null && ctx.destructured.has(name)) {
+      if (ctx.destructured?.has(name)) {
         return { src: `props.${name}`, prec: PREC.PRIMARY }
       }
       return { src: name, prec: PREC.PRIMARY }
@@ -258,7 +255,9 @@ function printArrow(expr: ArrowFunctionExpression, ctx: PrintContext): Printed {
   }
   const body = print(expr.body as Expression, { ...ctx, bound: newBound })
   // If body starts with `{` wrap to disambiguate from a block.
-  const bodySrc = body.src.startsWith("{") ? `(${body.src})` : wrap(body.src, body.prec, PREC.ASSIGN)
+  const bodySrc = body.src.startsWith("{")
+    ? `(${body.src})`
+    : wrap(body.src, body.prec, PREC.ASSIGN)
   return { src: `${paramSrc}=>${bodySrc}`, prec: PREC.ASSIGN }
 }
 
@@ -282,7 +281,7 @@ function printObject(expr: ObjectExpression, ctx: PrintContext): Printed {
       const ident = p as Identifier
       const name = ident.value
       if (ctx.bound.has(name)) return name
-      if (ctx.destructured !== null && ctx.destructured.has(name)) {
+      if (ctx.destructured?.has(name)) {
         return `${name}:props.${name}`
       }
       return name
@@ -338,7 +337,7 @@ export function collectPropRefs(
         const ident = e as Identifier
         const name = ident.value
         if (b.has(name)) return
-        if (destructured !== null && destructured.has(name)) {
+        if (destructured?.has(name)) {
           if (!seen.has(name)) {
             seen.add(name)
             out.push(name)

@@ -1,14 +1,5 @@
 import { describe, expect, it, vi } from "vitest"
-import {
-  Suspense,
-  flushUpdates,
-  h,
-  lazy,
-  mount,
-  patch,
-  unmount,
-  useState,
-} from "../../src/index"
+import { Suspense, flushUpdates, h, lazy, mount, patch, unmount, useState } from "../../src/index"
 import type { VNode } from "../../src/vnode"
 import type { ComponentFn } from "../../src/vnode"
 
@@ -53,11 +44,7 @@ describe("lazy", () => {
 
     const LazyGreeting = lazy(createResolvedLazyLoader(Greeting))
 
-    const vnode = h(
-      Suspense,
-      { fallback: h("div", null, "Loading...") },
-      h(LazyGreeting, null),
-    )
+    const vnode = h(Suspense, { fallback: h("div", null, "Loading...") }, h(LazyGreeting, null))
 
     mount(vnode, container)
     // Initially shows fallback
@@ -82,10 +69,7 @@ describe("lazy", () => {
     const { loader, resolve } = createLazyLoader(Content)
     const LazyContent = lazy(loader)
 
-    mount(
-      h(Suspense, { fallback: h("span", null, "Loading...") }, h(LazyContent, null)),
-      container,
-    )
+    mount(h(Suspense, { fallback: h("span", null, "Loading...") }, h(LazyContent, null)), container)
 
     expect(container.innerHTML).toBe("<span>Loading...</span>")
 
@@ -126,10 +110,7 @@ describe("lazy", () => {
 
     const LazyBroken = lazy(() => Promise.reject(new Error("Network error")))
 
-    mount(
-      h(Suspense, { fallback: h("span", null, "Loading...") }, h(LazyBroken, null)),
-      container,
-    )
+    mount(h(Suspense, { fallback: h("span", null, "Loading...") }, h(LazyBroken, null)), container)
 
     // Initially shows Suspense fallback
     expect(container.innerHTML).toBe("<span>Loading...</span>")
@@ -159,11 +140,7 @@ describe("lazy", () => {
 
     const LazyCounter = lazy(createResolvedLazyLoader(Counter))
 
-    const vnode1 = h(
-      Suspense,
-      { fallback: h("div", null, "...") },
-      h(LazyCounter, null),
-    )
+    const vnode1 = h(Suspense, { fallback: h("div", null, "...") }, h(LazyCounter, null))
     mount(vnode1, container)
 
     await flushMicrotasks()
@@ -174,11 +151,7 @@ describe("lazy", () => {
     expect(container.innerHTML).toBe("<span>rendered 1</span>")
 
     // Patch with the same lazy component -- should render immediately (no fallback)
-    const vnode2 = h(
-      Suspense,
-      { fallback: h("div", null, "...") },
-      h(LazyCounter, null),
-    )
+    const vnode2 = h(Suspense, { fallback: h("div", null, "...") }, h(LazyCounter, null))
     patch(vnode1, vnode2, container)
 
     // Should render immediately since the module is already cached
@@ -198,10 +171,7 @@ describe("Suspense", () => {
       return h("p", null, "No suspension")
     }
 
-    mount(
-      h(Suspense, { fallback: h("div", null, "Loading") }, h(Child, null)),
-      container,
-    )
+    mount(h(Suspense, { fallback: h("div", null, "Loading") }, h(Child, null)), container)
 
     expect(container.innerHTML).toBe("<p>No suspension</p>")
   })
@@ -239,15 +209,7 @@ describe("Suspense", () => {
       return h("span", null, "B")
     }
 
-    mount(
-      h(
-        Suspense,
-        { fallback: h("div", null, "Loading") },
-        h(A, null),
-        h(B, null),
-      ),
-      container,
-    )
+    mount(h(Suspense, { fallback: h("div", null, "Loading") }, h(A, null), h(B, null)), container)
 
     expect(container.innerHTML).toBe("<span>A</span><span>B</span>")
   })
@@ -263,10 +225,7 @@ describe("Suspense", () => {
     const { loader, resolve } = createLazyLoader(Content)
     const LazyContent = lazy(loader)
 
-    mount(
-      h(Suspense, { fallback: h("div", null, "Wait...") }, h(LazyContent, null)),
-      container,
-    )
+    mount(h(Suspense, { fallback: h("div", null, "Wait...") }, h(LazyContent, null)), container)
 
     states.push(container.innerHTML)
 

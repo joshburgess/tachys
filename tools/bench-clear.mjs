@@ -86,15 +86,11 @@ const N = samples.length
 const sum = samples.reduce((a, b) => a + b, 0)
 const mean = sum / N
 const median = samples[Math.floor(N / 2)]
-const stddev = Math.sqrt(
-  samples.reduce((acc, x) => acc + (x - mean) ** 2, 0) / N,
-)
+const stddev = Math.sqrt(samples.reduce((acc, x) => acc + (x - mean) ** 2, 0) / N)
 const min = samples[0]
 const max = samples[N - 1]
 
 console.log(
   `${LABEL} (CPU x${CPU_THROTTLE}, ${N} iters): min=${min.toFixed(2)} median=${median.toFixed(2)} mean=${mean.toFixed(2)} max=${max.toFixed(2)} stddev=${stddev.toFixed(2)}`,
 )
-console.log(
-  `  samples: ${samples.map((s) => s.toFixed(1)).join(", ")}`,
-)
+console.log(`  samples: ${samples.map((s) => s.toFixed(1)).join(", ")}`)

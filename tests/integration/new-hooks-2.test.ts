@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest"
 import {
+  flushUpdates,
   forwardRef,
   h,
   mount,
@@ -13,9 +14,8 @@ import {
   useRef,
   useState,
   useTransition,
-  flushUpdates,
 } from "../../src/index"
-import { renderToString, hydrate } from "../../src/server"
+import { hydrate, renderToString } from "../../src/server"
 import type { VNode } from "../../src/vnode"
 
 // ---------------------------------------------------------------------------
@@ -38,10 +38,7 @@ describe("useId", () => {
     }
 
     const container = document.createElement("div")
-    mount(
-      h(null, null, h(Comp1, null), h(Comp2, null)),
-      container,
-    )
+    mount(h(null, null, h(Comp1, null), h(Comp2, null)), container)
 
     expect(id1).toMatch(/^:b\d+:$/)
     expect(id2).toMatch(/^:b\d+:$/)
@@ -163,12 +160,9 @@ describe("useImperativeHandle", () => {
     let handle: { getValue: () => number } | null = null
 
     const Comp = forwardRef((_props: Record<string, unknown>, fwdRef) => {
-      useImperativeHandle(
-        fwdRef as (instance: { getValue: () => number }) => void,
-        () => ({
-          getValue: () => 42,
-        }),
-      )
+      useImperativeHandle(fwdRef as (instance: { getValue: () => number }) => void, () => ({
+        getValue: () => 42,
+      }))
       return h("div", null, "hello")
     })
 
@@ -204,11 +198,9 @@ describe("useImperativeHandle", () => {
       const val = props["val"] as number
       renderCount++
 
-      useImperativeHandle(
-        fwdRef as { current: { value: number } | null },
-        () => ({ value: val }),
-        [val],
-      )
+      useImperativeHandle(fwdRef as { current: { value: number } | null }, () => ({ value: val }), [
+        val,
+      ])
 
       return h("div", null, String(val))
     })
@@ -378,11 +370,7 @@ describe("useDeferredValue", () => {
       const [value, setValue] = useState("initial")
       const deferred = useDeferredValue(value)
 
-      return h(
-        "button",
-        { onClick: () => setValue("updated") },
-        deferred,
-      )
+      return h("button", { onClick: () => setValue("updated") }, deferred)
     }
 
     const container = document.createElement("div")

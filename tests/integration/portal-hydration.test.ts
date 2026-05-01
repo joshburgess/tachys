@@ -7,15 +7,8 @@
  */
 
 import { describe, expect, it, vi } from "vitest"
-import {
-  h,
-  mount,
-  createPortal,
-  useState,
-  flushUpdates,
-  unmount,
-} from "../../src/index"
-import { renderToString, hydrate } from "../../src/server"
+import { createPortal, flushUpdates, h, mount, unmount, useState } from "../../src/index"
+import { hydrate, renderToString } from "../../src/server"
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -37,7 +30,9 @@ describe("portal SSR", () => {
     const target = document.createElement("div")
 
     function App() {
-      return h("div", null,
+      return h(
+        "div",
+        null,
         h("span", null, "main content"),
         createPortal(h("p", null, "portal content"), target),
       )
@@ -55,10 +50,7 @@ describe("portal SSR", () => {
 
     function App() {
       return createPortal(
-        h("div", { className: "modal" },
-          h("h2", null, "Title"),
-          h("p", null, "Body"),
-        ),
+        h("div", { className: "modal" }, h("h2", null, "Title"), h("p", null, "Body")),
         target,
       )
     }
@@ -78,10 +70,7 @@ describe("portal hydration", () => {
     const target = document.createElement("div")
 
     function App() {
-      return h("div", null,
-        h("span", null, "main"),
-        createPortal(h("p", null, "portal"), target),
-      )
+      return h("div", null, h("span", null, "main"), createPortal(h("p", null, "portal"), target))
     }
 
     const html = renderToString(h(App, null))
@@ -99,9 +88,7 @@ describe("portal hydration", () => {
     const onClick = vi.fn()
 
     function App() {
-      return h("div", null,
-        createPortal(h("button", { onClick }, "Portal Button"), target),
-      )
+      return h("div", null, createPortal(h("button", { onClick }, "Portal Button"), target))
     }
 
     const html = renderToString(h(App, null))
@@ -131,10 +118,7 @@ describe("portal with state updates", () => {
     function App() {
       const [text, setText] = useState("initial")
       setter = setText
-      return h("div", null,
-        h("span", null, "main"),
-        createPortal(h("p", null, text), target),
-      )
+      return h("div", null, h("span", null, "main"), createPortal(h("p", null, text), target))
     }
 
     const container = document.createElement("div")
@@ -162,7 +146,9 @@ describe("portal with state updates", () => {
       const [text2, setText2] = useState("b")
       setter1 = setText1
       setter2 = setText2
-      return h("div", null,
+      return h(
+        "div",
+        null,
         createPortal(h("span", null, text1), target1),
         createPortal(h("span", null, text2), target2),
       )

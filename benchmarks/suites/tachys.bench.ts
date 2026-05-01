@@ -12,7 +12,7 @@
  * still exercise real diff work because the new tree differs structurally.
  */
 import { bench, describe } from "vitest"
-import { h, render, mount, patch, unmount } from "../../src/index"
+import { h, mount, patch, render, unmount } from "../../src/index"
 import { clearPool } from "../../src/index"
 import type { VNode } from "../../src/vnode"
 

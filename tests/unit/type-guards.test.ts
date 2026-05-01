@@ -306,7 +306,15 @@ describe("hasTextChildren", () => {
   })
 
   it("VNode constructed with HasTextChildren childFlag passes the guard", () => {
-    const vnode = new VNode(VNodeFlags.Element, "div", null, null, "raw text", ChildFlags.HasTextChildren, null)
+    const vnode = new VNode(
+      VNodeFlags.Element,
+      "div",
+      null,
+      null,
+      "raw text",
+      ChildFlags.HasTextChildren,
+      null,
+    )
     expect(hasTextChildren(vnode)).toBe(true)
   })
 })

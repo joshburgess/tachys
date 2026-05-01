@@ -13,18 +13,18 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import {
+  flushUpdates,
   h,
   render,
-  useState,
   startTransition,
-  useTransition,
+  useCallback,
   useDeferredValue,
   useEffect,
-  useCallback,
-  flushUpdates,
+  useState,
+  useTransition,
 } from "../../src"
-import { isCollecting, discardEffects } from "../../src/effects"
-import { hasPendingWork, Lane, setCurrentLane } from "../../src/scheduler"
+import { discardEffects, isCollecting } from "../../src/effects"
+import { Lane, hasPendingWork, setCurrentLane } from "../../src/scheduler"
 
 let container: HTMLDivElement
 
@@ -60,10 +60,7 @@ function nextFrame(): Promise<void> {
  * because under parallel-test contention the auto-scheduler's
  * MessageChannel slices can be delayed by hundreds of ms.
  */
-async function waitForStable(
-  el: HTMLElement = container,
-  maxIterations = 200,
-): Promise<void> {
+async function waitForStable(el: HTMLElement = container, maxIterations = 200): Promise<void> {
   let prevHTML = el.innerHTML
   let stableCount = 0
   for (let i = 0; i < maxIterations; i++) {
@@ -265,11 +262,7 @@ describe("startTransition (auto-scheduler)", () => {
     function List() {
       const [items, si] = useState<string[]>([])
       setItems = si
-      return h(
-        "ul",
-        null,
-        ...items.map((item) => h("li", { key: item }, item)),
-      )
+      return h("ul", null, ...items.map((item) => h("li", { key: item }, item)))
     }
 
     render(h(List, null), container)
@@ -388,22 +381,13 @@ describe("useTransition with child component tree", () => {
     function ItemList() {
       const [items, si] = useState<string[]>(["a"])
       setItems = si
-      return h(
-        "ul",
-        null,
-        ...items.map((item) => h(Item, { key: item, label: item })),
-      )
+      return h("ul", null, ...items.map((item) => h(Item, { key: item, label: item })))
     }
 
     function App() {
       const [isPending, st] = useTransition()
       triggerTransition = st
-      return h(
-        "div",
-        null,
-        h("p", null, isPending ? "updating..." : "ready"),
-        h(ItemList, null),
-      )
+      return h("div", null, h("p", null, isPending ? "updating..." : "ready"), h(ItemList, null))
     }
 
     render(h(App, null), container)

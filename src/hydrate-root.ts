@@ -10,7 +10,7 @@
 import { __DEV__ } from "./dev"
 import { __devtools_notifyRender } from "./devtools-hook"
 import { hydrate } from "./hydrate"
-import { render, type Root } from "./render"
+import { type Root, render } from "./render"
 import { rootTrees } from "./root-trees"
 import type { VNode } from "./vnode"
 

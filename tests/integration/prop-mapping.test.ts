@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { h, mount } from "../../src/index"
-import { renderToString, renderToReadableStream } from "../../src/server"
+import { renderToReadableStream, renderToString } from "../../src/server"
 
 /** Collect all chunks from a ReadableStream into a single string. */
 async function collectStream(stream: ReadableStream<string>): Promise<string> {
@@ -114,9 +114,7 @@ describe("prop name mapping", () => {
     })
 
     it("maps readOnly to readonly in streamed output", async () => {
-      const html = await collectStream(
-        renderToReadableStream(h("input", { readOnly: true })),
-      )
+      const html = await collectStream(renderToReadableStream(h("input", { readOnly: true })))
       expect(html).toBe("<input readonly>")
     })
   })

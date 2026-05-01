@@ -420,10 +420,10 @@ describe("_mountList / _patchList (LIS reconcile)", () => {
 
     const insertCounts = new Map<Node, number>()
     const origInsertBefore = parent.insertBefore.bind(parent)
-    parent.insertBefore = function (newNode: Node, refNode: Node | null): Node {
+    parent.insertBefore = ((newNode: Node, refNode: Node | null): Node => {
       insertCounts.set(newNode, (insertCounts.get(newNode) ?? 0) + 1)
       return origInsertBefore(newNode, refNode)
-    } as typeof parent.insertBefore
+    }) as typeof parent.insertBefore
 
     const swapped = [...rows]
     const tmp = swapped[1]!
@@ -913,10 +913,7 @@ describe("_mountAlt / _patchAlt (ternary)", () => {
   const tpl = _template("<span> </span>")
   let patchACalls = 0
   let patchBCalls = 0
-  const makeBranch = (
-    tag: "A" | "B",
-    countFn: () => void,
-  ): ReturnType<typeof markCompiled> =>
+  const makeBranch = (tag: "A" | "B", countFn: () => void): ReturnType<typeof markCompiled> =>
     markCompiled(
       (props: Record<string, unknown>) => {
         const dom = tpl.cloneNode(true) as Element

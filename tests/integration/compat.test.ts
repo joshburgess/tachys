@@ -8,8 +8,8 @@ import {
   StrictMode,
   act,
   cloneElement,
-  createRoot,
   createElement,
+  createRoot,
   flushSync,
   hydrateRoot,
   isValidElement,
@@ -238,9 +238,7 @@ describe("Children", () => {
     })
 
     it("throws for multiple children", () => {
-      expect(() => Children.only([h("a", null), h("b", null)])).toThrow(
-        "expected a single child",
-      )
+      expect(() => Children.only([h("a", null), h("b", null)])).toThrow("expected a single child")
     })
   })
 
@@ -312,10 +310,7 @@ describe("StrictMode", () => {
 
   it("can wrap multiple children via fragment", () => {
     const container = document.createElement("div")
-    mount(
-      h(StrictMode, null, h(null, null, h("span", null, "a"), h("span", null, "b"))),
-      container,
-    )
+    mount(h(StrictMode, null, h(null, null, h("span", null, "a"), h("span", null, "b"))), container)
     expect(container.innerHTML).toBe("<span>a</span><span>b</span>")
   })
 })
@@ -439,10 +434,7 @@ describe("useActionState", () => {
     const container = document.createElement("div")
 
     function Comp() {
-      const [state, , isPending] = useActionState(
-        (prev: number, n: number) => prev + n,
-        0,
-      )
+      const [state, , isPending] = useActionState((prev: number, n: number) => prev + n, 0)
       return h("span", null, `${state}:${isPending}`)
     }
 
@@ -455,10 +447,7 @@ describe("useActionState", () => {
     let dispatch!: (payload: number) => void
 
     function Comp() {
-      const [state, d, isPending] = useActionState(
-        (prev: number, n: number) => prev + n,
-        0,
-      )
+      const [state, d, isPending] = useActionState((prev: number, n: number) => prev + n, 0)
       dispatch = d
       return h("span", null, `${state}:${isPending}`)
     }
@@ -477,14 +466,11 @@ describe("useActionState", () => {
     const snapshots: string[] = []
 
     function Comp() {
-      const [state, d, isPending] = useActionState(
-        (_prev: number, n: number) => {
-          return new Promise<number>((r) => {
-            resolveAction = (v: number) => r(v)
-          })
-        },
-        0,
-      )
+      const [state, d, isPending] = useActionState((_prev: number, n: number) => {
+        return new Promise<number>((r) => {
+          resolveAction = (v: number) => r(v)
+        })
+      }, 0)
       dispatch = d
       const text = `${state}:${isPending}`
       snapshots.push(text)

@@ -21,20 +21,19 @@
  * between compile and emit is AST-library-agnostic.
  */
 
-import { parseExpression } from "@babel/parser"
 import type { PluginObj, PluginPass } from "@babel/core"
+import type * as BabelCore from "@babel/core"
 import { declare } from "@babel/helper-plugin-utils"
+import { parseExpression } from "@babel/parser"
 // @ts-expect-error -- @babel/plugin-syntax-jsx ships no types
 import syntaxJsxRaw from "@babel/plugin-syntax-jsx"
-import type * as BabelCore from "@babel/core"
 
-import { emitComponent, type ListHelpers } from "compiler-core-tachys"
+import { type ListHelpers, emitComponent } from "compiler-core-tachys"
 
 import { compileComponent } from "./compile"
 import { compiledToIR } from "./compiled-to-ir"
 
-const syntaxJsx =
-  (syntaxJsxRaw as { default?: unknown }).default ?? syntaxJsxRaw
+const syntaxJsx = (syntaxJsxRaw as { default?: unknown }).default ?? syntaxJsxRaw
 
 interface PluginState extends PluginPass {
   tachysImports: {
@@ -165,9 +164,7 @@ const plugin = declareT<PluginState>((api) => {
             const decl = t.variableDeclaration("const", [
               t.variableDeclarator(
                 t.identifier(tpl.id),
-                t.callExpression(t.identifier(templateLocal), [
-                  t.stringLiteral(tpl.html),
-                ]),
+                t.callExpression(t.identifier(templateLocal), [t.stringLiteral(tpl.html)]),
               ),
             ])
             path.unshiftContainer("body", decl)

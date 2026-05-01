@@ -14,8 +14,8 @@
 //   SAMPLING_US -> default 50 (microseconds)
 //   LABEL       -> tag for profile filenames + console line
 
-import path from "node:path"
 import fs from "node:fs"
+import path from "node:path"
 import pwPkg from "/Users/joshburgess/code/js-framework-benchmark/webdriver-ts/node_modules/playwright/index.js"
 const { chromium } = pwPkg
 
@@ -68,13 +68,19 @@ async function rowsAre(n) {
   )
 }
 async function tbodyEmpty() {
-  await page.waitForFunction(() => !document.querySelectorAll("tbody tr").length, null, { timeout: 30000 })
+  await page.waitForFunction(() => !document.querySelectorAll("tbody tr").length, null, {
+    timeout: 30000,
+  })
 }
 
 async function setup() {
   if (recipe.prep) {
     await page.click(recipe.prep.selector)
-    await page.waitForFunction((c) => document.querySelectorAll("tbody tr").length === c, recipe.prep.target, { timeout: 15000 })
+    await page.waitForFunction(
+      (c) => document.querySelectorAll("tbody tr").length === c,
+      recipe.prep.target,
+      { timeout: 15000 },
+    )
   }
 }
 
@@ -87,7 +93,11 @@ async function teardown() {
 for (let i = 0; i < 5; i++) {
   await setup()
   await page.click(recipe.selector)
-  await page.waitForFunction((c) => document.querySelectorAll("tbody tr").length === c, recipe.target, { timeout: 15000 })
+  await page.waitForFunction(
+    (c) => document.querySelectorAll("tbody tr").length === c,
+    recipe.target,
+    { timeout: 15000 },
+  )
   await teardown()
 }
 
@@ -98,10 +108,17 @@ for (let i = 0; i < ITERATIONS; i++) {
 
   await cdp.send("Profiler.start")
   await page.click(recipe.selector)
-  await page.waitForFunction((c) => document.querySelectorAll("tbody tr").length === c, recipe.target, { timeout: 15000 })
+  await page.waitForFunction(
+    (c) => document.querySelectorAll("tbody tr").length === c,
+    recipe.target,
+    { timeout: 15000 },
+  )
   const { profile } = await cdp.send("Profiler.stop")
   profiles.push(profile)
-  fs.writeFileSync(path.join(OUT_DIR, `${BENCH}-${String(i).padStart(2, "0")}.cpuprofile`), JSON.stringify(profile))
+  fs.writeFileSync(
+    path.join(OUT_DIR, `${BENCH}-${String(i).padStart(2, "0")}.cpuprofile`),
+    JSON.stringify(profile),
+  )
 
   await teardown()
 }
@@ -138,7 +155,9 @@ function aggregate(profiles) {
 const { totals, grandSelfUs } = aggregate(profiles)
 const sorted = [...totals.entries()].sort((a, b) => b[1].self - a[1].self)
 
-console.log(`\n[${LABEL} ${BENCH}] Profiles: ${profiles.length}, total sampled time: ${(grandSelfUs / 1000).toFixed(2)} ms`)
+console.log(
+  `\n[${LABEL} ${BENCH}] Profiles: ${profiles.length}, total sampled time: ${(grandSelfUs / 1000).toFixed(2)} ms`,
+)
 console.log("\nTop 30 self-time frames:\n")
 console.log("  self_ms   self%   hits  function  (url:line:col)")
 console.log("  -------   -----   ----  ---------------------------")
@@ -148,7 +167,9 @@ for (const [, v] of sorted.slice(0, 30)) {
   const f = v.frame
   const name = f.functionName || "(anonymous)"
   const loc = `${f.url || "<vm>"}:${f.lineNumber}:${f.columnNumber}`
-  console.log(`  ${ms.padStart(7)}   ${pct.padStart(5)}   ${String(v.hits).padStart(4)}  ${name.padEnd(30)}  ${loc}`)
+  console.log(
+    `  ${ms.padStart(7)}   ${pct.padStart(5)}   ${String(v.hits).padStart(4)}  ${name.padEnd(30)}  ${loc}`,
+  )
 }
 
 const byUrl = new Map()
@@ -158,7 +179,9 @@ for (const [, v] of totals) {
 }
 console.log("\nSelf time grouped by url:\n")
 for (const [u, us] of [...byUrl.entries()].sort((a, b) => b[1] - a[1])) {
-  console.log(`  ${(us / 1000).toFixed(3).padStart(7)} ms   ${((us / grandSelfUs) * 100).toFixed(2).padStart(5)}%   ${u}`)
+  console.log(
+    `  ${(us / 1000).toFixed(3).padStart(7)} ms   ${((us / grandSelfUs) * 100).toFixed(2).padStart(5)}%   ${u}`,
+  )
 }
 
 console.log(`\nWrote individual profiles to ${OUT_DIR}/`)

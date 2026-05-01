@@ -1,17 +1,6 @@
 import { describe, expect, it } from "vitest"
-import {
-  a,
-  button,
-  div,
-  h1,
-  input,
-  span,
-  svg,
-  switch_,
-  useEl,
-  var_,
-} from "../../src/tags"
 import { ChildFlags, VNodeFlags } from "../../src/index"
+import { a, button, div, h1, input, span, svg, switch_, useEl, var_ } from "../../src/tags"
 
 describe("tags", () => {
   it("produces a VNode with the correct tag name", () => {
@@ -45,7 +34,7 @@ describe("tags", () => {
     expect(outer.type).toBe("div")
     expect(outer.props).toBeNull()
     expect(Array.isArray(outer.children)).toBe(true)
-    expect((outer.children as any[]).length).toBe(2)
+    expect((outer.children as unknown[]).length).toBe(2)
   })
 
   it("gives per-element prop typing via IntrinsicElements", () => {
@@ -65,15 +54,22 @@ describe("tags", () => {
     )
     expect(tree.type).toBe("div")
     expect(Array.isArray(tree.children)).toBe(true)
-    expect((tree.children as any[]).length).toBe(3)
+    expect((tree.children as unknown[]).length).toBe(3)
   })
 
   it("supports button onClick events", () => {
     let clicked = false
-    const v = button({ onClick: () => { clicked = true } }, "go")
+    const v = button(
+      {
+        onClick: () => {
+          clicked = true
+        },
+      },
+      "go",
+    )
     expect(v.type).toBe("button")
-    expect(typeof (v.props as any)?.onClick).toBe("function")
-    ;(v.props as any).onClick()
+    expect(typeof (v.props as { onClick?: () => void })?.onClick).toBe("function")
+    ;(v.props as { onClick: () => void }).onClick()
     expect(clicked).toBe(true)
   })
 

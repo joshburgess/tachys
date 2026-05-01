@@ -276,14 +276,7 @@ export interface AltSlot {
   allDeps: string[]
 }
 
-export type Slot =
-  | TextSlot
-  | AttrSlot
-  | EventSlot
-  | ComponentSlot
-  | ListSlot
-  | CondSlot
-  | AltSlot
+export type Slot = TextSlot | AttrSlot | EventSlot | ComponentSlot | ListSlot | CondSlot | AltSlot
 
 export interface CompiledResult {
   html: string
@@ -457,9 +450,7 @@ function buildComponentSlot(
  * expr-child handlers.
  */
 function resolveListExpr(
-  expr:
-    | BabelCore.types.Expression
-    | BabelCore.types.JSXEmptyExpression,
+  expr: BabelCore.types.Expression | BabelCore.types.JSXEmptyExpression,
   ctx: CompileContext,
 ): Omit<ListSlot, "path"> | null {
   const t = ctx.t
@@ -475,10 +466,7 @@ function resolveListExpr(
   const arrayObj = callee.object
   let arrayPropName: string | null = null
   if (t.isIdentifier(arrayObj)) {
-    if (
-      ctx.destructuredNames === null ||
-      !ctx.destructuredNames.has(arrayObj.name)
-    ) {
+    if (ctx.destructuredNames === null || !ctx.destructuredNames.has(arrayObj.name)) {
       return null
     }
     arrayPropName = arrayObj.name
@@ -570,11 +558,7 @@ function resolveListExpr(
     const lhs = ve.left
     const rhs = ve.right
     let depName: string | null = null
-    if (
-      t.isExpression(lhs) &&
-      t.isNodesEquivalent(lhs, keyExpr) &&
-      isParentPropRef(rhs, t)
-    ) {
+    if (t.isExpression(lhs) && t.isNodesEquivalent(lhs, keyExpr) && isParentPropRef(rhs, t)) {
       depName = (rhs as BabelCore.types.MemberExpression).property
         ? ((rhs as BabelCore.types.MemberExpression).property as BabelCore.types.Identifier).name
         : null
@@ -610,10 +594,7 @@ function resolveListExpr(
   }
 }
 
-function isParentPropRef(
-  node: BabelCore.types.Node,
-  t: typeof BabelCore.types,
-): boolean {
+function isParentPropRef(node: BabelCore.types.Node, t: typeof BabelCore.types): boolean {
   if (!t.isMemberExpression(node)) return false
   if (node.computed) return false
   if (!t.isIdentifier(node.object) || node.object.name !== "props") return false
@@ -696,19 +677,14 @@ function resolveBranchElement(
  * outside the grammar.
  */
 function resolveCondExpr(
-  expr:
-    | BabelCore.types.Expression
-    | BabelCore.types.JSXEmptyExpression,
+  expr: BabelCore.types.Expression | BabelCore.types.JSXEmptyExpression,
   ctx: CompileContext,
 ): Omit<CondSlot, "path"> | null {
   const t = ctx.t
   if (!t.isLogicalExpression(expr)) return null
   if (expr.operator !== "&&") return null
 
-  const leftResolved = resolveChildPropExpr(
-    expr.left as BabelCore.types.Expression,
-    ctx,
-  )
+  const leftResolved = resolveChildPropExpr(expr.left as BabelCore.types.Expression, ctx)
   if (leftResolved === null) return null
 
   const right = expr.right
@@ -742,9 +718,7 @@ function resolveCondExpr(
  * for anything outside the grammar.
  */
 function resolveAltExpr(
-  expr:
-    | BabelCore.types.Expression
-    | BabelCore.types.JSXEmptyExpression,
+  expr: BabelCore.types.Expression | BabelCore.types.JSXEmptyExpression,
   ctx: CompileContext,
 ): Omit<AltSlot, "path"> | null {
   const t = ctx.t
@@ -833,11 +807,7 @@ function resolveListItemExpr(
     const deps: string[] = []
     for (const sub of expr.expressions) {
       if (t.isTSType(sub)) return null
-      const r = resolveListItemExpr(
-        sub as BabelCore.types.Expression,
-        itemParam,
-        ctx,
-      )
+      const r = resolveListItemExpr(sub as BabelCore.types.Expression, itemParam, ctx)
       if (r === null) return null
       parts.push(r.expr)
       for (const d of r.deps) {
@@ -869,11 +839,7 @@ function resolveListItemExpr(
 
   if (t.isBinaryExpression(expr)) {
     if (t.isPrivateName(expr.left)) return null
-    const left = resolveListItemExpr(
-      expr.left as BabelCore.types.Expression,
-      itemParam,
-      ctx,
-    )
+    const left = resolveListItemExpr(expr.left as BabelCore.types.Expression, itemParam, ctx)
     const right = resolveListItemExpr(expr.right, itemParam, ctx)
     if (left === null || right === null) return null
     const depSet = new Set<string>()
@@ -965,10 +931,7 @@ function resolveChildPropExpr(
         const root = collectMemberRootDep(expr, t)
         return root === null ? null : { expr, deps: [root] }
       }
-      if (
-        ctx.destructuredNames !== null &&
-        ctx.destructuredNames.has(cursor.name)
-      ) {
+      if (ctx.destructuredNames?.has(cursor.name)) {
         const depName = cursor.name
         const rewritten = rewriteMemberRoot(expr, t, depName)
         return { expr: rewritten, deps: [depName] }
@@ -1024,10 +987,7 @@ function resolveChildPropExpr(
  * property access is computed (shouldn't happen given the caller-side
  * checks, but kept as a safety net).
  */
-function collectMemberRootDep(
-  expr: BabelCore.types.Expression,
-  t: T,
-): string | null {
+function collectMemberRootDep(expr: BabelCore.types.Expression, t: T): string | null {
   let cursor: BabelCore.types.Expression = expr
   while (t.isMemberExpression(cursor)) {
     const next = cursor.object
@@ -1090,10 +1050,7 @@ function isHostTag(name: string): boolean {
 }
 
 function renderAttributes(
-  attrs: Array<
-    | BabelCore.types.JSXAttribute
-    | BabelCore.types.JSXSpreadAttribute
-  >,
+  attrs: Array<BabelCore.types.JSXAttribute | BabelCore.types.JSXSpreadAttribute>,
   ctx: CompileContext,
   elementPath: number[],
 ): string | null {
@@ -1125,9 +1082,7 @@ function renderAttributes(
       // attribute would do. Event attrs reject literals (nonsensical).
       if (t.isStringLiteral(expr) || t.isNumericLiteral(expr)) {
         if (isEventAttrName(jsxName)) return null
-        const literal = t.isStringLiteral(expr)
-          ? expr.value
-          : String(expr.value)
+        const literal = t.isStringLiteral(expr) ? expr.value : String(expr.value)
         out += ` ${htmlName}="${escapeAttr(literal)}"`
         continue
       }
@@ -1136,9 +1091,7 @@ function renderAttributes(
       if (ternary !== null) {
         if (isEventAttrName(jsxName)) return null
         const strategy: "className" | "setAttribute" =
-          jsxName === "className" || jsxName === "class"
-            ? "className"
-            : "setAttribute"
+          jsxName === "className" || jsxName === "class" ? "className" : "setAttribute"
         ctx.slots.push({
           kind: "attr",
           path: elementPath,
@@ -1154,9 +1107,7 @@ function renderAttributes(
       if (composite !== null) {
         if (isEventAttrName(jsxName)) return null
         const strategy: "className" | "setAttribute" =
-          jsxName === "className" || jsxName === "class"
-            ? "className"
-            : "setAttribute"
+          jsxName === "className" || jsxName === "class" ? "className" : "setAttribute"
         ctx.slots.push({
           kind: "attr",
           path: elementPath,
@@ -1182,9 +1133,7 @@ function renderAttributes(
       }
 
       const strategy: "className" | "setAttribute" =
-        jsxName === "className" || jsxName === "class"
-          ? "className"
-          : "setAttribute"
+        jsxName === "className" || jsxName === "class" ? "className" : "setAttribute"
       ctx.slots.push({
         kind: "attr",
         path: elementPath,
@@ -1313,8 +1262,7 @@ function renderChildren(
       if (list !== null) {
         const prev = i > 0 ? effective[i - 1]! : null
         const next = i < effective.length - 1 ? effective[i + 1]! : null
-        const isTextLike = (c: EffectiveChild | null): boolean =>
-          c !== null && c.kind !== "element"
+        const isTextLike = (c: EffectiveChild | null): boolean => c !== null && c.kind !== "element"
         if (isTextLike(prev) || isTextLike(next)) return null
         // When the list is the last child of its parent template, skip the
         // `<!>` marker. The runtime appends rows directly via the parent
@@ -1338,8 +1286,7 @@ function renderChildren(
       if (cond !== null) {
         const prev = i > 0 ? effective[i - 1]! : null
         const next = i < effective.length - 1 ? effective[i + 1]! : null
-        const isTextLike = (c: EffectiveChild | null): boolean =>
-          c !== null && c.kind !== "element"
+        const isTextLike = (c: EffectiveChild | null): boolean => c !== null && c.kind !== "element"
         if (isTextLike(prev) || isTextLike(next)) return null
         ctx.slots.push({
           ...cond,
@@ -1355,8 +1302,7 @@ function renderChildren(
       if (alt !== null) {
         const prev = i > 0 ? effective[i - 1]! : null
         const next = i < effective.length - 1 ? effective[i + 1]! : null
-        const isTextLike = (c: EffectiveChild | null): boolean =>
-          c !== null && c.kind !== "element"
+        const isTextLike = (c: EffectiveChild | null): boolean => c !== null && c.kind !== "element"
         if (isTextLike(prev) || isTextLike(next)) return null
         ctx.slots.push({
           ...alt,
@@ -1368,9 +1314,7 @@ function renderChildren(
 
       const composite = resolveTemplateExpr(child.node.expression, ctx)
       const propName =
-        composite !== null
-          ? composite.propNames[0]!
-          : resolvePropExpr(child.node.expression, ctx)
+        composite !== null ? composite.propNames[0]! : resolvePropExpr(child.node.expression, ctx)
       if (propName === null) return null
 
       const prev = i > 0 ? effective[i - 1]! : null
@@ -1379,8 +1323,7 @@ function renderChildren(
       // adjacent text-like things (JSXText or another ExpressionContainer
       // using a space placeholder) would collapse into a single merged
       // text node during HTML parsing.
-      const isBlocking = (c: EffectiveChild | null): boolean =>
-        c !== null && c.kind !== "element"
+      const isBlocking = (c: EffectiveChild | null): boolean => c !== null && c.kind !== "element"
       const canPrealloc = !isBlocking(prev) && !isBlocking(next)
 
       if (canPrealloc) {
@@ -1417,9 +1360,7 @@ function renderChildren(
  * branch values so the caller can emit a conditional expression inline.
  */
 function resolveTernaryAttr(
-  expr:
-    | BabelCore.types.Expression
-    | BabelCore.types.JSXEmptyExpression,
+  expr: BabelCore.types.Expression | BabelCore.types.JSXEmptyExpression,
   ctx: CompileContext,
 ): { propName: string; ifTrue: string | null; ifFalse: string | null } | null {
   const t = ctx.t
@@ -1458,9 +1399,7 @@ function ternaryBranchValue(
  * simple single-prop path or bail.
  */
 function resolveTemplateExpr(
-  expr:
-    | BabelCore.types.Expression
-    | BabelCore.types.JSXEmptyExpression,
+  expr: BabelCore.types.Expression | BabelCore.types.JSXEmptyExpression,
   ctx: CompileContext,
 ): CompositeExpr | null {
   const t = ctx.t
@@ -1471,10 +1410,7 @@ function resolveTemplateExpr(
   const normalizedExprs: BabelCore.types.Expression[] = []
   for (const sub of expr.expressions) {
     if (t.isTSType(sub)) return null
-    const propName = resolvePropExpr(
-      sub as BabelCore.types.Expression,
-      ctx,
-    )
+    const propName = resolvePropExpr(sub as BabelCore.types.Expression, ctx)
     if (propName === null) return null
     if (!seen.has(propName)) {
       seen.add(propName)
@@ -1483,9 +1419,7 @@ function resolveTemplateExpr(
     // Normalize bare destructured identifier to `props.<name>`. Member
     // expression (`props.x`) can be reused as-is.
     if (t.isIdentifier(sub)) {
-      normalizedExprs.push(
-        t.memberExpression(t.identifier("props"), t.identifier(propName)),
-      )
+      normalizedExprs.push(t.memberExpression(t.identifier("props"), t.identifier(propName)))
     } else {
       normalizedExprs.push(sub as BabelCore.types.Expression)
     }
@@ -1496,9 +1430,7 @@ function resolveTemplateExpr(
 }
 
 function resolvePropExpr(
-  expr:
-    | BabelCore.types.Expression
-    | BabelCore.types.JSXEmptyExpression,
+  expr: BabelCore.types.Expression | BabelCore.types.JSXEmptyExpression,
   ctx: CompileContext,
 ): string | null {
   const t = ctx.t
@@ -1540,8 +1472,5 @@ function escapeAttr(value: string): string {
 }
 
 function escapeText(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
+  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
 }

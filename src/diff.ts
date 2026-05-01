@@ -20,13 +20,7 @@ import { mountInternal } from "./mount"
 import { patchProp, setRootContainer } from "./patch"
 import { registerPatch } from "./reconcile-bridge"
 import { clearRef, setRef } from "./ref"
-import {
-  appendAfterWork,
-  LANE_TRANSITION,
-  R,
-  savePendingWork,
-  shouldYield,
-} from "./scheduler-shim"
+import { LANE_TRANSITION, R, appendAfterWork, savePendingWork, shouldYield } from "./scheduler-shim"
 import { unmount, unmountChildren } from "./unmount"
 import type { DangerousInnerHTML, VNode } from "./vnode"
 
@@ -65,7 +59,9 @@ function patchClassName(dom: Element, cn: string | null, isSvg: boolean): void {
 
 function setTextContent(dom: Element, text: string): void {
   if (R.collecting) {
-    pushThunk(() => { dom.textContent = text })
+    pushThunk(() => {
+      dom.textContent = text
+    })
   } else {
     dom.textContent = text
   }
@@ -73,7 +69,9 @@ function setTextContent(dom: Element, text: string): void {
 
 function setNodeValue(node: Text, str: string): void {
   if (R.collecting) {
-    pushThunk(() => { node.nodeValue = str })
+    pushThunk(() => {
+      node.nodeValue = str
+    })
   } else {
     node.nodeValue = str
   }
@@ -81,7 +79,9 @@ function setNodeValue(node: Text, str: string): void {
 
 function setInnerHTML(dom: Element, html: string): void {
   if (R.collecting) {
-    pushThunk(() => { dom.innerHTML = html })
+    pushThunk(() => {
+      dom.innerHTML = html
+    })
   } else {
     dom.innerHTML = html
   }
@@ -621,8 +621,8 @@ function patchKeyedChildren(
 
   let oldStart = 0
   let newStart = 0
-  let oldEnd = (oldChildren.length | 0) - 1
-  let newEnd = (newChildren.length | 0) - 1
+  const oldEnd = (oldChildren.length | 0) - 1
+  const newEnd = (newChildren.length | 0) - 1
 
   // Transition-lane: yield-aware path via patchKeyedFrom split.
   while (oldStart <= oldEnd && newStart <= newEnd) {
@@ -877,9 +877,18 @@ function patchKeyedFrom(
         const lastOldSoFar = lastOldIndex
         savePendingWork(() =>
           patchKeyedMiddleResume(
-            oldChildren, newChildren, dom, isSvg,
-            oldStart, oldEnd, newStart, newEnd, newMiddleLen,
-            resumeI, movedSoFar, lastOldSoFar,
+            oldChildren,
+            newChildren,
+            dom,
+            isSvg,
+            oldStart,
+            oldEnd,
+            newStart,
+            newEnd,
+            newMiddleLen,
+            resumeI,
+            movedSoFar,
+            lastOldSoFar,
           ),
         )
         return
@@ -936,9 +945,18 @@ function patchKeyedMiddleResume(
         const lastOldSoFar = lastOldIndex
         savePendingWork(() =>
           patchKeyedMiddleResume(
-            oldChildren, newChildren, dom, isSvg,
-            _oldStart, oldEnd, newStart, _newEnd, newMiddleLen,
-            nextI, movedSoFar, lastOldSoFar,
+            oldChildren,
+            newChildren,
+            dom,
+            isSvg,
+            _oldStart,
+            oldEnd,
+            newStart,
+            _newEnd,
+            newMiddleLen,
+            nextI,
+            movedSoFar,
+            lastOldSoFar,
           ),
         )
         return

@@ -11,7 +11,7 @@ export interface RefObject<T = Element | Text | null> {
 }
 
 export type RefCleanup = () => void
-export type RefCallback = (el: Element | Text | null) => void | RefCleanup
+export type RefCallback = (el: Element | Text | null) => RefCleanup | undefined
 export type Ref = RefCallback | RefObject
 
 /**

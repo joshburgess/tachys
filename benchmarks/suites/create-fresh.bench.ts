@@ -80,9 +80,7 @@ function InfernoTable({ data }: { data: RowData[] }) {
     infernoCreate(
       "tbody",
       null,
-      data.map((row) =>
-        infernoCreate(InfernoRow, { key: row.id, id: row.id, label: row.label }),
-      ),
+      data.map((row) => infernoCreate(InfernoRow, { key: row.id, id: row.id, label: row.label })),
     ),
   )
 }

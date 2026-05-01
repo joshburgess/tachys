@@ -124,8 +124,12 @@ console.log(`${LABEL} (CPU x${CPU_THROTTLE}, ${ITERATIONS} iters)`)
 const stages = [
   ["click", "rerender:start", "click → rerender:start (synchronous overhead)"],
   ["rerender:start", "rerender:render-done", "App body re-execute (renderComponent)"],
-  ["rerender:render-done", "clear:before-textcontent", "patchVNode descent → before textContent=\"\""],
-  ["clear:before-textcontent", "clear:after-textcontent", "textContent=\"\" itself"],
+  [
+    "rerender:render-done",
+    "clear:before-textcontent",
+    'patchVNode descent → before textContent=""',
+  ],
+  ["clear:before-textcontent", "clear:after-textcontent", 'textContent="" itself'],
   ["clear:after-textcontent", "rerender:patch-done", "post-textContent in patch path"],
   ["rerender:patch-done", "handler-return", "post-patch bookkeeping (out of rerenderComponent)"],
   ["handler-return", "dom-empty", "handler-return → DOM-observed-empty"],

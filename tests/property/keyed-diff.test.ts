@@ -6,20 +6,16 @@
  * list transitions and verifying DOM correctness.
  */
 
-import { describe, it, expect } from "vitest"
 import fc from "fast-check"
-import { h, mount, patch, flushUpdates, useState } from "../../src/index"
+import { describe, expect, it } from "vitest"
+import { flushUpdates, h, mount, patch, useState } from "../../src/index"
 import type { VNode } from "../../src/vnode"
 
 // --- Helpers ---
 
 /** Build a keyed VNode list: <tag key={k}>{text}</tag> for each key. */
 function keyedList(tag: string, keys: (string | number)[]): VNode {
-  return h(
-    "div",
-    null,
-    ...keys.map((k) => h(tag, { key: k }, String(k))),
-  )
+  return h("div", null, ...keys.map((k) => h(tag, { key: k }, String(k))))
 }
 
 /** Extract text content of each child element in order. */
@@ -557,10 +553,10 @@ describe("Property: keyed diff sequential patches", () => {
     fc.assert(
       fc.property(
         fc.uniqueArray(fc.integer({ min: 1, max: 30 }), { minLength: 2, maxLength: 10 }),
-        fc.array(
-          fc.uniqueArray(fc.integer({ min: 1, max: 30 }), { minLength: 0, maxLength: 10 }),
-          { minLength: 2, maxLength: 5 },
-        ),
+        fc.array(fc.uniqueArray(fc.integer({ min: 1, max: 30 }), { minLength: 0, maxLength: 10 }), {
+          minLength: 2,
+          maxLength: 5,
+        }),
         (initial, steps) => {
           const container = document.createElement("div")
           let currentVNode = keyedList("li", initial)

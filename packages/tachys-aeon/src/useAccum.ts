@@ -8,8 +8,8 @@
  * actions imperatively, the reducer is driven by an Event stream.
  */
 
-import type { Event, Scheduler } from "aeon-types"
 import { accumB, readBehavior } from "aeon-core"
+import type { Event, Scheduler } from "aeon-types"
 import { useEffect, useMemo, useReducer } from "tachys"
 import { runEvent } from "./internal.js"
 import { createScheduler } from "./scheduler.js"
@@ -46,17 +46,16 @@ export function useAccum<A, B>(
   const [, forceRender] = useReducer<number, void>((n) => n + 1, 0)
 
   // Create the accumulating Behavior and its disposable once
-  const [behavior, accumDisposable] = useMemo(
-    () => accumB(reducer, initial, event, sched),
-    [],
-  )
+  const [behavior, accumDisposable] = useMemo(() => accumB(reducer, initial, event, sched), [])
 
   // Subscribe to the driving event to trigger re-renders
   useEffect(() => {
     const disposable = runEvent(
       event,
       {
-        event() { forceRender() },
+        event() {
+          forceRender()
+        },
         error() {},
         end() {},
       },

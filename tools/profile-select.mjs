@@ -10,8 +10,8 @@
 //   SAMPLING_US   -> default 50 (microseconds)
 //   LABEL         -> tag for output
 
-import path from "node:path"
 import fs from "node:fs"
+import path from "node:path"
 import pwPkg from "/Users/joshburgess/code/js-framework-benchmark/webdriver-ts/node_modules/playwright/index.js"
 const { chromium } = pwPkg
 
@@ -48,27 +48,36 @@ await page.click("#run")
 await page.locator("tbody tr:nth-child(1000)").waitFor()
 
 // Warmup
-await page.evaluate(({ clicks }) => {
-  const tbody = document.querySelector("tbody")
-  for (let j = 0; j < clicks; j++) {
-    const idx = ((j) % 19) * 47 + 100
-    tbody.children[idx].querySelector("td.col-md-4 a").click()
-  }
-}, { clicks: 100 })
+await page.evaluate(
+  ({ clicks }) => {
+    const tbody = document.querySelector("tbody")
+    for (let j = 0; j < clicks; j++) {
+      const idx = (j % 19) * 47 + 100
+      tbody.children[idx].querySelector("td.col-md-4 a").click()
+    }
+  },
+  { clicks: 100 },
+)
 
 const profiles = []
 for (let i = 0; i < ITERATIONS; i++) {
   await cdp.send("Profiler.start")
-  await page.evaluate(({ clicks, seed }) => {
-    const tbody = document.querySelector("tbody")
-    for (let j = 0; j < clicks; j++) {
-      const idx = ((seed + j) % 19) * 47 + 100
-      tbody.children[idx].querySelector("td.col-md-4 a").click()
-    }
-  }, { clicks: CLICKS_PER_ITER, seed: i })
+  await page.evaluate(
+    ({ clicks, seed }) => {
+      const tbody = document.querySelector("tbody")
+      for (let j = 0; j < clicks; j++) {
+        const idx = ((seed + j) % 19) * 47 + 100
+        tbody.children[idx].querySelector("td.col-md-4 a").click()
+      }
+    },
+    { clicks: CLICKS_PER_ITER, seed: i },
+  )
   const { profile } = await cdp.send("Profiler.stop")
   profiles.push(profile)
-  fs.writeFileSync(path.join(OUT_DIR, `04-${String(i).padStart(2, "0")}.cpuprofile`), JSON.stringify(profile))
+  fs.writeFileSync(
+    path.join(OUT_DIR, `04-${String(i).padStart(2, "0")}.cpuprofile`),
+    JSON.stringify(profile),
+  )
 }
 
 await browser.close()
@@ -103,7 +112,9 @@ function aggregate(profiles) {
 const { totals, grandSelfUs } = aggregate(profiles)
 const sorted = [...totals.entries()].sort((a, b) => b[1].self - a[1].self)
 
-console.log(`\n[${LABEL} 04_select] Profiles: ${profiles.length}, total sampled time: ${(grandSelfUs / 1000).toFixed(2)} ms`)
+console.log(
+  `\n[${LABEL} 04_select] Profiles: ${profiles.length}, total sampled time: ${(grandSelfUs / 1000).toFixed(2)} ms`,
+)
 console.log("\nTop 30 self-time frames:\n")
 console.log("  self_ms   self%   hits  function  (url:line:col)")
 console.log("  -------   -----   ----  ---------------------------")
@@ -113,7 +124,9 @@ for (const [, v] of sorted.slice(0, 30)) {
   const f = v.frame
   const name = f.functionName || "(anonymous)"
   const loc = `${f.url || "<vm>"}:${f.lineNumber}:${f.columnNumber}`
-  console.log(`  ${ms.padStart(7)}   ${pct.padStart(5)}   ${String(v.hits).padStart(4)}  ${name.padEnd(30)}  ${loc}`)
+  console.log(
+    `  ${ms.padStart(7)}   ${pct.padStart(5)}   ${String(v.hits).padStart(4)}  ${name.padEnd(30)}  ${loc}`,
+  )
 }
 
 const byUrl = new Map()
@@ -123,7 +136,9 @@ for (const [, v] of totals) {
 }
 console.log("\nSelf time grouped by url:\n")
 for (const [u, us] of [...byUrl.entries()].sort((a, b) => b[1] - a[1])) {
-  console.log(`  ${(us / 1000).toFixed(3).padStart(7)} ms   ${((us / grandSelfUs) * 100).toFixed(2).padStart(5)}%   ${u}`)
+  console.log(
+    `  ${(us / 1000).toFixed(3).padStart(7)} ms   ${((us / grandSelfUs) * 100).toFixed(2).padStart(5)}%   ${u}`,
+  )
 }
 
 console.log(`\nWrote individual profiles to ${OUT_DIR}/`)

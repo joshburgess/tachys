@@ -5,8 +5,8 @@
  * a default shared scheduler and a factory for creating new ones.
  */
 
-import type { Scheduler } from "aeon-types"
 import { DefaultScheduler } from "aeon-scheduler"
+import type { Scheduler } from "aeon-types"
 
 let _shared: Scheduler | null = null
 

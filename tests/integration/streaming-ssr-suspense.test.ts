@@ -9,8 +9,8 @@
  */
 
 import { describe, expect, it } from "vitest"
-import { h, Suspense, lazy, useState, flushUpdates } from "../../src/index"
-import { renderToReadableStream, renderToStringAsync, hydrate } from "../../src/server"
+import { Suspense, flushUpdates, h, lazy, useState } from "../../src/index"
+import { hydrate, renderToReadableStream, renderToStringAsync } from "../../src/server"
 import type { VNode } from "../../src/vnode"
 
 // ---------------------------------------------------------------------------
@@ -73,11 +73,7 @@ describe("streaming SSR with Suspense resolution", () => {
       return h("div", null, "loaded")
     }
 
-    const vnode = h(
-      Suspense,
-      { fallback: h("span", null, "Loading...") },
-      h(SlowChild, null),
-    )
+    const vnode = h(Suspense, { fallback: h("span", null, "Loading...") }, h(SlowChild, null))
 
     const html = await collectStream(renderToReadableStream(vnode))
 
@@ -103,11 +99,7 @@ describe("streaming SSR with Suspense resolution", () => {
       return h("div", null, "resolved content")
     }
 
-    const vnode = h(
-      Suspense,
-      { fallback: h("span", null, "Loading...") },
-      h(SlowChild, null),
-    )
+    const vnode = h(Suspense, { fallback: h("span", null, "Loading...") }, h(SlowChild, null))
 
     const html = await collectStream(renderToReadableStream(vnode))
 
@@ -122,11 +114,7 @@ describe("streaming SSR with Suspense resolution", () => {
       return h("p", null, "immediate")
     }
 
-    const vnode = h(
-      Suspense,
-      { fallback: h("span", null, "Loading...") },
-      h(SyncChild, null),
-    )
+    const vnode = h(Suspense, { fallback: h("span", null, "Loading...") }, h(SyncChild, null))
 
     const html = await collectStream(renderToReadableStream(vnode))
 
@@ -233,11 +221,7 @@ describe("renderToStringAsync with Suspense", () => {
 
     const LazyContent = lazy(() => Promise.resolve({ default: Content }))
 
-    const vnode = h(
-      Suspense,
-      { fallback: h("span", null, "Loading...") },
-      h(LazyContent, null),
-    )
+    const vnode = h(Suspense, { fallback: h("span", null, "Loading...") }, h(LazyContent, null))
 
     const html = await renderToStringAsync(vnode)
 
@@ -262,11 +246,7 @@ describe("renderToStringAsync with Suspense", () => {
         h(
           "div",
           null,
-          h(
-            Suspense,
-            { fallback: h("span", null, "inner loading") },
-            h(LazyInner, null),
-          ),
+          h(Suspense, { fallback: h("span", null, "inner loading") }, h(LazyInner, null)),
         ),
       ),
     )
@@ -311,11 +291,7 @@ describe("stream -> hydrate roundtrip", () => {
     }
 
     // The actual app tree after lazy resolves
-    const vnode = h(
-      Suspense,
-      { fallback: h("span", null, "Loading...") },
-      h(Content, null),
-    )
+    const vnode = h(Suspense, { fallback: h("span", null, "Loading...") }, h(Content, null))
 
     // Simulate post-streaming DOM (swap already happened)
     const container = document.createElement("div")
@@ -334,11 +310,7 @@ describe("stream -> hydrate roundtrip", () => {
       return h("span", null, String(count))
     }
 
-    const vnode = h(
-      Suspense,
-      { fallback: h("div", null, "Loading") },
-      h(Counter, null),
-    )
+    const vnode = h(Suspense, { fallback: h("div", null, "Loading") }, h(Counter, null))
 
     // Simulate SSR output (Suspense rendered synchronously)
     const container = document.createElement("div")

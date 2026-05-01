@@ -1,11 +1,11 @@
-import { describe, expect, it, beforeEach } from "vitest"
-import { h, mount, render, useEffect, useState } from "../../src/index"
-import type { TachysDevToolsHook, SerializedNode } from "../../src/devtools-hook"
+import { beforeEach, describe, expect, it } from "vitest"
+import type { SerializedNode, TachysDevToolsHook } from "../../src/devtools-hook"
 import {
   __devtools_notifyRender,
   __devtools_setRootTrees,
   installDevToolsHook,
 } from "../../src/devtools-hook"
+import { h, mount, render, useEffect, useState } from "../../src/index"
 
 function getHook(): TachysDevToolsHook | undefined {
   return (window as unknown as { __TACHYS_DEVTOOLS_HOOK__?: TachysDevToolsHook })

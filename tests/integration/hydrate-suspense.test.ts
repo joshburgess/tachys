@@ -8,8 +8,8 @@
  */
 
 import { describe, expect, it, vi } from "vitest"
-import { h, Suspense, useState, flushUpdates, lazy } from "../../src/index"
-import { renderToString, renderToReadableStream, hydrate } from "../../src/server"
+import { Suspense, flushUpdates, h, lazy, useState } from "../../src/index"
+import { hydrate, renderToReadableStream, renderToString } from "../../src/server"
 import type { VNode } from "../../src/vnode"
 import type { ComponentFn } from "../../src/vnode"
 
@@ -46,11 +46,7 @@ describe("hydrate Suspense (non-streaming)", () => {
       return h("span", null, "loaded content")
     }
 
-    const vnode = h(
-      Suspense,
-      { fallback: h("div", null, "Loading...") },
-      h(Child, null),
-    )
+    const vnode = h(Suspense, { fallback: h("div", null, "Loading...") }, h(Child, null))
 
     const html = renderToString(vnode)
     const container = document.createElement("div")
@@ -70,21 +66,13 @@ describe("hydrate Suspense (non-streaming)", () => {
       return h("button", { onClick }, "Click me")
     }
 
-    const ssrVNode = h(
-      Suspense,
-      { fallback: h("div", null, "Loading...") },
-      h(Child, null),
-    )
+    const ssrVNode = h(Suspense, { fallback: h("div", null, "Loading...") }, h(Child, null))
 
     const html = renderToString(ssrVNode)
     const container = document.createElement("div")
     container.innerHTML = html
 
-    const hydrateVNode = h(
-      Suspense,
-      { fallback: h("div", null, "Loading...") },
-      h(Child, null),
-    )
+    const hydrateVNode = h(Suspense, { fallback: h("div", null, "Loading...") }, h(Child, null))
     hydrate(hydrateVNode, container)
 
     container.querySelector("button")!.click()
@@ -136,9 +124,7 @@ describe("hydrate streaming SSR artifacts", () => {
   it("removes swap script elements during hydration", () => {
     const container = document.createElement("div")
     container.innerHTML =
-      '<span>content</span>' +
-      '<script>function $ph(id){}</script>' +
-      '<script>$ph(0)</script>'
+      "<span>content</span>" + "<script>function $ph(id){}</script>" + "<script>$ph(0)</script>"
 
     const vnode = h("span", null, "content")
     hydrate(vnode, container)
@@ -151,8 +137,7 @@ describe("hydrate streaming SSR artifacts", () => {
   it("removes hidden phr:N divs during hydration", () => {
     const container = document.createElement("div")
     container.innerHTML =
-      '<span>resolved content</span>' +
-      '<div hidden id="phr:0"><span>old</span></div>'
+      "<span>resolved content</span>" + '<div hidden id="phr:0"><span>old</span></div>'
 
     const vnode = h("span", null, "resolved content")
     hydrate(vnode, container)
@@ -194,11 +179,7 @@ describe("hydrate after streaming swap", () => {
     container.innerHTML = "<div>resolved!</div>"
 
     // Hydrate with the Suspense tree (children are now synchronous)
-    const vnode = h(
-      Suspense,
-      { fallback: h("span", null, "loading...") },
-      h(SlowChild, null),
-    )
+    const vnode = h(Suspense, { fallback: h("span", null, "loading...") }, h(SlowChild, null))
 
     hydrate(vnode, container)
     expect(container.innerHTML).toBe("<div>resolved!</div>")
@@ -215,11 +196,7 @@ describe("hydrate after streaming swap", () => {
     const container = document.createElement("div")
     container.innerHTML = "<button>Click</button>"
 
-    const vnode = h(
-      Suspense,
-      { fallback: h("span", null, "loading...") },
-      h(SlowChild, null),
-    )
+    const vnode = h(Suspense, { fallback: h("span", null, "loading...") }, h(SlowChild, null))
 
     hydrate(vnode, container)
 
@@ -285,11 +262,7 @@ describe("stateful components after hydration", () => {
     const container = document.createElement("div")
     container.innerHTML = "<span>0</span>"
 
-    const vnode = h(
-      Suspense,
-      { fallback: h("div", null, "Loading") },
-      h(Counter, null),
-    )
+    const vnode = h(Suspense, { fallback: h("div", null, "Loading") }, h(Counter, null))
 
     hydrate(vnode, container)
     expect(container.innerHTML).toBe("<span>0</span>")

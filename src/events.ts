@@ -278,7 +278,6 @@ function delegatedEventHandler(event: Event, eventName: string, rootContainer: E
         }
       }
     }
-
     // Outer listeners (other roots, document) resume above this root.
     ;(event as TachysEvent).__tachysStopAt = rootContainer
   })

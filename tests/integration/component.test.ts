@@ -4,11 +4,11 @@ import {
   h,
   mount,
   patch,
+  unmount,
   useEffect,
   useMemo,
   useRef,
   useState,
-  unmount,
 } from "../../src/index"
 import type { VNode } from "../../src/vnode"
 
@@ -316,7 +316,7 @@ describe("component model", () => {
 
 describe("hook ordering with mixed hook types", () => {
   it("should maintain correct hookIndex across useState, useMemo, useRef, and useEffect", async () => {
-    let container: HTMLDivElement = document.createElement("div")
+    const container: HTMLDivElement = document.createElement("div")
     let setter: (v: number) => void
     const effectFn = vi.fn()
 
@@ -348,7 +348,7 @@ describe("hook ordering with mixed hook types", () => {
 
 describe("multiple useEffect hooks", () => {
   it("should run both effects on mount, only changed dep effect on update, both cleanups on unmount", async () => {
-    let container: HTMLDivElement = document.createElement("div")
+    const container: HTMLDivElement = document.createElement("div")
     let setA: (v: number) => void
     let setB: (v: number) => void
     const cleanupA = vi.fn()
@@ -391,7 +391,7 @@ describe("multiple useEffect hooks", () => {
 
 describe("useEffect cleanup with no deps", () => {
   it("should run cleanup from previous render before the next effect when deps is undefined", async () => {
-    let container: HTMLDivElement = document.createElement("div")
+    const container: HTMLDivElement = document.createElement("div")
     let setter: (v: number) => void
     const calls: string[] = []
 
@@ -424,7 +424,7 @@ describe("useEffect cleanup with no deps", () => {
 
 describe("useMemo dep revert", () => {
   it("should recompute when deps change even if they revert to a previous value", async () => {
-    let container: HTMLDivElement = document.createElement("div")
+    const container: HTMLDivElement = document.createElement("div")
     let setter: (v: number) => void
     let computeCount = 0
 

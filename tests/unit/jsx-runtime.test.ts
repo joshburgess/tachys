@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
-import { Fragment, jsx, jsxs } from "../../src/jsx-runtime"
 import { ChildFlags, VNodeFlags, h, mount } from "../../src/index"
+import { Fragment, jsx, jsxs } from "../../src/jsx-runtime"
 import type { VNode } from "../../src/vnode"
 
 describe("Fragment sentinel", () => {

@@ -7,7 +7,7 @@
  * We inspect whether children is an array and delegate to `jsx` or `jsxs`.
  */
 
-import { jsx, jsxs, Fragment } from "./jsx-runtime"
+import { Fragment, jsx, jsxs } from "./jsx-runtime"
 import type { VNode, VNodeType } from "./vnode"
 
 export { Fragment }

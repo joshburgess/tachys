@@ -10,21 +10,13 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import {
-  flushUpdates,
-  scheduleUpdate,
-  Lane,
-  setCurrentLane,
-} from "../../src/scheduler"
-import {
-  isCollecting,
-  discardEffects,
-} from "../../src/effects"
-import { discardPendingWork, hasPendingWork } from "../../src/work-loop"
 import type { ComponentInstance } from "../../src/component"
-import { mount } from "../../src/mount"
 import { patch } from "../../src/diff"
+import { discardEffects, isCollecting } from "../../src/effects"
 import { h } from "../../src/index"
+import { mount } from "../../src/mount"
+import { Lane, flushUpdates, scheduleUpdate, setCurrentLane } from "../../src/scheduler"
+import { discardPendingWork, hasPendingWork } from "../../src/work-loop"
 
 // ---------------------------------------------------------------------------
 // Reset state between tests
@@ -55,32 +47,23 @@ function childTextContent(el: Element): string[] {
 describe("non-keyed children update via Transition lane", () => {
   it("updates a list of items correctly", () => {
     const container = makeContainer()
-    const oldTree = h("ul", null,
-      h("li", null, "A"),
-      h("li", null, "B"),
-      h("li", null, "C"),
-    )
+    const oldTree = h("ul", null, h("li", null, "A"), h("li", null, "B"), h("li", null, "C"))
     mount(oldTree, container)
     expect(container.innerHTML).toBe("<ul><li>A</li><li>B</li><li>C</li></ul>")
 
-    const newTree = h("ul", null,
-      h("li", null, "X"),
-      h("li", null, "Y"),
-      h("li", null, "Z"),
-    )
+    const newTree = h("ul", null, h("li", null, "X"), h("li", null, "Y"), h("li", null, "Z"))
     patch(oldTree, newTree, container)
     expect(container.innerHTML).toBe("<ul><li>X</li><li>Y</li><li>Z</li></ul>")
   })
 
   it("handles growing a list", () => {
     const container = makeContainer()
-    const oldTree = h("div", null,
-      h("span", null, "1"),
-      h("span", null, "2"),
-    )
+    const oldTree = h("div", null, h("span", null, "1"), h("span", null, "2"))
     mount(oldTree, container)
 
-    const newTree = h("div", null,
+    const newTree = h(
+      "div",
+      null,
       h("span", null, "1"),
       h("span", null, "2"),
       h("span", null, "3"),
@@ -93,16 +76,10 @@ describe("non-keyed children update via Transition lane", () => {
 
   it("handles shrinking a list", () => {
     const container = makeContainer()
-    const oldTree = h("div", null,
-      h("span", null, "1"),
-      h("span", null, "2"),
-      h("span", null, "3"),
-    )
+    const oldTree = h("div", null, h("span", null, "1"), h("span", null, "2"), h("span", null, "3"))
     mount(oldTree, container)
 
-    const newTree = h("div", null,
-      h("span", null, "1"),
-    )
+    const newTree = h("div", null, h("span", null, "1"))
     patch(oldTree, newTree, container)
     expect(container.querySelector("div")!.childNodes.length).toBe(1)
   })
@@ -115,7 +92,9 @@ describe("non-keyed children update via Transition lane", () => {
 describe("keyed children update correctness", () => {
   it("reorders keyed items correctly", () => {
     const container = makeContainer()
-    const oldTree = h("ul", null,
+    const oldTree = h(
+      "ul",
+      null,
       h("li", { key: "a" }, "A"),
       h("li", { key: "b" }, "B"),
       h("li", { key: "c" }, "C"),
@@ -123,7 +102,9 @@ describe("keyed children update correctness", () => {
     mount(oldTree, container)
     expect(container.innerHTML).toBe("<ul><li>A</li><li>B</li><li>C</li></ul>")
 
-    const newTree = h("ul", null,
+    const newTree = h(
+      "ul",
+      null,
       h("li", { key: "c" }, "C"),
       h("li", { key: "a" }, "A"),
       h("li", { key: "b" }, "B"),
@@ -134,14 +115,18 @@ describe("keyed children update correctness", () => {
 
   it("handles keyed insertions and removals", () => {
     const container = makeContainer()
-    const oldTree = h("ul", null,
+    const oldTree = h(
+      "ul",
+      null,
       h("li", { key: "a" }, "A"),
       h("li", { key: "b" }, "B"),
       h("li", { key: "c" }, "C"),
     )
     mount(oldTree, container)
 
-    const newTree = h("ul", null,
+    const newTree = h(
+      "ul",
+      null,
       h("li", { key: "b" }, "B"),
       h("li", { key: "d" }, "D"),
       h("li", { key: "c" }, "C"),
@@ -152,7 +137,9 @@ describe("keyed children update correctness", () => {
 
   it("complete reversal with keyed children", () => {
     const container = makeContainer()
-    const oldTree = h("ul", null,
+    const oldTree = h(
+      "ul",
+      null,
       h("li", { key: "1" }, "A"),
       h("li", { key: "2" }, "B"),
       h("li", { key: "3" }, "C"),
@@ -160,7 +147,9 @@ describe("keyed children update correctness", () => {
     )
     mount(oldTree, container)
 
-    const newTree = h("ul", null,
+    const newTree = h(
+      "ul",
+      null,
       h("li", { key: "4" }, "D"),
       h("li", { key: "3" }, "C"),
       h("li", { key: "2" }, "B"),
@@ -178,17 +167,11 @@ describe("keyed children update correctness", () => {
 describe("fragment children update", () => {
   it("patches fragment children and updates dom reference", () => {
     const container = makeContainer()
-    const oldTree = h(null, null,
-      h("span", null, "A"),
-      h("span", null, "B"),
-    )
+    const oldTree = h(null, null, h("span", null, "A"), h("span", null, "B"))
     mount(oldTree, container)
     expect(container.innerHTML).toBe("<span>A</span><span>B</span>")
 
-    const newTree = h(null, null,
-      h("span", null, "X"),
-      h("span", null, "Y"),
-    )
+    const newTree = h(null, null, h("span", null, "X"), h("span", null, "Y"))
     patch(oldTree, newTree, container)
     expect(container.innerHTML).toBe("<span>X</span><span>Y</span>")
     expect(newTree.dom).toBe(container.firstChild)
@@ -205,18 +188,14 @@ describe("deep tree with components", () => {
 
     // Simple wrapper component
     function Wrapper(props: { children?: unknown }) {
-      return h("div", { class: "wrapper" }, props.children as any)
+      return h("div", { class: "wrapper" }, props.children as never)
     }
 
-    const oldTree = h(Wrapper, null,
-      h("span", null, "old-content"),
-    )
+    const oldTree = h(Wrapper, null, h("span", null, "old-content"))
     mount(oldTree, container)
     expect(container.querySelector(".wrapper span")!.textContent).toBe("old-content")
 
-    const newTree = h(Wrapper, null,
-      h("span", null, "new-content"),
-    )
+    const newTree = h(Wrapper, null, h("span", null, "new-content"))
     patch(oldTree, newTree, container)
     expect(container.querySelector(".wrapper span")!.textContent).toBe("new-content")
   })
@@ -225,9 +204,7 @@ describe("deep tree with components", () => {
     const container = makeContainer()
 
     function List(props: { items: string[] }) {
-      return h("ul", null,
-        ...props.items.map((item) => h("li", { key: item }, item)),
-      )
+      return h("ul", null, ...props.items.map((item) => h("li", { key: item }, item)))
     }
 
     const oldTree = h(List, { items: ["a", "b", "c"] })
@@ -247,16 +224,10 @@ describe("deep tree with components", () => {
 describe("work-loop state is clean after operations", () => {
   it("no pending work after direct patch", () => {
     const container = makeContainer()
-    const oldTree = h("div", null,
-      h("span", null, "A"),
-      h("span", null, "B"),
-    )
+    const oldTree = h("div", null, h("span", null, "A"), h("span", null, "B"))
     mount(oldTree, container)
 
-    const newTree = h("div", null,
-      h("span", null, "X"),
-      h("span", null, "Y"),
-    )
+    const newTree = h("div", null, h("span", null, "X"), h("span", null, "Y"))
     patch(oldTree, newTree, container)
     expect(hasPendingWork()).toBe(false)
   })
@@ -268,7 +239,9 @@ describe("work-loop state is clean after operations", () => {
 
     // Simulate a Transition-lane update via flushUpdates
     const instance: ComponentInstance = {
-      _type: () => { throw new Error("unused") },
+      _type: () => {
+        throw new Error("unused")
+      },
       _props: {},
       _vnode: null as never,
       _rendered: null,

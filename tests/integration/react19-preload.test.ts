@@ -30,7 +30,7 @@ describe("React 19 resource preloading", () => {
 
   it("preload inserts a <link rel=preload> with as=", () => {
     preload("/fonts/body.woff2", { as: "font", crossOrigin: "anonymous", type: "font/woff2" })
-    const link = document.head.querySelector('link[rel=preload]') as HTMLLinkElement | null
+    const link = document.head.querySelector("link[rel=preload]") as HTMLLinkElement | null
     expect(link).not.toBeNull()
     expect(link!.getAttribute("as")).toBe("font")
     expect(link!.getAttribute("type")).toBe("font/woff2")
@@ -45,7 +45,7 @@ describe("React 19 resource preloading", () => {
 
   it("preinit with as=style inserts a stylesheet link", () => {
     preinit("/css/app.css", { as: "style" })
-    const link = document.head.querySelector('link[rel=stylesheet]') as HTMLLinkElement | null
+    const link = document.head.querySelector("link[rel=stylesheet]") as HTMLLinkElement | null
     expect(link).not.toBeNull()
     expect(link!.getAttribute("href")).toBe("/css/app.css")
   })

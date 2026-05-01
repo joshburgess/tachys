@@ -1,5 +1,5 @@
-import { describe, expect, it, vi, beforeEach } from "vitest"
-import { __DEV__, getComponentName, warn, warnOnce, resetWarnings } from "../../src/dev"
+import { beforeEach, describe, expect, it, vi } from "vitest"
+import { __DEV__, getComponentName, resetWarnings, warn, warnOnce } from "../../src/dev"
 
 describe("__DEV__", () => {
   it("is true in test environment", () => {

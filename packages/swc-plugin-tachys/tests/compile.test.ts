@@ -18,9 +18,7 @@ describe("swc-plugin-tachys (static JSX)", () => {
 
     expect(out).toMatch(/import \{[^}]*markCompiled[^}]*\} from "tachys\/compiled"/)
     expect(out).toMatch(/import \{[^}]*_template[^}]*\} from "tachys\/compiled"/)
-    expect(out).toContain(
-      '_template("<span class=\\"greeting\\">hello</span>")',
-    )
+    expect(out).toContain('_template("<span class=\\"greeting\\">hello</span>")')
     expect(out).toContain("markCompiled(")
     expect(out).toContain("cloneNode(true)")
     expect(out).not.toMatch(/\b(?:h|jsx|jsxs)\s*\(/)
@@ -33,9 +31,7 @@ describe("swc-plugin-tachys (static JSX)", () => {
       }
     `
     const out = await transform(input)
-    expect(out).toContain(
-      '_template("<button class=\\"btn-primary\\">ok</button>")',
-    )
+    expect(out).toContain('_template("<button class=\\"btn-primary\\">ok</button>")')
   })
 
   it("handles nested static elements", async () => {

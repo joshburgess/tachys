@@ -53,7 +53,7 @@ import {
   resumeCollecting,
 } from "./effects"
 import { bridgeRerender } from "./reconcile-bridge"
-import { R, LANE_IDLE } from "./render-state"
+import { LANE_IDLE, R } from "./render-state"
 import { discardPendingWork, resumePendingWork } from "./work-loop"
 
 // --- Lanes ---
@@ -113,7 +113,7 @@ let _transitionRenderGen = 0
  * Instances processed during the current Transition batch. On
  * abandonment, these are re-queued so the new Transition re-renders them.
  */
-let _processedInstances: ComponentInstance[] = []
+const _processedInstances: ComponentInstance[] = []
 
 /**
  * Whether the current Transition render was suspended by a Suspense
