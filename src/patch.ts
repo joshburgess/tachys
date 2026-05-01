@@ -18,50 +18,17 @@ import { cleanupEvents, updateEvent } from "./events"
 import { R } from "./scheduler-shim"
 
 /**
- * Map React-style prop names to their corresponding HTML attribute names.
- * Props not in this map are passed through as-is.
+ * Map React-style prop names to their HTML attribute names. Only entries
+ * whose attribute form is genuinely irregular (a different word, or a
+ * dash-separated form) need to be listed: HTML attribute names are
+ * case-insensitive on `setAttribute` for HTML elements, so plain
+ * camelCase-to-lowercase conversions (`tabIndex`, `colSpan`, etc.) work
+ * unmodified. Props not in this map are passed through as-is.
  */
 const PROP_TO_ATTR: Record<string, string> = {
   htmlFor: "for",
   httpEquiv: "http-equiv",
   acceptCharset: "accept-charset",
-  accessKey: "accesskey",
-  autoCapitalize: "autocapitalize",
-  autoComplete: "autocomplete",
-  autoFocus: "autofocus",
-  autoPlay: "autoplay",
-  cellPadding: "cellpadding",
-  cellSpacing: "cellspacing",
-  charSet: "charset",
-  classID: "classid",
-  colSpan: "colspan",
-  contentEditable: "contenteditable",
-  crossOrigin: "crossorigin",
-  dateTime: "datetime",
-  encType: "enctype",
-  formAction: "formaction",
-  formEncType: "formenctype",
-  formMethod: "formmethod",
-  formNoValidate: "formnovalidate",
-  formTarget: "formtarget",
-  frameBorder: "frameborder",
-  hrefLang: "hreflang",
-  inputMode: "inputmode",
-  maxLength: "maxlength",
-  mediaGroup: "mediagroup",
-  minLength: "minlength",
-  noModule: "nomodule",
-  noValidate: "novalidate",
-  playsInline: "playsinline",
-  readOnly: "readonly",
-  referrerPolicy: "referrerpolicy",
-  rowSpan: "rowspan",
-  spellCheck: "spellcheck",
-  srcDoc: "srcdoc",
-  srcLang: "srclang",
-  srcSet: "srcset",
-  tabIndex: "tabindex",
-  useMap: "usemap",
 }
 
 /**
