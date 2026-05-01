@@ -280,14 +280,19 @@ export function mountComponent(vnode: VNode, parentDom: Element, isSvg: boolean)
     return
   }
 
-  // Check if this is a Context Provider
+  // Context Provider / Portal / ErrorBoundary / Suspense dispatch is gated
+  // behind build-time `__SUPPORTS_*__` constants so size-sensitive builds
+  // (sync-core) elide these branches and tree-shake the backing modules.
   const providerCtx =
-    (meta & ComponentMeta.Provider) !== 0 ? (type as ProviderFunction<unknown>)._context : null
+    __SUPPORTS_CONTEXT__ && (meta & ComponentMeta.Provider) !== 0
+      ? (type as ProviderFunction<unknown>)._context
+      : null
   if (providerCtx !== null) providerCtx._stack.push(props["value"])
 
-  // Check if this is a Portal
   const portalTarget =
-    (meta & ComponentMeta.Portal) !== 0 ? (type as PortalFn)._portalContainer : undefined
+    __SUPPORTS_PORTAL__ && (meta & ComponentMeta.Portal) !== 0
+      ? (type as PortalFn)._portalContainer
+      : undefined
 
   // Render the component
   const rendered = renderComponent(instance, props)
@@ -296,7 +301,7 @@ export function mountComponent(vnode: VNode, parentDom: Element, isSvg: boolean)
   vnode.parentDom = parentDom
 
   // Error boundary: push handler after render (hooks exist) but before mounting children
-  const isEB = (meta & ComponentMeta.ErrorBoundary) !== 0
+  const isEB = __SUPPORTS_ERROR_BOUNDARY__ && (meta & ComponentMeta.ErrorBoundary) !== 0
   let caughtError: unknown
   if (isEB) {
     pushErrorHandler((err: unknown) => {
@@ -305,7 +310,7 @@ export function mountComponent(vnode: VNode, parentDom: Element, isSvg: boolean)
   }
 
   // Suspense boundary: push handler before mounting children
-  const isSuspense = (meta & ComponentMeta.Suspense) !== 0
+  const isSuspense = __SUPPORTS_SUSPENSE__ && (meta & ComponentMeta.Suspense) !== 0
   let suspendedPromise: Promise<unknown> | undefined
   if (isSuspense) {
     pushSuspendHandler((promise: Promise<unknown>) => {
@@ -413,7 +418,7 @@ export function hydrateComponentInstance(
   // Check if this is a Context Provider
   const hydrateMeta = ((type as Partial<{ _meta: number }>)._meta ?? 0) | 0
   const providerCtx =
-    (hydrateMeta & ComponentMeta.Provider) !== 0
+    __SUPPORTS_CONTEXT__ && (hydrateMeta & ComponentMeta.Provider) !== 0
       ? (type as ProviderFunction<unknown>)._context
       : null
   if (providerCtx !== null) providerCtx._stack.push(props["value"])
@@ -475,7 +480,7 @@ export function hydrateSuspenseInstance(
 
   const suspenseMeta = ((type as Partial<{ _meta: number }>)._meta ?? 0) | 0
   const providerCtx =
-    (suspenseMeta & ComponentMeta.Provider) !== 0
+    __SUPPORTS_CONTEXT__ && (suspenseMeta & ComponentMeta.Provider) !== 0
       ? (type as ProviderFunction<unknown>)._context
       : null
   if (providerCtx !== null) providerCtx._stack.push(props["value"])
@@ -554,7 +559,9 @@ export function patchComponent(oldVNode: VNode, newVNode: VNode, parentDom: Elem
   if (
     propsEqual &&
     oldInstance._queuedLanes === 0 &&
-    (oldInstance._contexts === null || !contextValuesChanged(oldInstance))
+    (!__SUPPORTS_CONTEXT__ ||
+      oldInstance._contexts === null ||
+      !contextValuesChanged(oldInstance))
   ) {
     // Props unchanged — skip re-render, carry forward references
     newVNode.children = oldInstance._rendered
@@ -586,9 +593,12 @@ export function patchComponent(oldVNode: VNode, newVNode: VNode, parentDom: Elem
     return
   }
 
-  // Check if this is a Context Provider
+  // Context Provider / Portal / ErrorBoundary / Suspense dispatch is gated
+  // behind build-time `__SUPPORTS_*__` constants -- see mountComponent.
   const providerCtx =
-    (meta & ComponentMeta.Provider) !== 0 ? (newType as ProviderFunction<unknown>)._context : null
+    __SUPPORTS_CONTEXT__ && (meta & ComponentMeta.Provider) !== 0
+      ? (newType as ProviderFunction<unknown>)._context
+      : null
   if (providerCtx !== null) providerCtx._stack.push(newProps["value"])
 
   const oldRendered = oldInstance._rendered!
@@ -598,13 +608,14 @@ export function patchComponent(oldVNode: VNode, newVNode: VNode, parentDom: Elem
   newVNode.children = newRendered
   newVNode.parentDom = parentDom
 
-  // Check if this is a Portal
   const portalTarget =
-    (meta & ComponentMeta.Portal) !== 0 ? (newType as PortalFn)._portalContainer : undefined
+    __SUPPORTS_PORTAL__ && (meta & ComponentMeta.Portal) !== 0
+      ? (newType as PortalFn)._portalContainer
+      : undefined
   const patchParent = portalTarget ?? parentDom
 
   // Error boundary: push handler before patching children
-  const isEB = (meta & ComponentMeta.ErrorBoundary) !== 0
+  const isEB = __SUPPORTS_ERROR_BOUNDARY__ && (meta & ComponentMeta.ErrorBoundary) !== 0
   let caughtError: unknown
   if (isEB) {
     pushErrorHandler((err: unknown) => {
@@ -614,7 +625,7 @@ export function patchComponent(oldVNode: VNode, newVNode: VNode, parentDom: Elem
 
   // Suspense boundary: push error handler to capture child errors, then
   // push suspend handler for thrown promises.
-  const isSuspense = (meta & ComponentMeta.Suspense) !== 0
+  const isSuspense = __SUPPORTS_SUSPENSE__ && (meta & ComponentMeta.Suspense) !== 0
   let suspendedPromise: Promise<unknown> | undefined
   if (isSuspense) {
     pushSuspendHandler((promise: Promise<unknown>) => {
@@ -727,7 +738,7 @@ export function unmountComponent(vnode: VNode, parentDom: Element): void {
   }
 
   const portalTarget =
-    (unmountMeta & ComponentMeta.Portal) !== 0
+    __SUPPORTS_PORTAL__ && (unmountMeta & ComponentMeta.Portal) !== 0
       ? (unmountType as PortalFn)._portalContainer
       : undefined
 
@@ -746,6 +757,14 @@ export function unmountComponent(vnode: VNode, parentDom: Element): void {
 
 // --- Hooks ---
 
+function hookOutsideError(name: string): never {
+  throw new Error(
+    name +
+      " must be called inside a component render. " +
+      "Make sure you are not calling hooks outside of a component function.",
+  )
+}
+
 /**
  * Hook: declare a state variable in a functional component.
  *
@@ -754,12 +773,7 @@ export function unmountComponent(vnode: VNode, parentDom: Element): void {
  */
 export function useState<T>(initial: T): readonly [T, (newVal: T | ((prev: T) => T)) => void] {
   const instance = currentInstance
-  if (instance === null) {
-    throw new Error(
-      "useState must be called inside a component render. " +
-        "Make sure you are not calling hooks outside of a component function.",
-    )
-  }
+  if (instance === null) hookOutsideError("useState")
 
   hookIndex++
   const idx = stateIndex++
@@ -822,12 +836,7 @@ export function useReducer<S, A>(
   initialState: S,
 ): readonly [S, (action: A) => void] {
   const instance = currentInstance
-  if (instance === null) {
-    throw new Error(
-      "useReducer must be called inside a component render. " +
-        "Make sure you are not calling hooks outside of a component function.",
-    )
-  }
+  if (instance === null) hookOutsideError("useReducer")
 
   hookIndex++
   const idx = stateIndex++
@@ -872,12 +881,7 @@ function registerEffect(
   hookName: string,
 ): void {
   const instance = currentInstance
-  if (instance === null) {
-    throw new Error(
-      `${hookName} must be called inside a component render. ` +
-        "Make sure you are not calling hooks outside of a component function.",
-    )
-  }
+  if (instance === null) hookOutsideError(hookName)
 
   hookIndex++
   const effectIdx = effectIndex++
@@ -969,12 +973,7 @@ export function useInsertionEffect(
  */
 export function useMemo<T>(factory: () => T, deps: readonly unknown[]): T {
   const instance = currentInstance
-  if (instance === null) {
-    throw new Error(
-      "useMemo must be called inside a component render. " +
-        "Make sure you are not calling hooks outside of a component function.",
-    )
-  }
+  if (instance === null) hookOutsideError("useMemo")
 
   hookIndex++
   const idx = stateIndex++
@@ -1022,12 +1021,7 @@ export function useCallback<T extends (...args: never[]) => unknown>(
  */
 export function useRef<T>(initial: T): RefObject<T> {
   const instance = currentInstance
-  if (instance === null) {
-    throw new Error(
-      "useRef must be called inside a component render. " +
-        "Make sure you are not calling hooks outside of a component function.",
-    )
-  }
+  if (instance === null) hookOutsideError("useRef")
 
   hookIndex++
   const idx = stateIndex++
@@ -1068,12 +1062,7 @@ export function useSyncExternalStore<T>(
   getServerSnapshot?: () => T,
 ): T {
   const instance = currentInstance
-  if (instance === null) {
-    throw new Error(
-      "useSyncExternalStore must be called inside a component render. " +
-        "Make sure you are not calling hooks outside of a component function.",
-    )
-  }
+  if (instance === null) hookOutsideError("useSyncExternalStore")
 
   hookIndex++
   const idx = stateIndex++
@@ -1154,12 +1143,7 @@ export function resetIdCounter(): void {
  */
 export function useId(): string {
   const instance = currentInstance
-  if (instance === null) {
-    throw new Error(
-      "useId must be called inside a component render. " +
-        "Make sure you are not calling hooks outside of a component function.",
-    )
-  }
+  if (instance === null) hookOutsideError("useId")
 
   hookIndex++
   const idx = stateIndex++
@@ -1189,12 +1173,7 @@ export function useImperativeHandle<T>(
   deps?: readonly unknown[],
 ): void {
   const instance = currentInstance
-  if (instance === null) {
-    throw new Error(
-      "useImperativeHandle must be called inside a component render. " +
-        "Make sure you are not calling hooks outside of a component function.",
-    )
-  }
+  if (instance === null) hookOutsideError("useImperativeHandle")
 
   const effectDeps = deps !== undefined ? [ref, ...deps] : [ref]
 
@@ -1352,12 +1331,7 @@ export function startTransition(callback: () => void): void {
  */
 export function useTransition(): readonly [boolean, (callback: () => void) => void] {
   const instance = currentInstance
-  if (instance === null) {
-    throw new Error(
-      "useTransition must be called inside a component render. " +
-        "Make sure you are not calling hooks outside of a component function.",
-    )
-  }
+  if (instance === null) hookOutsideError("useTransition")
 
   // isPending lives in state so it triggers re-renders.
   // setIsPending(true) is called at Default lane (urgent).
@@ -1394,12 +1368,7 @@ export function useTransition(): readonly [boolean, (callback: () => void) => vo
  */
 export function useDeferredValue<T>(value: T, initialValue?: T): T {
   const instance = currentInstance
-  if (instance === null) {
-    throw new Error(
-      "useDeferredValue must be called inside a component render. " +
-        "Make sure you are not calling hooks outside of a component function.",
-    )
-  }
+  if (instance === null) hookOutsideError("useDeferredValue")
 
   // When initialValue is provided, the first mount returns initialValue
   // instead of value, then a Transition update catches up to value.
@@ -1530,8 +1499,10 @@ function renderComponent(instance: ComponentInstance, props: Record<string, unkn
     currentInstance = null
 
     // Thrown thenables (Promises) are suspend signals from lazy() components.
-    // Propagate to the nearest Suspense boundary.
-    if (isThenable(err)) {
+    // Propagate to the nearest Suspense boundary. Gated behind the Suspense
+    // build flag so sync-core skips the thenable dispatch and tree-shakes
+    // `isThenable`/`propagateSuspend` out of the bundle.
+    if (__SUPPORTS_SUSPENSE__ && isThenable(err)) {
       if (propagateSuspend(err)) {
         return new VNode(VNodeFlags.Text, null, null, null, "", ChildFlags.NoChildren, null)
       }
@@ -1540,7 +1511,7 @@ function renderComponent(instance: ComponentInstance, props: Record<string, unkn
     }
 
     // Propagate to the nearest error boundary (if any)
-    if (propagateRenderError(err)) {
+    if (__SUPPORTS_ERROR_BOUNDARY__ && propagateRenderError(err)) {
       return new VNode(VNodeFlags.Text, null, null, null, "", ChildFlags.NoChildren, null)
     }
 
@@ -1733,11 +1704,15 @@ function rerenderComponent(instance: ComponentInstance): void {
   const meta = ((type as Partial<{ _meta: number }>)._meta ?? 0) | 0
 
   const providerCtx =
-    (meta & ComponentMeta.Provider) !== 0 ? (type as ProviderFunction<unknown>)._context : null
+    __SUPPORTS_CONTEXT__ && (meta & ComponentMeta.Provider) !== 0
+      ? (type as ProviderFunction<unknown>)._context
+      : null
   if (providerCtx !== null) providerCtx._stack.push(instance._props["value"])
 
   const portalTarget =
-    (meta & ComponentMeta.Portal) !== 0 ? (type as PortalFn)._portalContainer : undefined
+    __SUPPORTS_PORTAL__ && (meta & ComponentMeta.Portal) !== 0
+      ? (type as PortalFn)._portalContainer
+      : undefined
 
   const newRendered = renderComponent(instance, instance._props)
   instance._rendered = newRendered
@@ -1746,7 +1721,7 @@ function rerenderComponent(instance: ComponentInstance): void {
   const patchParent = portalTarget ?? instance._parentDom
 
   // Error boundary: push handler before patching children
-  const isEB = (meta & ComponentMeta.ErrorBoundary) !== 0
+  const isEB = __SUPPORTS_ERROR_BOUNDARY__ && (meta & ComponentMeta.ErrorBoundary) !== 0
   let caughtError: unknown
   if (isEB) {
     pushErrorHandler((err: unknown) => {
@@ -1755,7 +1730,7 @@ function rerenderComponent(instance: ComponentInstance): void {
   }
 
   // Suspense boundary: push handler before patching children
-  const isSuspense = (meta & ComponentMeta.Suspense) !== 0
+  const isSuspense = __SUPPORTS_SUSPENSE__ && (meta & ComponentMeta.Suspense) !== 0
   let suspendedPromise: Promise<unknown> | undefined
   if (isSuspense) {
     pushSuspendHandler((promise: Promise<unknown>) => {

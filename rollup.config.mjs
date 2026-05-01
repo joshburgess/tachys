@@ -29,8 +29,6 @@ const swcPlugin = swc({
   sourceMaps: true,
 })
 
-const plugins = [resolve({ extensions: [".ts", ".js"] }), swcPlugin]
-
 // Resolves any `./scheduler-shim` import to `./scheduler-shim-sync` so the
 // resulting bundle drops scheduler.ts / work-loop.ts / lane plumbing and
 // runs all updates synchronously. Used for the `dist/sync.*` outputs.
@@ -76,18 +74,50 @@ const terserOpts = terser({
   },
 })
 
-const prodReplace = replace({
-  preventAssignment: true,
-  values: {
-    "process.env.NODE_ENV": JSON.stringify("production"),
-  },
-})
+// Build-time feature flags. The shared runtime in component.ts dispatches
+// on `_meta` flag bits for ErrorBoundary / Suspense / Portal / Context;
+// gating each branch with the matching `__SUPPORTS_*__` constant lets
+// rollup tree-shake the dispatch + the underlying feature module entirely
+// for builds that don't expose those features (currently `sync-core`).
+function featureFlagsReplace(supports) {
+  return replace({
+    preventAssignment: true,
+    values: {
+      "process.env.NODE_ENV": JSON.stringify("production"),
+      __SUPPORTS_ERROR_BOUNDARY__: JSON.stringify(supports.errorBoundary),
+      __SUPPORTS_SUSPENSE__: JSON.stringify(supports.suspense),
+      __SUPPORTS_PORTAL__: JSON.stringify(supports.portal),
+      __SUPPORTS_CONTEXT__: JSON.stringify(supports.context),
+    },
+  })
+}
 
-const minPlugins = [prodReplace, resolve({ extensions: [".ts", ".js"] }), swcPlugin, terserOpts]
+const FULL_FEATURES = { errorBoundary: true, suspense: true, portal: true, context: true }
+const SYNC_CORE_FEATURES = { errorBoundary: false, suspense: false, portal: false, context: false }
 
-const syncPlugins = [resolve({ extensions: [".ts", ".js"] }), syncShimAlias, swcPlugin]
+// Unminified builds still need the flag substitution so the source
+// references (`__SUPPORTS_*__`) resolve to actual values at runtime.
+const fullReplace = featureFlagsReplace(FULL_FEATURES)
+const syncCoreReplace = featureFlagsReplace(SYNC_CORE_FEATURES)
+
+const plugins = [fullReplace, resolve({ extensions: [".ts", ".js"] }), swcPlugin]
+const minPlugins = [fullReplace, resolve({ extensions: [".ts", ".js"] }), swcPlugin, terserOpts]
+const syncPlugins = [fullReplace, resolve({ extensions: [".ts", ".js"] }), syncShimAlias, swcPlugin]
 const syncMinPlugins = [
-  prodReplace,
+  fullReplace,
+  resolve({ extensions: [".ts", ".js"] }),
+  syncShimAlias,
+  swcPlugin,
+  terserOpts,
+]
+const syncCorePlugins = [
+  syncCoreReplace,
+  resolve({ extensions: [".ts", ".js"] }),
+  syncShimAlias,
+  swcPlugin,
+]
+const syncCoreMinPlugins = [
+  syncCoreReplace,
   resolve({ extensions: [".ts", ".js"] }),
   syncShimAlias,
   swcPlugin,
@@ -95,12 +125,7 @@ const syncMinPlugins = [
 ]
 
 const benchPlugins = [
-  replace({
-    preventAssignment: true,
-    values: {
-      "process.env.NODE_ENV": JSON.stringify("production"),
-    },
-  }),
+  fullReplace,
   resolve({ extensions: [".ts", ".js"] }),
   swcPlugin,
 ]
@@ -342,7 +367,10 @@ export default [
     },
     plugins: syncMinPlugins,
   },
-  // --- sync-core: lean public surface for size-sensitive consumers ---
+  // --- sync-core: lean public surface for size-sensitive consumers.
+  // ErrorBoundary / Suspense / Portal / Context dispatch is gated behind
+  // build-time `__SUPPORTS_*__` constants so the dispatch sites and the
+  // backing modules tree-shake out of these builds. ---
   {
     input: "src/sync-core.ts",
     output: [
@@ -358,7 +386,7 @@ export default [
         exports: "named",
       },
     ],
-    plugins: syncPlugins,
+    plugins: syncCorePlugins,
   },
   {
     input: "src/sync-core.ts",
@@ -367,7 +395,7 @@ export default [
       format: "es",
       sourcemap: true,
     },
-    plugins: syncMinPlugins,
+    plugins: syncCoreMinPlugins,
   },
   {
     input: "benchmarks/browser/inferno-bench-entry.js",

@@ -1,6 +1,15 @@
 import { defineConfig } from "vitest/config"
 
 export default defineConfig({
+  // Build-time feature flags. Production builds replace these via
+  // @rollup/plugin-replace; vitest runs the full surface so all flags
+  // are `true` here.
+  define: {
+    __SUPPORTS_ERROR_BOUNDARY__: "true",
+    __SUPPORTS_SUSPENSE__: "true",
+    __SUPPORTS_PORTAL__: "true",
+    __SUPPORTS_CONTEXT__: "true",
+  },
   test: {
     include: ["src/**/*.test.ts", "tests/**/*.test.ts"],
     passWithNoTests: true,
