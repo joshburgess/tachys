@@ -759,4 +759,4 @@ To use it, load the `devtools/` directory as an unpacked extension in `chrome://
 
 ## License
 
-MIT
+Dual licensed under [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE).

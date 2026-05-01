@@ -1,8 +1,8 @@
 {
   "name": "compiler-core-tachys",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Portable IR, typed JS emission DSL, and string emitter shared by the Babel and SWC Tachys compilers",
-  "license": "MIT",
+  "license": "MIT OR Apache-2.0",
   "author": "Josh Burgess",
   "type": "module",
   "sideEffects": false,

@@ -1,8 +1,8 @@
 {
   "name": "swc-plugin-tachys",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "SWC-based JSX compiler for Tachys. Produces the same CompiledIR and emitted output as babel-plugin-tachys, but parses via @swc/core so SWC-based toolchains (Vite, Next.js, Bun) can use the Tachys fast path without Babel.",
-  "license": "MIT",
+  "license": "MIT OR Apache-2.0",
   "author": "Josh Burgess",
   "type": "module",
   "sideEffects": false,

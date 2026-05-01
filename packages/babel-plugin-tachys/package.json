@@ -1,8 +1,8 @@
 {
   "name": "babel-plugin-tachys",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Babel plugin that compiles Tachys JSX components into markCompiled + cloneNode templates",
-  "license": "MIT",
+  "license": "MIT OR Apache-2.0",
   "author": "Josh Burgess",
   "type": "module",
   "sideEffects": false,

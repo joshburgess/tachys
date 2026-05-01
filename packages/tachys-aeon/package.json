@@ -1,8 +1,8 @@
 {
   "name": "tachys-aeon",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Aeon FRP integration for Tachys - reactive Behaviors and Events as first-class UI primitives",
-  "license": "MIT",
+  "license": "MIT OR Apache-2.0",
   "author": "Josh Burgess",
   "type": "module",
   "sideEffects": false,
@@ -31,7 +31,7 @@
     "test:watch": "vitest"
   },
   "peerDependencies": {
-    "tachys": ">=0.0.1",
+    "tachys": ">=0.1.0",
     "aeon-core": ">=0.0.1",
     "aeon-types": ">=0.0.1",
     "aeon-scheduler": ">=0.0.1"

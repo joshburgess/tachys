@@ -1,8 +1,8 @@
 {
   "name": "tachys",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "A high-performance virtual DOM library optimized for V8",
-  "license": "MIT",
+  "license": "MIT OR Apache-2.0",
   "author": "Josh Burgess",
   "repository": {
     "type": "git",
