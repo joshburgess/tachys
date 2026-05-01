@@ -152,7 +152,7 @@ describe("useAdapter", () => {
 
   it("returns stable references across renders", () => {
     const adapters: Array<[(v: number) => void, unknown]> = []
-    const [push, event] = createAdapter<void>()
+    const [push, event] = createAdapter<number>()
 
     function App() {
       const adapter = useAdapter<number>()
@@ -166,7 +166,7 @@ describe("useAdapter", () => {
     flushUpdates()
 
     // Force a re-render via the event
-    push()
+    push(1)
     flushUpdates()
 
     expect(adapters.length).toBe(2)

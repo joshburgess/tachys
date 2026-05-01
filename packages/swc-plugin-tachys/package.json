@@ -4,6 +4,28 @@
   "description": "SWC-based JSX compiler for Tachys. Produces the same CompiledIR and emitted output as babel-plugin-tachys, but parses via @swc/core so SWC-based toolchains (Vite, Next.js, Bun) can use the Tachys fast path without Babel.",
   "license": "MIT OR Apache-2.0",
   "author": "Josh Burgess",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/joshburgess/tachys.git",
+    "directory": "packages/swc-plugin-tachys"
+  },
+  "homepage": "https://github.com/joshburgess/tachys/tree/main/packages/swc-plugin-tachys#readme",
+  "bugs": {
+    "url": "https://github.com/joshburgess/tachys/issues"
+  },
+  "keywords": [
+    "swc",
+    "swc-plugin",
+    "tachys",
+    "jsx",
+    "compiler",
+    "vdom",
+    "templates",
+    "performance"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
   "type": "module",
   "sideEffects": false,
   "main": "./dist/index.cjs",
@@ -21,8 +43,9 @@
       }
     }
   },
-  "files": ["dist"],
+  "files": ["dist", "LICENSE-MIT", "LICENSE-APACHE"],
   "scripts": {
+    "prepublishOnly": "pnpm run build && pnpm run typecheck && pnpm run test",
     "build": "rm -rf dist && rollup -c rollup.config.mjs && tsc -p tsconfig.build.json && cp dist/index.d.ts dist/index.d.cts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",

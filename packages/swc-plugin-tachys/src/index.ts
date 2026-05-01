@@ -152,6 +152,7 @@ export async function transform(
             kind: "hoisted",
             makePropsId: `_lp$${name}_${index}`,
             keyOfId: `_lk$${name}_${index}`,
+            makePropsOrDiffId: `_lpd$${name}_${index}`,
           })
         } else {
           listHelpers.set(index, { kind: "inline" })
@@ -177,6 +178,7 @@ export async function transform(
     for (const h of helpers) {
       hoistedHelpers.push({ id: h.makePropsId, src: h.makePropsSrc })
       hoistedHelpers.push({ id: h.keyOfId, src: h.keyOfSrc })
+      hoistedHelpers.push({ id: h.makePropsOrDiffId, src: h.makePropsOrDiffSrc })
     }
 
     const span = toZeroBased(fn.span, base)
