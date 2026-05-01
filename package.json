@@ -124,6 +124,16 @@
         "default": "./dist/sync.cjs"
       }
     },
+    "./sync-core": {
+      "import": {
+        "types": "./dist/sync-core.d.ts",
+        "default": "./dist/sync-core.js"
+      },
+      "require": {
+        "types": "./dist/sync-core.d.cts",
+        "default": "./dist/sync-core.cjs"
+      }
+    },
     "./client": {
       "import": {
         "types": "./dist/compat.d.ts",
@@ -148,7 +158,7 @@
   "packageManager": "pnpm@9.15.4",
   "scripts": {
     "prepublishOnly": "pnpm run build && pnpm run typecheck && pnpm run test",
-    "build": "rm -rf dist && rollup -c rollup.config.mjs && tsc -p tsconfig.build.json && cp dist/index.d.ts dist/index.d.cts && cp dist/jsx-runtime.d.ts dist/jsx-runtime.d.cts && cp dist/jsx-dev-runtime.d.ts dist/jsx-dev-runtime.d.cts && cp dist/compat.d.ts dist/compat.d.cts && cp dist/server.d.ts dist/server.d.cts && cp dist/tags.d.ts dist/tags.d.cts && cp dist/compiled.d.ts dist/compiled.d.cts && cp dist/hydrate-root.d.ts dist/hydrate.d.ts && cp dist/hydrate-root.d.ts dist/hydrate.d.cts && cp dist/index.d.ts.map dist/index.d.cts.map && cp dist/jsx-runtime.d.ts.map dist/jsx-runtime.d.cts.map && cp dist/jsx-dev-runtime.d.ts.map dist/jsx-dev-runtime.d.cts.map && cp dist/compat.d.ts.map dist/compat.d.cts.map && cp dist/server.d.ts.map dist/server.d.cts.map && cp dist/tags.d.ts.map dist/tags.d.cts.map && cp dist/compiled.d.ts.map dist/compiled.d.cts.map && cp dist/hydrate-root.d.ts.map dist/hydrate.d.ts.map && cp dist/hydrate-root.d.ts.map dist/hydrate.d.cts.map",
+    "build": "rm -rf dist && rollup -c rollup.config.mjs && tsc -p tsconfig.build.json && cp dist/index.d.ts dist/index.d.cts && cp dist/jsx-runtime.d.ts dist/jsx-runtime.d.cts && cp dist/jsx-dev-runtime.d.ts dist/jsx-dev-runtime.d.cts && cp dist/compat.d.ts dist/compat.d.cts && cp dist/server.d.ts dist/server.d.cts && cp dist/tags.d.ts dist/tags.d.cts && cp dist/compiled.d.ts dist/compiled.d.cts && cp dist/sync-core.d.ts dist/sync-core.d.cts && cp dist/hydrate-root.d.ts dist/hydrate.d.ts && cp dist/hydrate-root.d.ts dist/hydrate.d.cts && cp dist/index.d.ts.map dist/index.d.cts.map && cp dist/jsx-runtime.d.ts.map dist/jsx-runtime.d.cts.map && cp dist/jsx-dev-runtime.d.ts.map dist/jsx-dev-runtime.d.cts.map && cp dist/compat.d.ts.map dist/compat.d.cts.map && cp dist/server.d.ts.map dist/server.d.cts.map && cp dist/tags.d.ts.map dist/tags.d.cts.map && cp dist/compiled.d.ts.map dist/compiled.d.cts.map && cp dist/sync-core.d.ts.map dist/sync-core.d.cts.map && cp dist/hydrate-root.d.ts.map dist/hydrate.d.ts.map && cp dist/hydrate-root.d.ts.map dist/hydrate.d.cts.map",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",

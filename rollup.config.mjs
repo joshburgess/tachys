@@ -43,6 +43,21 @@ const syncShimAlias = {
   },
 }
 
+// Property names that are exclusively framework-internal:
+// - never set/read by babel-plugin-tachys or compiler-core-tachys output
+// - never asserted on by user-facing tests in `src/`
+// - never appearing in the public type signatures
+// Mangling these saves ~8% off the minified output because they appear
+// hundreds of times each across component.ts / effects.ts / diff.ts.
+//
+// Anything that crosses the framework <-> compiled-template boundary
+// (`_compare`, `_meta`, `patch`, `_e0..N`, `_t0..N`, `_ls0..N`,
+// `_root`, `_html`, `_tachys`, `_tachysStopAt`, `_stack`, `_context`,
+// `_defaultValue`, `_portalContainer`) is intentionally NOT in this
+// list -- the babel plugin emits those names and the runtime reads
+// them, so the writer and reader must agree on the literal name.
+const internalPropPattern = /^_(hooks|effects|hookCount|passiveQueued|queuedLanes|rerender|contexts|mounted|rendered|parentDom|type|props|vnode)$/
+
 const terserOpts = terser({
   compress: {
     passes: 2,
@@ -51,7 +66,9 @@ const terserOpts = terser({
     ecma: 2022,
   },
   mangle: {
-    properties: false,
+    properties: {
+      regex: internalPropPattern,
+    },
   },
   format: {
     comments: false,
@@ -320,6 +337,33 @@ export default [
     input: "src/index.ts",
     output: {
       file: "dist/sync.min.js",
+      format: "es",
+      sourcemap: true,
+    },
+    plugins: syncMinPlugins,
+  },
+  // --- sync-core: lean public surface for size-sensitive consumers ---
+  {
+    input: "src/sync-core.ts",
+    output: [
+      {
+        file: "dist/sync-core.js",
+        format: "es",
+        sourcemap: true,
+      },
+      {
+        file: "dist/sync-core.cjs",
+        format: "cjs",
+        sourcemap: true,
+        exports: "named",
+      },
+    ],
+    plugins: syncPlugins,
+  },
+  {
+    input: "src/sync-core.ts",
+    output: {
+      file: "dist/sync-core.min.js",
       format: "es",
       sourcemap: true,
     },
