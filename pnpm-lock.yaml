@@ -71,6 +71,9 @@ importers:
       '@babel/parser':
         specifier: ^7.24.0
         version: 7.29.2
+      '@babel/plugin-syntax-jsx':
+        specifier: ^7.24.0
+        version: 7.28.6(@babel/core@7.29.0)
       compiler-core-tachys:
         specifier: workspace:*
         version: link:../compiler-core-tachys
@@ -78,9 +81,6 @@ importers:
       '@babel/core':
         specifier: ^7.24.0
         version: 7.29.0
-      '@babel/plugin-syntax-jsx':
-        specifier: ^7.24.0
-        version: 7.28.6(@babel/core@7.29.0)
       '@babel/types':
         specifier: ^7.24.0
         version: 7.29.0
