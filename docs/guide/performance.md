@@ -45,10 +45,15 @@ Keyed and non-keyed children diffing on the Transition lane check a ~5ms time sl
 
 ## Bundle Size
 
-| Build | Size | Gzipped |
-|-------|------|---------|
-| `index.min.js` (ESM, minified) | 36 KB | **~10.6 KB** |
-| `jsx-runtime.min.js` | 1.5 KB | ~0.7 KB |
+| Entry | Min | Min+gzip |
+|---|---|---|
+| `tachys` (full concurrent) | 36 KB | **~11 KB** |
+| `tachys/sync` (no concurrent scheduler) | 27 KB | ~8.8 KB |
+| `tachys/sync-core` (no Suspense/lazy/ErrorBoundary/Portal) | 20 KB | ~6.8 KB |
+| `tachys/server` (SSR) | 21 KB | ~7.2 KB |
+| `tachys/hydrate` (client hydration) | 27 KB | ~8.8 KB |
+| `tachys/compiled` (runtime for `babel-plugin-tachys`) | 7 KB | ~2.6 KB |
+| `tachys/jsx-runtime` | 1.5 KB | ~0.7 KB |
 
 ## Tips
 

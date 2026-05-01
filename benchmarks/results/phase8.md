@@ -1,5 +1,9 @@
 # Phase 8 Benchmark Results
 
+> **Historical record. Do not cite these numbers.**
+>
+> This is a jsdom-only run from an earlier development phase, kept for change-tracking. The Inferno comparison here is against a setup without `$HasKeyedChildren` / `onComponentShouldUpdate` and the surface measured is raw `patch()` calls rather than click-to-paint. For current authoritative numbers see [`krausest-official.md`](./krausest-official.md).
+
 Environment: jsdom (vitest bench), Node.js, macOS
 
 ## Tachys

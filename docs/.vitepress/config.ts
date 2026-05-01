@@ -58,7 +58,7 @@ export default defineConfig({
       provider: "local",
     },
     footer: {
-      message: "Released under the MIT License.",
+      message: "Dual-licensed under MIT or Apache-2.0.",
     },
   },
 })

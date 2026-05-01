@@ -13,7 +13,7 @@ hero:
       link: /api/rendering
 features:
   - title: Tiny Footprint
-    details: ~10.6 KB gzipped core with object pooling, bitwise flags, and zero-allocation hot paths.
+    details: ~11 KB gzipped core with object pooling, bitwise flags, and zero-allocation hot paths. Lean entry points (sync, sync-core) drop further.
   - title: React-Compatible API
     details: Full hooks API (useState, useEffect, useMemo, use, useSyncExternalStore, etc.), memo, forwardRef, Suspense, lazy, ErrorBoundary, and React 19 use() hook.
   - title: Server-Side Rendering

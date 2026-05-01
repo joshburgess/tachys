@@ -102,7 +102,11 @@ Creates a `{ current: null }` ref object. Prefer `useRef` inside components.
 
 ## StrictMode
 
+Imported from `tachys/compat`.
+
 ```tsx
+import { StrictMode } from "tachys/compat"
+
 <StrictMode>
   {children}
 </StrictMode>
@@ -112,7 +116,11 @@ No-op passthrough in Tachys. In React, `StrictMode` double-invokes render functi
 
 ## Profiler
 
+Imported from `tachys/compat`.
+
 ```tsx
+import { Profiler } from "tachys/compat"
+
 <Profiler id="MyComponent" onRender={onRenderCallback}>
   {children}
 </Profiler>

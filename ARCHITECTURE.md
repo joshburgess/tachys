@@ -7,7 +7,7 @@ Reference for the current implementation. Describes the major subsystems and the
 1. **Match or exceed Inferno on reconciliation speed.** Inferno is the fastest VDOM library on `js-framework-benchmark`. Tachys targets the same operations.
 2. **Stay monomorphic.** Every hot-path function receives the same object shape at every call site so V8 can install inline caches and inline the callee.
 3. **Ship a React-compatible API.** Hooks, Suspense, lazy, Error boundaries, concurrent rendering, SSR, hydration.
-4. **Bundle small.** ~36KB min / ~10.6KB gzip for the core runtime. Zero dependencies.
+4. **Bundle small.** ~36KB min / ~11KB gzip for the core runtime. Zero dependencies. Lean entry points (`tachys/sync`, `tachys/sync-core`) drop the concurrent scheduler and Suspense/lazy/ErrorBoundary/Portal for apps that don't need them.
 
 ## Source layout
 

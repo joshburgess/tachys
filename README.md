@@ -2,9 +2,9 @@
 
 A virtual DOM library with a React-like hooks API and concurrent rendering. Reconciliation uses the same LIS keyed-diff algorithm as [Inferno](https://github.com/infernojs/inferno), with additional V8-focused tuning (monomorphic call sites, stable hidden classes, SMI-friendly flags, object pooling).
 
-Current state vs Inferno on the official [js-framework-benchmark](https://github.com/krausest/js-framework-benchmark): **Tachys is slower than Inferno on every CPU benchmark** (geomean 1.34x slower). See [Benchmarks](#benchmarks) for the full numbers and [Known performance gaps](#known-performance-gaps) for where the overhead lives.
+On the official [js-framework-benchmark](https://github.com/krausest/js-framework-benchmark) (Krausest), Tachys is **at parity with Inferno on total click-to-paint time (1.007x geomean)** and **~18% faster on script time (0.823x geomean)**. See [Benchmarks](#benchmarks) for per-op numbers.
 
-**~36KB min / ~10.6KB gzip** for the core runtime. Zero dependencies.
+**~36KB min / ~11KB gzip** for the core runtime. Zero dependencies.
 
 ## Features
 
@@ -689,48 +689,43 @@ module.exports = {
 
 ## Benchmarks
 
-Official [js-framework-benchmark](https://github.com/krausest/js-framework-benchmark) (Krausest), Playwright runner, headless Chrome, 4x CPU throttling, 10 iterations per op. Both frameworks use their upstream framework entries (Inferno uses `$HasKeyedChildren` + `Row.defaultHooks.onComponentShouldUpdate`).
+Official [js-framework-benchmark](https://github.com/krausest/js-framework-benchmark) (Krausest), Puppeteer runner, headless Chrome, 4x CPU throttling, 15 iterations per op (25 for `04_select1k`). Both frameworks use their upstream framework entries (Inferno uses `$HasKeyedChildren` + `Row.defaultHooks.onComponentShouldUpdate`; Tachys uses `babel-plugin-tachys` v1.1).
 
-| Benchmark | Tachys mean | Inferno mean | Tachys / Inferno |
-|---|---|---|---|
-| 01_run1k | 48.19 ms | 37.87 ms | 1.27x |
-| 02_replace1k | 54.16 ms | 42.30 ms | 1.28x |
-| 03_update10th1k | 39.47 ms | 31.31 ms | 1.26x |
-| 04_select1k | 20.00 ms | 11.06 ms | **1.81x** |
-| 05_swap1k | 51.43 ms | 33.35 ms | **1.54x** |
-| 06_remove1k | 28.07 ms | 22.48 ms | 1.25x |
-| 07_create10k | 401.44 ms | 385.67 ms | 1.04x |
-| 08_append1k | 55.12 ms | 45.79 ms | 1.20x |
-| 09_clear1k | 29.05 ms | 18.85 ms | **1.54x** |
+Numbers are **median total** (click-to-paint, ms) and **median script** (JS CPU time, ms) as produced by the official harness.
 
-Geometric mean ratio: **1.34x slower than Inferno**.
+| Benchmark              | Tachys total | Inferno total | T/I total | Tachys script | Inferno script | T/I script |
+|------------------------|--------------|---------------|-----------|---------------|----------------|------------|
+| 01_run1k               | 35.90        | 37.20         | 0.97x     | 2.80          | 4.90           | 0.57x      |
+| 02_replace1k           | 41.00        | 41.70         | 0.98x     | 6.70          | 7.70           | 0.87x      |
+| 03_update10th1k_x16    | 25.10        | 23.80         | 1.05x     | 1.60          | 2.00           | 0.80x      |
+| 04_select1k            | 7.30         | 8.20          | 0.89x     | 1.20          | 1.60           | 0.75x      |
+| 05_swap1k              | 26.90        | 26.30         | 1.02x     | 1.70          | 1.40           | 1.21x      |
+| 06_remove-one-1k       | 19.80        | 19.40         | 1.02x     | 0.60          | 0.50           | 1.20x      |
+| 07_create10k           | 388.30       | 395.50        | 0.98x     | 34.40         | 53.60          | 0.64x      |
+| 08_create1k-after1k_x2 | 45.40        | 45.40         | 1.00x     | 2.80          | 5.70           | 0.49x      |
+| 09_clear1k_x8          | 20.00        | 17.20         | 1.16x     | 16.30         | 12.90          | 1.26x      |
 
-Raw result JSONs and reproduction steps: [`benchmarks/results/krausest-official.md`](benchmarks/results/krausest-official.md).
+**Geomean: total 1.007x, script 0.823x** (Tachys / Inferno).
 
-> **Note:** An earlier version of this README reported numbers from an in-repo harness (`benchmarks/browser/`) that showed Tachys winning every op. That harness compared against a handicapped Inferno setup (no `$HasKeyedChildren` hint, no `onComponentShouldUpdate`) and measured raw `patch()` calls rather than click-to-paint. The numbers above come from the standard industry benchmark and should be considered the authoritative measurement.
+Tachys is at parity with Inferno on click-to-paint and wins decisively on script time. The remaining script-side outliers are `09_clear1k_x8` (1.26x) and `05_swap1k` / `06_remove-one-1k` (~1.2x on sub-millisecond denominators).
 
-### Known performance gaps
-
-The three largest gaps on Krausest are all small-DOM-change paths where per-operation overhead dominates:
-
-- **`04_select1k` (1.81x slower).** Toggling a single row's `className`. Event-dispatch + scheduler + commit overhead per click.
-- **`05_swap1k` (1.54x slower).** Two-row swap in a 1000-row keyed list. Likely LIS-path overhead for nearly-sorted sequences.
-- **`09_clear1k` (1.54x slower).** Unmounting 1000 rows. Cleanup path (effects, refs, pool release) cost.
-
-Core diff/allocation is near parity (`07_create10k` at 1.04x). The gap is concentrated in scheduler, event plumbing, and cleanup — not the diff algorithm itself.
-
-Bundle: **~40KB min / ~11.8KB gzip**.
+Reproduction steps and per-run notes: [`benchmarks/results/krausest-official.md`](benchmarks/results/krausest-official.md).
 
 ## Entry Points
 
-| Import path | Description |
-|---|---|
-| `tachys` | Core client-side library |
-| `tachys/server` | SSR: `renderToString`, `renderToStringAsync`, `renderToReadableStream`, `hydrate` |
-| `tachys/jsx-runtime` | Automatic JSX transform (`jsx`, `jsxs`, `Fragment`) |
-| `tachys/jsx-dev-runtime` | Dev-mode JSX transform (`jsxDEV`, `Fragment`) |
-| `tachys/compat` | React API surface for bundler aliasing |
-| `tachys/tags` | Typed tag-name helpers (`div`, `span`, `button`, ...) for no-JSX setups |
+| Import path | Description | Min+gzip |
+|---|---|---|
+| `tachys` | Core client-side library (full concurrent scheduler) | ~11 KB |
+| `tachys/sync` | Drops the concurrent scheduler. Same hooks API, sync-only commit. | ~8.8 KB |
+| `tachys/sync-core` | Lean sync core: drops Suspense/lazy/ErrorBoundary/Portal in addition. | ~6.8 KB |
+| `tachys/server` | SSR: `renderToString`, `renderToStringAsync`, `renderToReadableStream`, `hydrate` | ~7.2 KB |
+| `tachys/hydrate` | Client hydration entry (split out of `tachys/server` for client bundles) | ~8.8 KB |
+| `tachys/compiled` | Runtime helpers used by `babel-plugin-tachys` output | ~2.6 KB |
+| `tachys/jsx-runtime` | Automatic JSX transform (`jsx`, `jsxs`, `Fragment`) | ~0.7 KB |
+| `tachys/jsx-dev-runtime` | Dev-mode JSX transform (`jsxDEV`, `Fragment`) | ~0.8 KB |
+| `tachys/compat` | React API surface for bundler aliasing | ~13 KB |
+| `tachys/client` | Alias of `tachys/compat` for `react-dom/client` | (same) |
+| `tachys/tags` | Typed tag-name helpers (`div`, `span`, `button`, ...) for no-JSX setups | (tree-shakes) |
 
 All entry points ship as both ESM and CJS with TypeScript declarations.
 
@@ -738,11 +733,11 @@ All entry points ship as both ESM and CJS with TypeScript declarations.
 
 ```bash
 pnpm install            # Install dependencies
-pnpm test               # Run tests (900 tests)
+pnpm test               # Run tests (962 tests across 55 files)
 pnpm run typecheck      # Type check
 pnpm run build          # Build dist/
 pnpm run bench          # Run microbenchmarks (internal, non-authoritative)
-pnpm run bench:browser  # Run in-repo browser harness (see caveat in Benchmarks section)
+pnpm run bench:browser  # Run in-repo browser harness (non-authoritative; use Krausest for real numbers)
 pnpm run lint           # Lint with Biome
 pnpm run lint:fix       # Lint and auto-fix
 ```
