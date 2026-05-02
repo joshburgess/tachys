@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+## [0.1.2] - 2026-05-02
+
+### Fixed
+
+- `h()` rest-arg type now accepts arrays of children. The 0.1.1 runtime fix made `h(tag, props, items.map(...))` flatten correctly, but the `ChildArg` type was left non-recursive so call sites that passed an array still failed to type-check. `ChildArg` is now `VNode | string | number | null | undefined | ChildArg[]`, matching what the runtime accepts.
+
 ## [0.1.1] - 2026-05-02
 
 ### Fixed

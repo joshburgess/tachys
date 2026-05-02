@@ -28,7 +28,7 @@ import type { ComponentFn } from "./vnode"
 let _ncChildren: VNode[] | VNode | string | null = null
 let _ncChildFlags: ChildFlag = ChildFlags.NoChildren
 
-type ChildArg = VNode | string | number | null | undefined
+type ChildArg = VNode | string | number | null | undefined | ChildArg[]
 
 /**
  * Create a virtual DOM node. Used as the JSX pragma (`h`).
@@ -120,7 +120,7 @@ export function createTextVNode(text: string): VNode {
  * 4. Multi-child with primitives: one vnodes[] allocation
  * 5. Contains nulls/nested arrays, or sole child is an array: full flatten path
  */
-function normalizeChildren(raw: Array<VNode | string | number | null | undefined>): void {
+function normalizeChildren(raw: ChildArg[]): void {
   const len = raw.length
 
   if (len === 0) {
@@ -219,7 +219,7 @@ function normalizeChildren(raw: Array<VNode | string | number | null | undefined
  * Slow normalization path: flatten nested arrays and filter nulls/undefined.
  * Only called when the fast scan detects nulls, undefined, or nested arrays.
  */
-function normalizeSlow(raw: Array<VNode | string | number | null | undefined>): void {
+function normalizeSlow(raw: ChildArg[]): void {
   const flat: Array<VNode | string | number> = []
   flattenInto(raw, flat)
 
@@ -286,15 +286,12 @@ function checkDuplicateKeys(children: VNode[]): void {
   }
 }
 
-function flattenInto(
-  arr: Array<VNode | string | number | null | undefined>,
-  out: Array<VNode | string | number>,
-): void {
+function flattenInto(arr: ChildArg[], out: Array<VNode | string | number>): void {
   for (let i = 0; i < arr.length; i++) {
     const item = arr[i]
     if (item === null || item === undefined) continue
     if (Array.isArray(item)) {
-      flattenInto(item as Array<VNode | string | number | null | undefined>, out)
+      flattenInto(item, out)
     } else {
       out.push(item)
     }
