@@ -297,10 +297,7 @@ describe("h() rest-arg children", () => {
   })
 
   it("should preserve keys when flattening a single array argument", () => {
-    const items = [
-      h("li", { key: "x" }, "a"),
-      h("li", { key: "y" }, "b"),
-    ]
+    const items = [h("li", { key: "x" }, "a"), h("li", { key: "y" }, "b")]
     const vnode = h("ul", null, items)
 
     expect(vnode.childFlags).toBe(ChildFlags.HasKeyedChildren)
