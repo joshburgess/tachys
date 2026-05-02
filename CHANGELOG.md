@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+## [0.1.1] - 2026-05-02
+
+### Fixed
+
+- `h(tag, props, items.map(...))` now flattens the array argument the same way React's and Inferno's `createElement` do. Previously the single-child fast path in `normalizeChildren` stored the array itself as a single VNode child, so call sites had to spread (`...items.map(...)`) to get correct rendering. The multi-child path already handled `Array.isArray`; this brings the length-1 path in line.
+
+## [0.1.0] - 2026-05-02
+
 ### Added
 
 **Concurrent rendering**
