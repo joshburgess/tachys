@@ -139,7 +139,12 @@ h(MyComponent, { title: "Hi" })
 
 // Fragment
 h(null, null, child1, child2)
+
+// A single array child is flattened (same semantics as React/Inferno's createElement)
+h("ul", null, items.map((item) => h("li", { key: item.id }, item.label)))
 ```
+
+> Coming from React or Inferno? `tachys/compat` re-exports `h` as `createElement` (and the rest of the React-shaped surface) so you can drop Tachys into an existing call site without renaming. See [React Compatibility](#react-compatibility).
 
 #### `createTextVNode(text)`
 
@@ -615,7 +620,21 @@ hydrate(h(App, null), document.getElementById("root")!)
 
 ## React Compatibility
 
-Tachys provides a compatibility layer at `tachys/compat` that maps React's API surface to Tachys equivalents. This lets you use existing React component libraries with Tachys by aliasing `react` and `react-dom` in your bundler config.
+Tachys provides a compatibility layer at `tachys/compat` that maps React's API surface to Tachys equivalents. There are two ways to use it: aliasing `react`/`react-dom` in your bundler so existing React component libraries resolve to Tachys, or importing the React-named bindings directly into your own code.
+
+### Direct imports (no bundler config)
+
+If you're embedding Tachys into a project that already calls `createElement` (e.g. porting from React or Inferno, or wiring up a custom `vdom()` function), import the React-shaped names from `tachys/compat`:
+
+```ts
+import { createElement, Fragment, useState } from "tachys/compat"
+
+const vdom = (tag, props, ...children) => createElement(tag, props, ...children)
+
+vdom("ul", null, items.map((item) => vdom("li", { key: item.id }, item.label)))
+```
+
+This is the lowest-friction way to migrate a single call site without touching the rest of the project. Every entry in the table below is importable directly from `tachys/compat`.
 
 ### Bundler setup
 
