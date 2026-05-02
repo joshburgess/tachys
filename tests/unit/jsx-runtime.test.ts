@@ -280,3 +280,40 @@ describe("jsxs()", () => {
     })
   })
 })
+
+describe("h() rest-arg children", () => {
+  it("should flatten a single array argument (React/Inferno-compatible)", () => {
+    const items = [h("li", null, "a"), h("li", null, "b"), h("li", null, "c")]
+    const vnode = h("ul", null, items)
+
+    expect(vnode.childFlags).toBe(ChildFlags.HasNonKeyedChildren)
+    const children = vnode.children as VNode[]
+    expect(children).toHaveLength(3)
+    expect(children[0]!.type).toBe("li")
+
+    const container = document.createElement("div")
+    mount(vnode, container)
+    expect(container.innerHTML).toBe("<ul><li>a</li><li>b</li><li>c</li></ul>")
+  })
+
+  it("should preserve keys when flattening a single array argument", () => {
+    const items = [
+      h("li", { key: "x" }, "a"),
+      h("li", { key: "y" }, "b"),
+    ]
+    const vnode = h("ul", null, items)
+
+    expect(vnode.childFlags).toBe(ChildFlags.HasKeyedChildren)
+    const children = vnode.children as VNode[]
+    expect(children[0]!.key).toBe("x")
+    expect(children[1]!.key).toBe("y")
+  })
+
+  it("should still treat a lone VNode as HasSingleChild", () => {
+    const child = h("span", null, "hi")
+    const vnode = h("div", null, child)
+
+    expect(vnode.childFlags).toBe(ChildFlags.HasSingleChild)
+    expect(vnode.children).toBe(child)
+  })
+})

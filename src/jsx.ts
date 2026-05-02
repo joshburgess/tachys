@@ -118,7 +118,7 @@ export function createTextVNode(text: string): VNode {
  * 2. Single child: no array allocation (check raw[0] directly)
  * 3. Multi-child, all VNodes, no nulls/arrays: reuse rest-param array
  * 4. Multi-child with primitives: one vnodes[] allocation
- * 5. Contains nulls/nested arrays: full flatten path (rare)
+ * 5. Contains nulls/nested arrays, or sole child is an array: full flatten path
  */
 function normalizeChildren(raw: Array<VNode | string | number | null | undefined>): void {
   const len = raw.length
@@ -140,6 +140,11 @@ function normalizeChildren(raw: Array<VNode | string | number | null | undefined
     if (typeof only === "string" || typeof only === "number") {
       _ncChildren = String(only)
       _ncChildFlags = ChildFlags.HasTextChildren
+      return
+    }
+    // h(tag, props, items.map(...)) -- single array child, flatten it
+    if (Array.isArray(only)) {
+      normalizeSlow(raw)
       return
     }
     _ncChildren = only as VNode
